@@ -1,0 +1,66 @@
+:root {
+  --color-bg: #ffffff;
+  --color-text: #111827;
+  --color-border: #d1d5db;
+  --color-accent-task: #3b82f6;    /* blue */
+  --color-accent-resource: #22c55e; /* green */
+  --color-accent-goal: #f59e0b;     /* amber */
+  --color-accent-issue: #ef4444;    /* red */
+  --radius: 8px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.btn-primary {
+  display: inline-block;
+  padding: 10px 18px;
+  background: var(--color-accent-resource);
+  color: white;
+  border-radius: var(--radius);
+  text-decoration: none;
+  border: 1px solid var(--color-border);
+}
+
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: #f9fafb;
+  cursor: pointer;
+}
+
+.empty-state {
+  color: #6b7280;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
