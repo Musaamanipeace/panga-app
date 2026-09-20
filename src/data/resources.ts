@@ -1,69 +1,43 @@
-import {
-  db,
-  type Resource,
-  type ResourceCategory,
-} from "./db";
+// src/data/resources.ts
+import { db, type Resource, type ResourceCategory } from "./db";
 import { newId, now } from "./utils";
 
-export type CreateResourceInput = {
+export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
+  return db.resources.where("projectId").equals(projectId).sortBy("updatedAt");
+}
+
+export async function createResource(input: {
   projectId: string;
   category: ResourceCategory;
   title: string;
   value: string;
   notes?: string;
   tags?: string[];
-};
-
-export type UpdateResourceInput = Partial<
-  Omit<Resource, "id" | "projectId" | "createdAt">
->;
-
-export async function createResource(
-  input: CreateResourceInput,
-): Promise<Resource> {
-  const timestamp = now();
+}): Promise<Resource> {
+  const t = now();
   const resource: Resource = {
     id: newId(),
     projectId: input.projectId,
     category: input.category,
-    title: input.title.trim(),
+    title: input.title,
     value: input.value,
-    notes: input.notes?.trim() ?? "",
-    tags: [...(input.tags ?? [])],
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    notes: input.notes ?? "",
+    tags: input.tags ?? [],
+    createdAt: t,
+    updatedAt: t,
     syncStatus: "pending",
   };
-
   await db.resources.add(resource);
   return resource;
 }
 
-export async function listResources(projectId?: string): Promise<Resource[]> {
-  const collection = projectId
-    ? db.resources.where("projectId").equals(projectId)
-    : db.resources;
-  return collection.toArray();
-}
-
-export async function getResource(resourceId: string): Promise<Resource | undefined> {
-  return db.resources.get(resourceId);
-}
-
 export async function updateResource(
-  resourceId: string,
-  input: UpdateResourceInput,
+  id: string,
+  changes: Partial<Pick<Resource, "title" | "value" | "notes" | "tags" | "category">>
 ): Promise<void> {
-  await db.resources.update(resourceId, {
-    ...input,
-    title: input.title?.trim(),
-    notes: input.notes?.trim(),
-    tags: input.tags ? [...input.tags] : undefined,
-    updatedAt: now(),
-    syncStatus: "pending",
-  });
+  await db.resources.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
 
-export async function deleteResource(resourceId: string): Promise<void> {
-  await db.resources.delete(resourceId);
+export async function deleteResource(id: string): Promise<void> {
+  await db.resources.delete(id);
 }

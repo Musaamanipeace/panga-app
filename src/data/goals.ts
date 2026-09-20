@@ -1,55 +1,35 @@
+// src/data/goals.ts
 import { db, type Goal, type GoalStatus } from "./db";
 import { newId, now } from "./utils";
 
-export type CreateGoalInput = {
+export async function listGoals(projectId: string): Promise<Goal[]> {
+  return db.goals.where("projectId").equals(projectId).sortBy("createdAt");
+}
+
+export async function createGoal(input: {
   projectId: string;
   title: string;
   targetDate?: number | null;
-  status?: GoalStatus;
-};
-
-export type UpdateGoalInput = Partial<
-  Omit<Goal, "id" | "projectId" | "createdAt">
->;
-
-export async function createGoal(input: CreateGoalInput): Promise<Goal> {
-  const timestamp = now();
+}): Promise<Goal> {
+  const t = now();
   const goal: Goal = {
     id: newId(),
     projectId: input.projectId,
-    title: input.title.trim(),
+    title: input.title,
     targetDate: input.targetDate ?? null,
-    status: input.status ?? "in_progress",
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    status: "in_progress",
+    createdAt: t,
+    updatedAt: t,
     syncStatus: "pending",
   };
-
   await db.goals.add(goal);
   return goal;
 }
 
-export async function listGoals(projectId?: string): Promise<Goal[]> {
-  const collection = projectId ? db.goals.where("projectId").equals(projectId) : db.goals;
-  return collection.toArray();
+export async function setGoalStatus(id: string, status: GoalStatus): Promise<void> {
+  await db.goals.update(id, { status, updatedAt: now(), syncStatus: "pending" });
 }
 
-export async function getGoal(goalId: string): Promise<Goal | undefined> {
-  return db.goals.get(goalId);
-}
-
-export async function updateGoal(
-  goalId: string,
-  input: UpdateGoalInput,
-): Promise<void> {
-  await db.goals.update(goalId, {
-    ...input,
-    title: input.title?.trim(),
-    updatedAt: now(),
-    syncStatus: "pending",
-  });
-}
-
-export async function deleteGoal(goalId: string): Promise<void> {
-  await db.goals.delete(goalId);
+export async function deleteGoal(id: string): Promise<void> {
+  await db.goals.delete(id);
 }

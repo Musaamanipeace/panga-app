@@ -96,4 +96,4 @@ docs/           # IMPLEMENTATION-PLAN.md — the full architecture doc
 
 ## Next stage
 
-**Stage 2: Local data layer** — Dexie CRUD functions for Projects and Tasks, wired into the Dashboard and Project view so the app is genuinely usable offline, with no cloud involved yet.
+**Stage 3 onward:** see [`docs/NEXT-IMPLEMENTATION-INSTRUCTIONS.md`](docs/NEXT-IMPLEMENTATION-INSTRUCTIONS.md) — concrete, decided, copy-paste-ready instructions (voice-to-text, Firebase sync, Contacts, AI planner), including the exact commit message and git commands to run after each stage.

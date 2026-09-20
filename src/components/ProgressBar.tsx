@@ -1,17 +1,11 @@
-type ProgressBarProps = {
-  value: number;
-  label?: string;
-};
+interface Props {
+  percent: number;
+}
 
-export default function ProgressBar({ value, label }: ProgressBarProps) {
-  const progress = Math.max(0, Math.min(100, Math.round(value)));
-
+export default function ProgressBar({ percent }: Props) {
   return (
-    <div className="progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-      <div className="progress-track">
-        <div className="progress-value" style={{ width: `${progress}%` }} />
-      </div>
-      {label ? <span className="progress-label">{label}</span> : <span className="progress-label">{progress}%</span>}
+    <div className="progress-track" aria-label={`${percent}% complete`}>
+      <div className="progress-fill" style={{ width: `${percent}%` }} />
     </div>
   );
 }
