@@ -1,6 +1,15 @@
 // src/data/resources.ts
-import { db, type Resource, type ResourceCategory } from "./db";
+import { db, type Resource, type ResourceImage, type ResourceCategoryDef } from "./db";
 import { newId, now } from "./utils";
+
+export async function listResourceCategories(): Promise<ResourceCategoryDef[]> {
+  const stored = await db.settings.get("resourceCategories");
+  return (stored?.value as ResourceCategoryDef[]) ?? [];
+}
+
+export async function saveResourceCategories(cats: ResourceCategoryDef[]) {
+  await db.settings.put({ key: "resourceCategories", value: cats });
+}
 
 export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
   return db.resources.where("projectId").equals(projectId).sortBy("updatedAt");
@@ -8,9 +17,11 @@ export async function listResourcesForProject(projectId: string): Promise<Resour
 
 export async function createResource(input: {
   projectId: string;
-  category: ResourceCategory;
+  category: string;
   title: string;
   value: string;
+  textBody?: string;
+  images?: ResourceImage[];
   notes?: string;
   tags?: string[];
 }): Promise<Resource> {
@@ -21,6 +32,8 @@ export async function createResource(input: {
     category: input.category,
     title: input.title,
     value: input.value,
+    textBody: input.textBody ?? "",
+    images: input.images ?? [],
     notes: input.notes ?? "",
     tags: input.tags ?? [],
     createdAt: t,
@@ -33,11 +46,19 @@ export async function createResource(input: {
 
 export async function updateResource(
   id: string,
-  changes: Partial<Pick<Resource, "title" | "value" | "notes" | "tags" | "category">>
+  changes: Partial<Pick<Resource, "title" | "value" | "textBody" | "images" | "notes" | "tags" | "category">>
 ): Promise<void> {
   await db.resources.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
 
 export async function deleteResource(id: string): Promise<void> {
   await db.resources.delete(id);
+}
+
+export async function reassignResourcesToCategory(
+  fromCategoryId: string,
+  toCategoryId: string
+): Promise<number> {
+  if (fromCategoryId === toCategoryId) return 0;
+  return db.resources.where("category").equals(fromCategoryId).modify({ category: toCategoryId });
 }

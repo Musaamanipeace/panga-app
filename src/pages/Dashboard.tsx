@@ -55,9 +55,9 @@ export default function Dashboard() {
 
       {loading ? (
         <p className="empty-state">Loading...</p>
-      ) : projects.length === 0 ? (
+        ) : projects.length === 0 ? (
         <p className="empty-state">
-          No projects yet — add your first one above. Stored locally, works offline.
+          No projects yet — add your first one above.
         </p>
       ) : (
         <div className="project-grid">

@@ -5,7 +5,11 @@ import { listTasksForProject, createTask, setTaskStatus, deleteTask } from "../d
 import {
   listResourcesForProject,
   createResource,
+  updateResource,
   deleteResource,
+  reassignResourcesToCategory,
+  listResourceCategories,
+  saveResourceCategories,
 } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry } from "../data/docs";
 import { listGoals, createGoal, setGoalStatus, deleteGoal } from "../data/goals";
@@ -16,7 +20,8 @@ import type {
   Task,
   TaskStatus,
   Resource,
-  ResourceCategory,
+  ResourceImage,
+  ResourceCategoryDef,
   DocEntry,
   Goal,
   Issue,
@@ -28,18 +33,6 @@ import MicButton from "../components/MicButton";
 
 const TABS = ["Documentation", "Tasks", "Resources", "Goals", "Issues", "Reminders"] as const;
 type Tab = (typeof TABS)[number];
-
-const RESOURCE_CATEGORIES: { value: ResourceCategory; label: string; icon: string }[] = [
-  { value: "link", label: "Link", icon: "🔗" },
-  { value: "script", label: "Script", icon: "📜" },
-  { value: "location", label: "Location", icon: "📍" },
-  { value: "name", label: "Name of thing", icon: "🏷" },
-  { value: "reminder", label: "Reminder note", icon: "⏰" },
-  { value: "contact", label: "Contact", icon: "👤" },
-  { value: "schedule", label: "Task schedule", icon: "🗓" },
-  { value: "bookmark_group", label: "Bookmark group", icon: "📑" },
-  { value: "file", label: "File / local path", icon: "📁" },
-];
 
 export default function ProjectView() {
   const { projectId } = useParams();
@@ -233,37 +226,149 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
 // ---------- Resources ----------
 function ResourcesTab({ projectId }: { projectId: string }) {
   const [resources, setResources] = useState<Resource[]>([]);
-  const [category, setCategory] = useState<ResourceCategory>("link");
+  const [categories, setCategories] = useState<ResourceCategoryDef[]>([]);
+  const [category, setCategory] = useState<string>("");
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
-  const [filter, setFilter] = useState<ResourceCategory | "all">("all");
+  const [textBody, setTextBody] = useState("");
+  const [images, setImages] = useState<ResourceImage[]>([]);
+  const [filter, setFilter] = useState<string>("all");
+  const [editing, setEditing] = useState<Resource | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [editingCat, setEditingCat] = useState<ResourceCategoryDef | null>(null);
+
+  const catMeta = (id: string) => categories.find((c) => c.id === id);
+
+  async function loadCategories() {
+    const cats = await listResourceCategories();
+    setCategories(cats);
+    if (cats.length > 0 && !cats.some((c) => c.id === category)) {
+      setCategory(cats[0].id);
+    }
+  }
 
   async function refresh() {
-    setResources(await listResourcesForProject(projectId));
+    const [res, cats] = await Promise.all([
+      listResourcesForProject(projectId),
+      listResourceCategories(),
+    ]);
+    setResources(res);
+    setCategories(cats);
+    if (cats.length > 0 && !cats.some((c) => c.id === category)) {
+      setCategory(cats[0].id);
+    }
   }
   useEffect(() => {
+    loadCategories();
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  function fileToDataUrl(file: File): Promise<{ dataUrl: string; name: string; alt: string }> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        resolve({ dataUrl: reader.result as string, name: file.name, alt: file.name });
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function addResource(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !value.trim()) return;
-    await createResource({ projectId, category, title: title.trim(), value: value.trim() });
+    if (title.trim()) {
+      await createResource({
+        projectId,
+        category,
+        title: title.trim(),
+        value: value.trim(),
+        textBody: textBody.trim(),
+        images,
+        notes: value.trim(),
+      });
+    }
     setTitle("");
     setValue("");
+    setTextBody("");
+    setImages([]);
+    if (catMeta(category)?.supportsText === false) setCategory(categories[0]?.id ?? "");
+    refresh();
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    await updateResource(editing.id, {
+      category,
+      title: title.trim(),
+      value: value.trim(),
+      textBody: textBody.trim(),
+      images,
+    });
+    setEditing(null);
+    refresh();
+  }
+
+  function openEdit(r: Resource) {
+    setEditing(r);
+    setCategory(r.category);
+    setTitle(r.title);
+    setValue(r.value);
+    setTextBody(r.textBody ?? "");
+    setImages(r.images ?? []);
+  }
+
+  function openNew() {
+    setEditing(null);
+    setTitle("");
+    setValue("");
+    setTextBody("");
+    setImages([]);
+    const def = categories.find((c) => c.supportsText) ?? categories[0];
+    setCategory(def?.id ?? "");
+  }
+
+  async function saveCategory() {
+    const cats = [...categories];
+    if (editingCat) {
+      const i = cats.findIndex((c) => c.id === editingCat.id);
+      cats[i] = { ...editingCat, name: newCatName.trim() || editingCat.name };
+      // Reassign any resource using the deleted id (handled by delete)
+    } else {
+      const id = newCatName.toLowerCase().replace(/\W+/g, "_").replace(/^_+|_+$/g, "") || `cat_${Date.now()}`;
+      cats.push({
+        id,
+        name: newCatName.trim(),
+        icon: "🔹",
+        color: "#64748b",
+        supportsText: true,
+        supportsImage: true,
+      });
+    }
+    await saveResourceCategories(cats);
+    setCategories(cats);
+    setEditingCat(null);
+    setNewCatName("");
+    refresh();
+  }
+
+  async function deleteCategory(id: string) {
+    const fallback = categories.find((c) => c.id !== id && c.supportsText)?.id ?? categories[0]?.id ?? "";
+    await reassignResourcesToCategory(id, fallback);
+    const cats = categories.filter((c) => c.id !== id);
+    await saveResourceCategories(cats);
+    setCategories(cats);
     refresh();
   }
 
   const filtered = filter === "all" ? resources : resources.filter((r) => r.category === filter);
-  const catMeta = (c: ResourceCategory) => RESOURCE_CATEGORIES.find((x) => x.value === c)!;
 
   return (
     <div>
-      <form className="resource-form" onSubmit={addResource}>
-        <select value={category} onChange={(e) => setCategory(e.target.value as ResourceCategory)}>
-          {RESOURCE_CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+      <form className="resource-form" onSubmit={editing ? saveEdit : addResource}>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
           ))}
         </select>
         <input type="text" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -275,18 +380,69 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           onChange={(e) => setValue(e.target.value)}
         />
         <MicButton onResult={(text) => setValue(text)} />
-        <button type="submit" className="btn-primary">+ Add resource</button>
+        {catMeta(category)?.supportsText && (
+          <>
+            <textarea
+              placeholder="Text body (notes, details, description)..."
+              value={textBody}
+              onChange={(e) => setTextBody(e.target.value)}
+              rows={2}
+            />
+            <MicButton onResult={(text) => setTextBody((prev) => prev + " " + text)} />
+          </>
+        )}
+        {catMeta(category)?.supportsImage && (
+          <>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={async (e) => {
+                const files = Array.from(e.target.files ?? []);
+                const urls = await Promise.all(files.map(fileToDataUrl));
+                setImages((prev) => [...prev, ...urls]);
+                e.target.value = "";
+              }}
+            />
+            {images.length > 0 && (
+              <div className="image-preview-row">
+                {images.map((img, i) => (
+                  <div key={i} className="image-thumb">
+                    <img src={img.dataUrl} alt={img.alt} title={img.name} />
+                    <button
+                      type="button"
+                      className="thumb-remove"
+                      onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label="Remove image"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <button type="submit" className="btn-primary">{editing ? "Save" : "+ Add resource"}</button>
+        {editing && (
+          <button type="button" className="btn-secondary" onClick={() => { setEditing(null); openNew(); }}>
+            Cancel
+          </button>
+        )}
+        <button type="button" className="btn-secondary" onClick={() => setShowCategoryManager(true)}>
+          Manage categories
+        </button>
       </form>
 
       <div className="chip-row">
         <button className={`chip ${filter === "all" ? "chip-active" : ""}`} onClick={() => setFilter("all")}>All</button>
-        {RESOURCE_CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <button
-            key={c.value}
-            className={`chip ${filter === c.value ? "chip-active" : ""}`}
-            onClick={() => setFilter(c.value)}
+            key={c.id}
+            className={`chip ${filter === c.id ? "chip-active" : ""}`}
+            onClick={() => setFilter(c.id)}
           >
-            {c.icon} {c.label}
+            {c.icon} {c.name}
           </button>
         ))}
       </div>
@@ -295,21 +451,73 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         <p className="empty-state">No resources in this category yet.</p>
       ) : (
         <ul className="resource-list">
-          {filtered.map((r) => (
-            <li key={r.id} className="resource-item">
-              <span className="resource-icon">{catMeta(r.category).icon}</span>
-              <span className="resource-text">
-                <span className="resource-title">{r.title}</span>
-                {r.category === "link" || r.category === "location" ? (
-                  <a href={r.value} target="_blank" rel="noreferrer" className="resource-value-link">{r.value}</a>
-                ) : (
-                  <span className="resource-value">{r.value}</span>
-                )}
-              </span>
-              <button className="task-delete-btn" onClick={async () => { await deleteResource(r.id); refresh(); }}>✕</button>
-            </li>
-          ))}
+          {filtered.map((r) => {
+            const c = catMeta(r.category);
+            return (
+              <li key={r.id} className="resource-item">
+                <span className="resource-icon">{c?.icon ?? "🔗"}</span>
+                <span className="resource-text">
+                  <span className="resource-title">{r.title}</span>
+                  {r.category === "link" || r.category === "location" ? (
+                    <a href={r.value} target="_blank" rel="noreferrer" className="resource-value-link">{r.value}</a>
+                  ) : (
+                    <span className="resource-value">{r.value}</span>
+                  )}
+                  {r.textBody && <p className="resource-notes">{r.textBody}</p>}
+                  {r.images.length > 0 && (
+                    <div className="resource-image-row">
+                      {r.images.map((img, i) => (
+                        <img key={i} src={img.dataUrl} alt={img.alt} className="resource-image-thumb" />
+                      ))}
+                    </div>
+                  )}
+                  <span className="chip-small">{c?.name ?? r.category}</span>
+                </span>
+                <button className="task-delete-btn" onClick={async () => { await deleteResource(r.id); refresh(); }}>✕</button>
+                <button className="btn-secondary btn-small" onClick={() => openEdit(r)}>Edit</button>
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {/* Category manager modal */}
+      {showCategoryManager && (
+        <div className="modal-backdrop" onClick={() => setShowCategoryManager(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <header className="modal-header">
+              <h2>Manage resource categories</h2>
+              <button className="btn-icon" onClick={() => setShowCategoryManager(false)} aria-label="Close">✕</button>
+            </header>
+            <div className="modal-body">
+              {categories.map((c) => (
+                <div key={c.id} className="category-row">
+                  <span>{c.icon} {c.name}</span>
+                  <div>
+                    <button className="btn-secondary btn-small" onClick={() => { setEditingCat(c); setNewCatName(c.name); }}>Rename</button>
+                    <button className="btn-secondary btn-small" onClick={() => deleteCategory(c.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+              {editingCat ? (
+                <>
+                  <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} />
+                  <button className="btn-primary btn-small" onClick={saveCategory}>Save</button>
+                  <button className="btn-secondary btn-small" onClick={() => { setEditingCat(null); setNewCatName(""); }}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <input
+                    placeholder="New category name"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                  />
+                  <button className="btn-primary btn-small" onClick={saveCategory}>Add</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

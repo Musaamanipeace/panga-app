@@ -54,8 +54,9 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
       results.push({ type: "task", id: t.id, projectId: t.projectId, projectName: projectName(t.projectId), title: t.title, subtitle: `Task · ${t.status}` });
     }
   }
-  for (const r of resources) {
-    if (matches(r.title, r.value, r.notes, r.tags)) {
+   for (const r of resources) {
+    const imageNames = (r.images ?? []).map((i) => i.name + (i.alt ? " " + i.alt : ""));
+    if (matches(r.title, r.value, r.textBody, r.notes, r.tags, imageNames)) {
       results.push({ type: "resource", id: r.id, projectId: r.projectId, projectName: projectName(r.projectId), title: r.title, subtitle: `Resource · ${r.category}` });
     }
   }
