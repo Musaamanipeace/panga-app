@@ -8,7 +8,7 @@
 
 - **Local-first.** Every write happens to the device first. The cloud is a sync target, never a dependency for viewing or editing.
 - **Modular, not monolithic.** Data layer, sync engine, search index, and AI layer are separate modules with clean boundaries. Any one of them should be replaceable without touching the others.
-- **Free forever, for one user.** Every service chosen sits comfortably inside a free tier with no card requirement (Firebase Blaze is intentionally avoided for this reason).
+- **Free forever, for one user.** Every service chosen sits comfortably inside a free tier with no card requirement (Supabase free tier is used for this reason).
 - **Fewest clicks to anything.** Global search + consistent naming/positioning across every screen is a design constraint, not a feature — it shapes the schema and the navigation both.
 
 ---
@@ -20,14 +20,14 @@
 | Frontend | React + Vite | Free |
 | PWA/offline shell | vite-plugin-pwa (Workbox) | Free |
 | Local database | Dexie.js (IndexedDB wrapper) | Free |
-| Cloud database | Firebase Firestore (Spark plan) | Free |
-| Auth | Firebase Authentication | Free |
-| Hosting | Firebase Hosting or Vercel | Free |
+| Cloud database | Supabase (free tier) | Free |
+| Auth | Supabase Auth | Free |
+| Hosting | Supabase Hosting or Vercel | Free |
 | Search | FlexSearch (client-side, indexes local Dexie data) | Free |
 | AI planner | Gemini API (free tier), called from a Vercel serverless function | Free |
 | Source control | GitHub | Free |
 
-**Why not Cloud Functions:** they require the Blaze plan, which needs a payment method on file even though usage stays free. Any server-side logic (the AI planner call) goes through a Vercel function instead, keeping your Firebase project on Spark permanently.
+**Why not Cloud Functions:** not needed — Supabase handles server-side logic through Postgres rules, functions, and the built-in realtime listener. Any server-side logic that can't run in the database (the AI planner call) goes through a Vercel function instead.
 
 ---
 
@@ -167,7 +167,7 @@ Reminder {
 
 ### 4.9 `Tag` (implicit — just strings, deduplicated at index time for the search/tag-filter UI)
 
-This schema is identical in shape in both **Dexie (local)** and **Firestore (cloud)** — same field names, same types — which is what makes the sync engine simple: it's moving matching records, not transforming shapes.
+This schema is identical in shape in both **Dexie (local)** and **Supabase (cloud)** — same field names, same types — which is what makes the sync engine simple: it's moving matching records, not transforming shapes.
 
 ---
 
@@ -183,12 +183,12 @@ User action → write to Dexie (instant, always works)
                      │
         ┌────────────┴────────────┐
         ▼                          ▼
-  Online: push to Firestore   Offline: queue the change
+  Online: push to Supabase   Offline: queue the change
         │                          │
         └──────── reconnect ───────┘
                      │
                      ▼
-         Firestore change listener
+         Supabase change listener
         pulls remote changes back into Dexie
 ```
 
@@ -237,7 +237,7 @@ Recomputed locally on every task status change — cheap, and always accurate wi
 
 Two tiers, both free, both work offline-first with cloud backup:
 - **Local notifications** (via the Notifications API / service worker) for anything already known on-device — due tasks, reminders whose `triggerAt` has passed. Works even offline, fires the moment the device's clock hits the time, as long as the PWA/browser is allowed background notification permission.
-- **Cross-device awareness:** because `Reminder` records sync through Firestore like everything else, a reminder created on your phone shows up (and will fire) on your PC too, next time each device syncs.
+- **Cross-device awareness:** because `Reminder` records sync through Supabase like everything else, a reminder created on your phone shows up (and will fire) on your PC too, next time each device syncs.
 
 *(No AI email-reading — removed from scope per your decision.)*
 
@@ -249,7 +249,7 @@ Two tiers, both free, both work offline-first with cloud backup:
 panga-app/
 ├─ src/
 │  ├─ data/              # Dexie schema + local CRUD functions — the ONLY layer touching IndexedDB
-│  ├─ sync/               # Sync engine — the ONLY layer touching Firestore directly
+│  ├─ sync/               # Sync engine — the ONLY layer touching Supabase directly
 │  ├─ search/             # FlexSearch index build/query — the ONLY layer touching the search lib
 │  ├─ ai/                 # Planner request/response handling — the ONLY layer touching the Vercel function
 │  ├─ features/
@@ -269,7 +269,7 @@ panga-app/
 │  └─ manifest.json        # PWA manifest
 └─ vite.config.ts
 ```
-Every feature folder only imports from `data/`, `sync/`, and `search/` through their exported functions — never reaching into Dexie or Firestore directly. This is what lets you swap, say, Firestore for Supabase later by rewriting only `sync/`.
+Every feature folder only imports from `data/`, `sync/`, and `search/` through their exported functions — never reaching into Dexie or Supabase directly. The modular boundary is what makes it easy to swap the cloud backend later if needed.
 
 ---
 
@@ -286,12 +286,12 @@ Every feature folder only imports from `data/`, `sync/`, and `search/` through t
 
 We'll build in this sequence, and I'll hand you a zip of the working repo after each stage:
 
-1. **Scaffold** — Vite + React + PWA plugin, basic routing, Firebase project setup instructions (with exact copy-paste commands).
+1. **Scaffold** — Vite + React + PWA plugin, basic routing, Supabase project setup instructions (with exact copy-paste commands).
 2. **Local data layer** — Dexie schema + CRUD for Projects and Tasks only. App fully usable offline at this point, no cloud yet.
 3. **Core UI** — Dashboard, Project view, Task list, with the design language above.
 4. **Resources module** — unified Resource entity + category-specific rendering.
 5. **Documentation, Goals, Issues, Progress bars.**
-6. **Firebase Auth + Firestore sync engine** — this is where offline-first cloud sync comes alive.
+6. **Supabase Auth + sync engine** — this is where offline-first cloud sync comes alive.
 7. **Global search** — FlexSearch index + Cmd/K overlay.
 8. **Contacts + Reminders/Notifications.**
 9. **AI Planner** — Vercel function + Gemini integration.

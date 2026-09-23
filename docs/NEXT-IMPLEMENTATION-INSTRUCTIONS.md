@@ -2,7 +2,7 @@
 
 **Read this whole file before writing any code.** These are concrete, decided instructions — do not re-research alternatives, do not ask the user which library to use, the decisions are already made below. Follow the stages in order. **After every stage, commit and push to `main`** using the exact commands given at the end of each stage.
 
-Current state: Stage 1 (scaffold) and Stage 2 (local data layer + full UX/UI shell) are complete. All six project tabs (Documentation, Tasks, Resources, Goals, Issues, Reminders), global search (`Ctrl/Cmd+K`), and an AI assistant panel (UI only, placeholder reply) are working against local IndexedDB via Dexie. Nothing is connected to Firebase yet.
+Current state: Stage 1 (scaffold) and Stage 2 (local data layer + full UX/UI shell) are complete. All six project tabs (Documentation, Tasks, Resources, Goals, Issues, Reminders), global search (`Ctrl/Cmd+K`), and an AI assistant panel (UI only, placeholder reply) are working against local IndexedDB via Dexie. Nothing is connected to Supabase yet.
 
 ---
 
@@ -127,71 +127,78 @@ git push origin main
 
 ---
 
-## Stage 4: Firebase Auth + Firestore sync engine
+## Stage 4: Supabase Auth + sync engine
 
-This is the biggest stage. Do it in this exact order, and do not skip the auth gate step — without it, anyone with the URL could read/write the Firestore data.
+This is the biggest stage. Do it in this exact order, and do not skip the auth gate step — without it, anyone with the URL could read/write the Supabase data.
 
 ### 4.1 Prerequisite (user action, not yours)
-The user must have already completed the "Firebase project setup" steps in `README.md` and filled in `.env.local`. If `.env.local` doesn't exist or is empty, stop and tell the user to do that first — do not fabricate placeholder Firebase keys.
+The user must have already completed the "Supabase project setup" steps in `README.md` and filled in `.env.local`. If `.env.local` doesn't exist or is empty, stop and tell the user to do that first — do not fabricate placeholder Supabase keys.
+### 4.2 Add Row-Level Security policies
 
-### 4.2 Add Firestore security rules
-In the Firebase console (Firestore Database → Rules), the user needs to paste:
+In the Supabase dashboard (SQL editor), the user needs to enable RLS on each table and create policies that restrict access to the authenticated user. For each entity table, apply:
+
+```sql
+alter table "<table>" enable row level security;
+
+create policy "Allow access to own records"
+  on "<table>"
+  for all
+  using (auth.uid()::text = user_id)
+  with check (auth.uid()::text = user_id);
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
-```
-This scopes every document under `/users/{their-own-uid}/...` — no other authenticated user can read or write it. Tell the user to click "Publish" after pasting this.
+
+Each table needs a `user_id` column (text) to scope records per user. Replace `<table>` with each collection name (`projects`, `tasks`, `resources`, etc.) and run them all.
 
 ### 4.3 Auth gate
 Create `src/sync/auth.ts`:
 ```ts
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { auth } from "./firebase";
-
-const provider = new GoogleAuthProvider();
+import { signInWithOAuth, signOut, onAuthStateChange, type User } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
 
 export function signIn() {
-  return signInWithPopup(auth, provider);
+  return supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
 }
 
 export function logOut() {
-  return signOut(auth);
+  return supabase.auth.signOut();
 }
 
 export function watchAuthState(callback: (user: User | null) => void) {
-  return onAuthStateChanged(auth, callback);
+  return supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session?.user ?? null);
+  });
 }
 ```
 
-Wrap the app: in `src/App.tsx`, before rendering `<AppShell>`, check auth state. If no user, render a simple "Sign in with Google" button (reuse the Landing page — add a sign-in button there) instead of the dashboard routes. Store the signed-in `uid` in a small React context (`src/sync/AuthContext.tsx`) so every sync function below can read `auth.currentUser.uid` without prop-drilling it through every component.
+Wrap the app: in `src/App.tsx`, before rendering `<AppShell>`, check auth state. If no user, render a simple "Sign in with Google" button (reuse the Landing page — add a sign-in button there) instead of the dashboard routes. Store the signed-in `user.id` in a small React context (`src/sync/AuthContext.tsx`) so every sync function below can read the user ID without prop-drilling it through every component.
+### 4.4 Supabase table structure
 
-### 4.4 Firestore collection paths
-Every entity is stored at:
+Every entity is stored in a flat table per type:
 ```
-/users/{uid}/projects/{projectId}
-/users/{uid}/tasks/{taskId}
-/users/{uid}/resources/{resourceId}
-/users/{uid}/docEntries/{docId}
-/users/{uid}/goals/{goalId}
-/users/{uid}/issues/{issueId}
-/users/{uid}/reminders/{reminderId}
+projects
+tasks
+resources
+docEntries
+goals
+issues
+reminders
+contacts
 ```
-Flat collections per type (not nested under each project) so Firestore queries stay simple — filter by `projectId` field, exactly like the Dexie queries already do.
+Each table has the same field names and types as the Dexie schema (see `db.ts`), plus a `user_id` column used by the RLS policies above. Filter by `projectId` field, exactly like the Dexie queries already do.
 
 ### 4.5 The sync engine
 Create `src/sync/syncEngine.ts`. Its job, in plain terms:
-1. On sign-in, do one full pull: for each collection above, fetch all docs for this uid, upsert them into the matching Dexie table (skip if local `updatedAt` is newer — last-write-wins per the plan doc).
-2. Set up a Firestore `onSnapshot` listener per collection, so remote changes stream into Dexie automatically while the app is open.
-3. Hook into every existing `data/*.ts` CRUD function (`createTask`, `updateTask`, `createResource`, etc.) so that after the local Dexie write succeeds, the same change is pushed to Firestore — but only if `navigator.onLine` is true and the user's sync setting (see 4.6) is `"auto"`. If offline or in manual mode, mark the record's `syncStatus` as `"pending"` (the field already exists on every entity in `db.ts`) and leave it queued.
-4. A `flushPendingChanges()` function that pushes every locally-`"pending"` record to Firestore — call this (a) automatically whenever the browser fires an `online` event, and (b) whenever the user clicks a manual "Sync now" button.
+1. On sign-in, do one full pull: for each table above, fetch all rows for this user_id, upsert them into the matching Dexie table (skip if local `updatedAt` is newer — last-write-wins per the plan doc).
+2. Set up a Supabase `realtime` or `on` listener per table, so remote changes stream into Dexie automatically while the app is open.
+3. Hook into every existing `data/*.ts` CRUD function (`createTask`, `updateTask`, `createResource`, etc.) so that after the local Dexie write succeeds, the same change is pushed to Supabase — but only if `navigator.onLine` is true and the user's sync setting (see 4.6) is `"auto"`. If offline or in manual mode, mark the record's `syncStatus` as `"pending"` (the field already exists on every entity in `db.ts`) and leave it queued.
+4. A `flushPendingChanges()` function that pushes every locally-`"pending"` record to Supabase — call this (a) automatically whenever the browser fires an `online` event, and (b) whenever the user clicks a manual "Sync now" button.
 
-Do not rewrite the `data/*.ts` files' function signatures. Import the sync engine's `queueForSync(collectionName, record)` function and call it as the last line of every create/update function in `data/projects.ts`, `data/tasks.ts`, `data/resources.ts`, `data/docs.ts`, `data/goals.ts`, `data/issues.ts`, `data/reminders.ts`.
+Do not rewrite the `data/*.ts` files' function signatures. Import the sync engine's `queueForSync(tableName, record)` function and call it as the last line of every create/update function in `data/projects.ts`, `data/tasks.ts`, `data/resources.ts`, `data/docs.ts`, `data/goals.ts`, `data/issues.ts`, `data/reminders.ts`.
 
 ### 4.6 Sync mode setting
 Create a `settings` table in Dexie (`src/data/db.ts`, add `settings: "key"` to the schema, storing `{ key: "syncMode", value: "auto" | "manual" }`). Add a Settings page (`src/pages/Settings.tsx`, route `/settings`, link it from the header) with a toggle between the two modes, defaulting to `"auto"`. Add the one-time tooltip described in the plan doc (§5): track a `firstAutoSyncDate` in the same settings table, and if 7 days have passed since it was first set and a `syncTipShown` flag is not yet true, show one dismissible tooltip near the sync status indicator, then set the flag permanently.
@@ -202,7 +209,7 @@ Add a small dot in `AppShell.tsx`'s header: grey when there are pending (unsynce
 ### 4.8 Commit and push
 ```bash
 git add -A
-git commit -m "Stage 4: Firebase Auth (Google sign-in) + Firestore sync engine with auto/manual mode and offline queueing"
+git commit -m "Stage 4: Supabase Auth (Google sign-in) + sync engine with auto/manual mode and offline queueing"
 git push origin main
 ```
 
