@@ -1,23 +1,10 @@
 # Panga
 
 Personal, offline-first, cross-platform project & resource planner.
-Full architecture and reasoning: [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md)
 
----
-
-## Current status: **Stage 1 — Scaffold**
-
-What exists right now:
-- Vite + React + TypeScript project, builds cleanly
-- PWA support wired in (installable, service worker generates on build)
-- Dexie (local database) schema for every entity in the plan — no CRUD functions yet, that's Stage 2
-- Supabase client initialization file, waiting on your project's config values
-- Basic routing: Landing → Dashboard → Project view (placeholder content — no real data yet)
-- Design tokens (colors, borders) matching the plan's design language
-
-Nothing is wired to Supabase yet, and there's no real data in the app yet — that starts Stage 2.
-
----
+Everything runs locally in IndexedDB — no account or backend required to
+use the app. Optional add-ons: EmailJS for real OTP emails (login works in
+a "dev mode" fallback without it) and Supabase for cross-device sync.
 
 ## Run it locally
 
@@ -25,7 +12,9 @@ Nothing is wired to Supabase yet, and there's no real data in the app yet — th
 npm install
 npm run dev
 ```
-Then open the URL it prints (usually `http://localhost:5173`).
+Open the URL it prints (usually `http://localhost:5173`). Log in with any
+email — since no email service is configured by default, the OTP code is
+shown right on screen ("dev mode").
 
 To confirm the production/PWA build works:
 ```bash
@@ -33,56 +22,58 @@ npm run build
 npm run preview
 ```
 
----
+## Docs
 
-## Supabase project setup (needed before Stage 4, but fine to do now)
+- [`docs/ui.md`](docs/ui.md) — pages, motion system, tooltips, edit/delete UI
+- [`docs/backend-features.md`](docs/backend-features.md) — auth/OTP, CRUD modules, search, sync
+- [`docs/database.md`](docs/database.md) — Dexie schema, tables, resource categories
+- [`docs/build-phases.md`](docs/build-phases.md) — what's done, what's next
 
-1. Go to https://supabase.com/ and click **Start your project** (or **Sign in** if you already have an account).
-2. Click **New project**. Name it (e.g. `panga-app`), set a database password, and pick a region close to you. Click **Create new project**.
-3. Once the project is ready, go to **Project Settings → API**.
-4. Under **Project URL** copy the URL, and under **Project API keys** copy the **`anon`** (public) key.
-5. Copy `.env.example` to `.env.local`:
-   ```bash
-   cp .env.example .env.local
-   ```
-6. Paste each value from step 4 into the matching `VITE_SUPABASE_...` line in `.env.local`.
-7. In the Supabase dashboard **SQL editor**, create tables for each entity (or run `supabase db push` with a migration). Tables needed: `projects`, `tasks`, `resources`, `docEntries`, `goals`, `issues`, `contacts`, `reminders`.
-8. In the Supabase dashboard **Authentication → Providers**, enable **Google** sign-in provider (you'll need a Google OAuth client ID/secret).
+## Optional: real OTP emails (EmailJS)
 
-You don't need to complete this yet — the app doesn't touch Supabase until Stage 4. It's here so you can do it whenever convenient.
+1. Create a free account at [emailjs.com](https://www.emailjs.com) (200
+   emails/month free, no backend needed).
+2. Add an email service and a template with `to_email` and `passcode`
+   variables.
+3. Copy `.env.example` to `.env.local` and fill in
+   `VITE_EMAILJS_SERVICE_ID`, `VITE_EMAILJS_TEMPLATE_ID`,
+   `VITE_EMAILJS_PUBLIC_KEY` from your EmailJS dashboard.
 
----
+Without these, login still works — the code is just shown in the UI
+instead of emailed.
+
+## Optional: Supabase sync
+
+1. Go to [supabase.com](https://supabase.com/) → **New project**.
+2. Once ready, go to **Project Settings → API** and copy the **Project
+   URL** and **anon public key**.
+3. Copy `.env.example` to `.env.local` and fill in `VITE_SUPABASE_URL` /
+   `VITE_SUPABASE_ANON_KEY`.
+
+Sync logic itself is a future build phase (see `docs/build-phases.md`) —
+the client is initialized but nothing pushes/pulls data yet.
 
 ## Push to GitHub
 
 ```bash
-cd panga-app
 git init
 git add .
-git commit -m "Stage 1: scaffold, PWA config, Dexie schema, Supabase config placeholder"
+git commit -m "Panga: local-first planner with OTP auth and full CRUD"
 git branch -M main
 git remote add origin <your-empty-github-repo-url>
 git push -u origin main
 ```
-(`.env.local` is already git-ignored — your Firebase keys won't get committed.)
-
----
+(`.env.local` is already git-ignored — your keys won't get committed.)
 
 ## Project structure
 
 ```
 src/
-├─ data/       # Dexie (local DB) — only files touching IndexedDB. Schema done, CRUD in Stage 2.
-├─ sync/       # Supabase client + sync engine — only files touching Supabase. Client init done, sync logic in Stage 4.
-├─ search/     # FlexSearch index — built in Stage 7.
-├─ ai/         # AI planner request handling — built in Stage 9.
-├─ features/   # One folder per feature area (projects, tasks, resources, etc.)
-├─ components/ # Shared UI pieces
+├─ auth/       # OTP generation/verification + session storage
+├─ data/       # Dexie (local DB) — only files touching IndexedDB
+├─ sync/       # Supabase client (optional, not yet wired to sync logic)
+├─ search/     # Global search across all entities
+├─ components/ # Shared UI: AppShell, GlobalSearch, AIAssistant, MacheteTransition...
 └─ pages/      # Landing, Dashboard, ProjectView
-api/            # Vercel serverless function(s), added in Stage 9 (AI planner)
-docs/           # IMPLEMENTATION-PLAN.md — the full architecture doc
+docs/          # ui.md, backend-features.md, database.md, build-phases.md
 ```
-
-## Next stage
-
-**Stage 3 onward:** see [`docs/NEXT-IMPLEMENTATION-INSTRUCTIONS.md`](docs/NEXT-IMPLEMENTATION-INSTRUCTIONS.md) — concrete, decided, copy-paste-ready instructions (voice-to-text, Supabase sync, Contacts, AI planner), including the exact commit message and git commands to run after each stage.

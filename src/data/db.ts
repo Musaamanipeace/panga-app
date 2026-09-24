@@ -19,7 +19,7 @@ export type ResourceCategory =
   | "file";
 export type IssueSeverity = "low" | "medium" | "high";
 export type IssueStatus = "open" | "resolved";
-export type GoalStatus = "in_progress" | "achieved" | "missed";
+export type MilestoneStatus = "in_progress" | "achieved" | "missed";
 export type SyncStatus = "pending" | "synced";
 
 // A stored image on a resource. Data URLs keep everything in one place so the
@@ -92,12 +92,14 @@ export interface DocEntry {
   syncStatus: SyncStatus;
 }
 
-export interface Goal {
+export interface Milestone {
   id: string;
   projectId: string;
   title: string;
   targetDate: number | null;
-  status: GoalStatus;
+  status: MilestoneStatus;
+  /** Task ids that must complete before this milestone can be achieved. */
+  blockingTaskIds: string[];
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -130,7 +132,7 @@ export interface Contact {
 export interface Reminder {
   id: string;
   projectId: string | null;
-  linkedEntityType: "task" | "goal" | null;
+  linkedEntityType: "task" | "milestone" | null;
   linkedEntityId: string | null;
   message: string;
   triggerAt: number;
@@ -159,7 +161,7 @@ class PangaDB extends Dexie {
   tasks!: Table<Task, string>;
   resources!: Table<Resource, string>;
   docEntries!: Table<DocEntry, string>;
-  goals!: Table<Goal, string>;
+  milestones!: Table<Milestone, string>;
   issues!: Table<Issue, string>;
   contacts!: Table<Contact, string>;
   reminders!: Table<Reminder, string>;
@@ -180,6 +182,29 @@ class PangaDB extends Dexie {
       reminders: "id, projectId, triggerAt, status, updatedAt, syncStatus",
       settings: "key",
     });
+    // v3: goals -> milestones (renamed concept, adds blockingTaskIds).
+    this.version(3)
+      .stores({
+        projects: "id, status, updatedAt, syncStatus",
+        tasks: "id, projectId, status, dueDate, updatedAt, syncStatus, *tags",
+        resources: "id, projectId, category, updatedAt, syncStatus, *tags",
+        docEntries: "id, projectId, type, order, updatedAt, syncStatus",
+        goals: null,
+        milestones: "id, projectId, status, targetDate, updatedAt, syncStatus, *blockingTaskIds",
+        issues: "id, projectId, status, severity, updatedAt, syncStatus",
+        contacts: "id, name, updatedAt, syncStatus, *linkedProjectIds",
+        reminders: "id, projectId, triggerAt, status, updatedAt, syncStatus",
+        settings: "key",
+      })
+      .upgrade(async (tx) => {
+        // Carry over any existing goals as milestones with no blockers yet.
+        const oldGoals = await tx.table("goals").toArray();
+        if (oldGoals.length) {
+          await tx.table("milestones").bulkAdd(
+            oldGoals.map((g: Record<string, unknown>) => ({ ...g, blockingTaskIds: [] }))
+          );
+        }
+      });
   }
 }
 

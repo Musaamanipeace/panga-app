@@ -28,6 +28,13 @@ export async function createReminder(input: {
   return reminder;
 }
 
+export async function updateReminder(
+  id: string,
+  changes: Partial<Pick<Reminder, "message" | "triggerAt">>
+): Promise<void> {
+  await db.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+}
+
 export async function dismissReminder(id: string): Promise<void> {
   await db.reminders.update(id, { status: "dismissed", updatedAt: now(), syncStatus: "pending" });
 }

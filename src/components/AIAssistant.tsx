@@ -29,12 +29,17 @@ export default function AIAssistant() {
 
   return (
     <>
-      <button className="ai-fab" onClick={() => setOpen((o) => !o)} aria-label="AI Assistant">
+      <button
+        className="ai-fab clickable"
+        data-tip="Ask the assistant about this project"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="AI Assistant"
+      >
         🤖
       </button>
 
       {open && (
-        <div className="ai-panel">
+        <div className="ai-panel drawer-anim">
           <header className="ai-panel-header">
             <span>Assistant</span>
             <button onClick={() => setOpen(false)} aria-label="Close">✕</button>

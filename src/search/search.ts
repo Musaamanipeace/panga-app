@@ -10,7 +10,7 @@ export type SearchResultType =
   | "project"
   | "task"
   | "resource"
-  | "goal"
+  | "milestone"
   | "issue"
   | "docEntry";
 
@@ -27,11 +27,11 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return [];
 
-  const [projects, tasks, resources, goals, issues, docEntries] = await Promise.all([
+  const [projects, tasks, resources, milestones, issues, docEntries] = await Promise.all([
     db.projects.toArray(),
     db.tasks.toArray(),
     db.resources.toArray(),
-    db.goals.toArray(),
+    db.milestones.toArray(),
     db.issues.toArray(),
     db.docEntries.toArray(),
   ]);
@@ -60,9 +60,9 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
       results.push({ type: "resource", id: r.id, projectId: r.projectId, projectName: projectName(r.projectId), title: r.title, subtitle: `Resource · ${r.category}` });
     }
   }
-  for (const g of goals) {
-    if (matches(g.title)) {
-      results.push({ type: "goal", id: g.id, projectId: g.projectId, projectName: projectName(g.projectId), title: g.title, subtitle: `Goal · ${g.status}` });
+  for (const m of milestones) {
+    if (matches(m.title)) {
+      results.push({ type: "milestone", id: m.id, projectId: m.projectId, projectName: projectName(m.projectId), title: m.title, subtitle: `Milestone · ${m.status}` });
     }
   }
   for (const i of issues) {

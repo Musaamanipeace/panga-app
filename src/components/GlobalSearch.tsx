@@ -6,7 +6,7 @@ const TYPE_ICON: Record<SearchResult["type"], string> = {
   project: "📁",
   task: "☐",
   resource: "🔗",
-  goal: "🎯",
+  milestone: "🎯",
   issue: "⚠",
   docEntry: "📄",
 };
@@ -52,18 +52,22 @@ export default function GlobalSearch() {
 
   return (
     <>
-      <button className="global-search-trigger" onClick={() => setOpen(true)}>
+      <button
+        className="global-search-trigger clickable"
+        data-tip="Global search: query settings, platform features, or open saved files"
+        onClick={() => setOpen(true)}
+      >
         <span>🔍 Search everything...</span>
         <kbd>Ctrl K</kbd>
       </button>
 
       {open && (
         <div className="search-overlay" onClick={() => setOpen(false)}>
-          <div className="search-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="search-panel search-panel-open" onClick={(e) => e.stopPropagation()}>
             <input
               ref={inputRef}
               type="text"
-              placeholder="Search projects, tasks, resources, goals, issues, docs..."
+              placeholder="Search projects, tasks, resources, milestones, issues, docs..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -74,7 +78,7 @@ export default function GlobalSearch() {
                 <p className="empty-state">No matches.</p>
               ) : (
                 results.map((r) => (
-                  <button key={`${r.type}-${r.id}`} className="search-result-row" onClick={() => goTo(r)}>
+                  <button key={`${r.type}-${r.id}`} className="search-result-row clickable" onClick={() => goTo(r)}>
                     <span className="search-result-icon">{TYPE_ICON[r.type]}</span>
                     <span className="search-result-text">
                       <span className="search-result-title">{r.title}</span>

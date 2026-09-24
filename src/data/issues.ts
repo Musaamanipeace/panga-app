@@ -28,6 +28,13 @@ export async function createIssue(input: {
   return issue;
 }
 
+export async function updateIssue(
+  id: string,
+  changes: Partial<Pick<Issue, "title" | "description" | "severity">>
+): Promise<void> {
+  await db.issues.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+}
+
 export async function setIssueStatus(id: string, status: IssueStatus): Promise<void> {
   await db.issues.update(id, { status, updatedAt: now(), syncStatus: "pending" });
 }

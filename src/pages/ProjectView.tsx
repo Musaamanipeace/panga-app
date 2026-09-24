@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getProject, getProjectProgress } from "../data/projects";
-import { listTasksForProject, createTask, setTaskStatus, deleteTask } from "../data/tasks";
+import { getProject, getProjectTaskStats } from "../data/projects";
+import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask } from "../data/tasks";
 import {
   listResourcesForProject,
   createResource,
@@ -11,10 +11,17 @@ import {
   listResourceCategories,
   saveResourceCategories,
 } from "../data/resources";
-import { listDocEntries, createDocEntry, updateDocEntry } from "../data/docs";
-import { listGoals, createGoal, setGoalStatus, deleteGoal } from "../data/goals";
-import { listIssues, createIssue, setIssueStatus, deleteIssue } from "../data/issues";
-import { listReminders, createReminder, dismissReminder, deleteReminder } from "../data/reminders";
+import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry } from "../data/docs";
+import {
+  listMilestones,
+  createMilestone,
+  updateMilestone,
+  setMilestoneStatus,
+  deleteMilestone,
+  reconcileMilestoneStatuses,
+} from "../data/milestones";
+import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue } from "../data/issues";
+import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder } from "../data/reminders";
 import type {
   Project,
   Task,
@@ -23,7 +30,7 @@ import type {
   ResourceImage,
   ResourceCategoryDef,
   DocEntry,
-  Goal,
+  Milestone,
   Issue,
   IssueSeverity,
   Reminder,
@@ -31,19 +38,31 @@ import type {
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
 
-const TABS = ["Documentation", "Tasks", "Resources", "Goals", "Issues", "Reminders"] as const;
+const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Issues", "Reminders"] as const;
 type Tab = (typeof TABS)[number];
+
+const TAB_HINTS: Record<Tab, string> = {
+  Documentation: "Upload or view project README, wireframes, and structural specs",
+  Tasks: "Track active, scheduled, and remaining tasks",
+  Resources: "Notes, scripts, links, contacts, secrets, calendar, and images",
+  Milestones: "Phase checkpoints — hover a milestone to see its blocking tasks",
+  Issues: "Log setbacks and blockers with a severity rating",
+  Reminders: "Schedule follow-up nudges for this project",
+};
 
 export default function ProjectView() {
   const { projectId } = useParams();
   const [project, setProject] = useState<Project | null>(null);
   const [progress, setProgress] = useState(0);
+  const [pending, setPending] = useState(0);
   const [activeTab, setActiveTab] = useState<Tab>("Documentation");
 
   async function refreshProject() {
     if (!projectId) return;
     setProject((await getProject(projectId)) ?? null);
-    setProgress(await getProjectProgress(projectId));
+    const stats = await getProjectTaskStats(projectId);
+    setProgress(stats.percent);
+    setPending(stats.pending);
   }
 
   useEffect(() => {
@@ -68,14 +87,15 @@ export default function ProjectView() {
         </div>
       </header>
 
-      <ProgressBar percent={progress} />
+      <ProgressBar percent={progress} pending={pending} />
       <span className="progress-label">{progress}% complete</span>
 
       <nav className="tab-bar">
         {TABS.map((tab) => (
           <button
             key={tab}
-            className={`tab-btn ${activeTab === tab ? "tab-btn-active" : ""}`}
+            className={`tab-btn clickable ${activeTab === tab ? "tab-btn-active" : ""}`}
+            data-tip={TAB_HINTS[tab]}
             onClick={() => setActiveTab(tab)}
           >
             {tab}
@@ -87,7 +107,7 @@ export default function ProjectView() {
         {activeTab === "Documentation" && <DocumentationTab projectId={projectId} />}
         {activeTab === "Tasks" && <TasksTab projectId={projectId} onChange={refreshProject} />}
         {activeTab === "Resources" && <ResourcesTab projectId={projectId} />}
-        {activeTab === "Goals" && <GoalsTab projectId={projectId} />}
+        {activeTab === "Milestones" && <MilestonesTab projectId={projectId} />}
         {activeTab === "Issues" && <IssuesTab projectId={projectId} />}
         {activeTab === "Reminders" && <RemindersTab projectId={projectId} />}
       </div>
@@ -120,6 +140,18 @@ function DocumentationTab({ projectId }: { projectId: string }) {
     await updateDocEntry(id, { content });
   }
 
+  async function onTitleChange(id: string, title: string) {
+    if (!title.trim()) return;
+    await updateDocEntry(id, { title: title.trim() });
+    refresh();
+  }
+
+  async function onDelete(id: string) {
+    if (!confirm("Delete this section?")) return;
+    await deleteDocEntry(id);
+    refresh();
+  }
+
   return (
     <div>
       <form className="inline-form" onSubmit={addOutline}>
@@ -142,7 +174,20 @@ function DocumentationTab({ projectId }: { projectId: string }) {
         <div className="doc-list">
           {entries.map((entry) => (
             <div key={entry.id} className="doc-entry">
-              <h3>{entry.title}</h3>
+              <div className="doc-entry-header">
+                <input
+                  className="doc-entry-title-input"
+                  defaultValue={entry.title}
+                  onBlur={(e) => onTitleChange(entry.id, e.target.value)}
+                />
+                <button
+                  className="task-delete-btn clickable"
+                  data-tip="Delete section"
+                  onClick={() => onDelete(entry.id)}
+                >
+                  ✕
+                </button>
+              </div>
               <textarea
                 defaultValue={entry.content}
                 placeholder="Write here..."
@@ -162,6 +207,8 @@ function DocumentationTab({ projectId }: { projectId: string }) {
 function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   async function refresh() {
     setTasks(await listTasksForProject(projectId));
@@ -187,6 +234,20 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
       inactive: "active",
     };
     await setTaskStatus(task.id, next[task.status]);
+    await reconcileMilestoneStatuses(projectId);
+    refresh();
+  }
+
+  function startEdit(task: Task) {
+    setEditingId(task.id);
+    setEditValue(task.title);
+  }
+
+  async function saveEdit(id: string) {
+    if (editValue.trim()) {
+      await updateTask(id, { title: editValue.trim() });
+    }
+    setEditingId(null);
     refresh();
   }
 
@@ -212,8 +273,26 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
               <button className="task-status-btn" onClick={() => cycleStatus(task)}>
                 {task.status === "completed" ? "✓" : task.status === "inactive" ? "–" : "○"}
               </button>
-              <span className="task-title">{task.title}</span>
+              {editingId === task.id ? (
+                <input
+                  className="task-title-input"
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => saveEdit(task.id)}
+                  onKeyDown={(e) => e.key === "Enter" && saveEdit(task.id)}
+                />
+              ) : (
+                <span className="task-title">{task.title}</span>
+              )}
               <span className="task-status-label">{task.status}</span>
+              <button
+                className="btn-icon clickable"
+                data-tip="Rename task"
+                onClick={() => startEdit(task)}
+              >
+                ✎
+              </button>
               <button className="task-delete-btn" onClick={async () => { await deleteTask(task.id); refresh(); }}>✕</button>
             </li>
           ))}
@@ -523,53 +602,167 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   );
 }
 
-// ---------- Goals ----------
-function GoalsTab({ projectId }: { projectId: string }) {
-  const [goals, setGoals] = useState<Goal[]>([]);
+// ---------- Milestones ----------
+function MilestonesTab({ projectId }: { projectId: string }) {
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [blockingTaskIds, setBlockingTaskIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   async function refresh() {
-    setGoals(await listGoals(projectId));
+    await reconcileMilestoneStatuses(projectId);
+    const [m, t] = await Promise.all([listMilestones(projectId), listTasksForProject(projectId)]);
+    setMilestones(m);
+    setTasks(t);
   }
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  async function addGoal(e: React.FormEvent) {
+  const taskById = (id: string) => tasks.find((t) => t.id === id);
+
+  async function addMilestone(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    await createGoal({ projectId, title: title.trim() });
+    await createMilestone({
+      projectId,
+      title: title.trim(),
+      targetDate: targetDate ? new Date(targetDate).getTime() : null,
+      blockingTaskIds,
+    });
     setTitle("");
+    setTargetDate("");
+    setBlockingTaskIds([]);
     refresh();
   }
 
+  async function saveEdit(id: string) {
+    if (editValue.trim()) await updateMilestone(id, { title: editValue.trim() });
+    setEditingId(null);
+    refresh();
+  }
+
+  function toggleBlocker(id: string) {
+    setBlockingTaskIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  const sorted = [...milestones].sort((a, b) => (a.targetDate ?? Infinity) - (b.targetDate ?? Infinity));
+
   return (
     <div>
-      <form className="inline-form" onSubmit={addGoal}>
-        <input type="text" placeholder="New goal..." value={title} onChange={(e) => setTitle(e.target.value)} />
+      <form className="resource-form" onSubmit={addMilestone}>
+        <input
+          type="text"
+          placeholder="New milestone (phase checkpoint)..."
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
         <MicButton onResult={(text) => setTitle(text)} />
-        <button type="submit" className="btn-primary">+ Add goal</button>
+        <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+        <button type="submit" className="btn-primary">+ Add milestone</button>
       </form>
-      {goals.length === 0 ? (
-        <p className="empty-state">No goals yet.</p>
-      ) : (
-        <ul className="task-list">
-          {goals.map((g) => (
-            <li key={g.id} className={`task-item goal-${g.status}`}>
-              <span className="task-title">{g.title}</span>
-              <select
-                value={g.status}
-                onChange={async (e) => { await setGoalStatus(g.id, e.target.value as Goal["status"]); refresh(); }}
+
+      {tasks.length > 0 && (
+        <div className="blocker-picker">
+          <span className="blocker-picker-label">Blocking tasks for the new milestone:</span>
+          <div className="chip-row">
+            {tasks.map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                className={`chip ${blockingTaskIds.includes(t.id) ? "chip-active" : ""}`}
+                onClick={() => toggleBlocker(t.id)}
               >
-                <option value="in_progress">In progress</option>
-                <option value="achieved">Achieved</option>
-                <option value="missed">Missed</option>
-              </select>
-              <button className="task-delete-btn" onClick={async () => { await deleteGoal(g.id); refresh(); }}>✕</button>
-            </li>
-          ))}
-        </ul>
+                {t.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sorted.length === 0 ? (
+        <p className="empty-state">
+          No milestones yet. Add a phase checkpoint above and (optionally) attach the
+          tasks that block it — the milestone auto-completes once they're all done.
+        </p>
+      ) : (
+        <div className="milestone-track">
+          {sorted.map((m) => {
+            const blockers = m.blockingTaskIds.map(taskById).filter(Boolean) as Task[];
+            const pendingBlockers = blockers.filter((t) => t.status !== "completed");
+            return (
+              <div
+                key={m.id}
+                className={`milestone-node milestone-${m.status}`}
+                onMouseEnter={() => setHoveredId(m.id)}
+                onMouseLeave={() => setHoveredId((cur) => (cur === m.id ? null : cur))}
+              >
+                <div className="milestone-dot" data-tip="Hover to see blocking tasks" />
+                <div className="milestone-body">
+                  {editingId === m.id ? (
+                    <input
+                      className="task-title-input"
+                      autoFocus
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => saveEdit(m.id)}
+                      onKeyDown={(e) => e.key === "Enter" && saveEdit(m.id)}
+                    />
+                  ) : (
+                    <span className="milestone-title">{m.title}</span>
+                  )}
+                  {m.targetDate && (
+                    <span className="milestone-date">{new Date(m.targetDate).toLocaleDateString()}</span>
+                  )}
+                  <select
+                    value={m.status}
+                    onChange={async (e) => { await setMilestoneStatus(m.id, e.target.value as Milestone["status"]); refresh(); }}
+                  >
+                    <option value="in_progress">In progress</option>
+                    <option value="achieved">Achieved</option>
+                    <option value="missed">Missed</option>
+                  </select>
+                  <button
+                    className="btn-icon clickable"
+                    data-tip="Rename milestone"
+                    onClick={() => { setEditingId(m.id); setEditValue(m.title); }}
+                  >
+                    ✎
+                  </button>
+                  <button className="task-delete-btn" onClick={async () => { await deleteMilestone(m.id); refresh(); }}>✕</button>
+                </div>
+
+                {hoveredId === m.id && (
+                  <div className="milestone-hover-panel dropdown-anim">
+                    {blockers.length === 0 ? (
+                      <p className="empty-state">No blocking tasks linked.</p>
+                    ) : (
+                      <>
+                        <p className="milestone-hover-title">
+                          {pendingBlockers.length === 0
+                            ? "All blocking tasks complete"
+                            : `${pendingBlockers.length} of ${blockers.length} blocking task(s) pending`}
+                        </p>
+                        <ul className="milestone-blocker-list">
+                          {blockers.map((t) => (
+                            <li key={t.id} className={`task-${t.status}`}>
+                              {t.status === "completed" ? "✓" : "○"} {t.title}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -580,6 +773,8 @@ function IssuesTab({ projectId }: { projectId: string }) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [title, setTitle] = useState("");
   const [severity, setSeverity] = useState<IssueSeverity>("medium");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   async function refresh() {
     setIssues(await listIssues(projectId));
@@ -594,6 +789,12 @@ function IssuesTab({ projectId }: { projectId: string }) {
     if (!title.trim()) return;
     await createIssue({ projectId, title: title.trim(), severity });
     setTitle("");
+    refresh();
+  }
+
+  async function saveEdit(id: string) {
+    if (editValue.trim()) await updateIssue(id, { title: editValue.trim() });
+    setEditingId(null);
     refresh();
   }
 
@@ -615,13 +816,39 @@ function IssuesTab({ projectId }: { projectId: string }) {
         <ul className="task-list">
           {issues.map((i) => (
             <li key={i.id} className={`task-item issue-${i.severity}`}>
-              <span className="task-title">{i.title}</span>
-              <span className="task-status-label">{i.severity} · {i.status}</span>
+              {editingId === i.id ? (
+                <input
+                  className="task-title-input"
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => saveEdit(i.id)}
+                  onKeyDown={(e) => e.key === "Enter" && saveEdit(i.id)}
+                />
+              ) : (
+                <span className="task-title">{i.title}</span>
+              )}
+              <select
+                value={i.severity}
+                onChange={async (e) => { await updateIssue(i.id, { severity: e.target.value as IssueSeverity }); refresh(); }}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+              <span className="task-status-label">{i.status}</span>
               {i.status === "open" && (
                 <button className="btn-secondary" onClick={async () => { await setIssueStatus(i.id, "resolved"); refresh(); }}>
                   Resolve
                 </button>
               )}
+              <button
+                className="btn-icon clickable"
+                data-tip="Rename issue"
+                onClick={() => { setEditingId(i.id); setEditValue(i.title); }}
+              >
+                ✎
+              </button>
               <button className="task-delete-btn" onClick={async () => { await deleteIssue(i.id); refresh(); }}>✕</button>
             </li>
           ))}
@@ -636,6 +863,8 @@ function RemindersTab({ projectId }: { projectId: string }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [message, setMessage] = useState("");
   const [when, setWhen] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   async function refresh() {
     setReminders(await listReminders(projectId));
@@ -654,6 +883,12 @@ function RemindersTab({ projectId }: { projectId: string }) {
     refresh();
   }
 
+  async function saveEdit(id: string) {
+    if (editValue.trim()) await updateReminder(id, { message: editValue.trim() });
+    setEditingId(null);
+    refresh();
+  }
+
   return (
     <div>
       <form className="resource-form" onSubmit={addReminder}>
@@ -668,13 +903,40 @@ function RemindersTab({ projectId }: { projectId: string }) {
         <ul className="task-list">
           {reminders.map((r) => (
             <li key={r.id} className={`task-item reminder-${r.status}`}>
-              <span className="task-title">{r.message}</span>
-              <span className="task-status-label">{new Date(r.triggerAt).toLocaleString()}</span>
+              {editingId === r.id ? (
+                <input
+                  className="task-title-input"
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={() => saveEdit(r.id)}
+                  onKeyDown={(e) => e.key === "Enter" && saveEdit(r.id)}
+                />
+              ) : (
+                <span className="task-title">{r.message}</span>
+              )}
+              <input
+                type="datetime-local"
+                className="reminder-time-input"
+                defaultValue={new Date(r.triggerAt - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                onChange={async (e) => {
+                  if (!e.target.value) return;
+                  await updateReminder(r.id, { triggerAt: new Date(e.target.value).getTime() });
+                  refresh();
+                }}
+              />
               {r.status === "pending" && (
                 <button className="btn-secondary" onClick={async () => { await dismissReminder(r.id); refresh(); }}>
                   Dismiss
                 </button>
               )}
+              <button
+                className="btn-icon clickable"
+                data-tip="Rename reminder"
+                onClick={() => { setEditingId(r.id); setEditValue(r.message); }}
+              >
+                ✎
+              </button>
               <button className="task-delete-btn" onClick={async () => { await deleteReminder(r.id); refresh(); }}>✕</button>
             </li>
           ))}

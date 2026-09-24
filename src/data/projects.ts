@@ -49,12 +49,12 @@ export async function deleteProject(id: string): Promise<void> {
   // Cascade: a project's tasks/resources/etc. go with it.
   await db.transaction(
     "rw",
-    [db.projects, db.tasks, db.resources, db.docEntries, db.goals, db.issues, db.reminders],
+    [db.projects, db.tasks, db.resources, db.docEntries, db.milestones, db.issues, db.reminders],
     async () => {
       await db.tasks.where("projectId").equals(id).delete();
       await db.resources.where("projectId").equals(id).delete();
       await db.docEntries.where("projectId").equals(id).delete();
-      await db.goals.where("projectId").equals(id).delete();
+      await db.milestones.where("projectId").equals(id).delete();
       await db.issues.where("projectId").equals(id).delete();
       await db.reminders.where("projectId").equals(id).delete();
       await db.projects.delete(id);
@@ -68,4 +68,15 @@ export async function getProjectProgress(projectId: string): Promise<number> {
   if (tasks.length === 0) return 0;
   const completed = tasks.filter((t) => t.status === "completed").length;
   return Math.round((completed / tasks.length) * 100);
+}
+
+/** Task counts used to power the milestone hover hint (completion % + pending count). */
+export async function getProjectTaskStats(
+  projectId: string
+): Promise<{ total: number; completed: number; pending: number; percent: number }> {
+  const tasks = await db.tasks.where("projectId").equals(projectId).toArray();
+  const completed = tasks.filter((t) => t.status === "completed").length;
+  const pending = tasks.filter((t) => t.status !== "completed").length;
+  const percent = tasks.length === 0 ? 0 : Math.round((completed / tasks.length) * 100);
+  return { total: tasks.length, completed, pending, percent };
 }
