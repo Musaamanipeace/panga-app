@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 import ProjectView from "./pages/ProjectView";
+import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
 import { isLoggedIn } from "./auth/session";
@@ -29,6 +30,7 @@ function App() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

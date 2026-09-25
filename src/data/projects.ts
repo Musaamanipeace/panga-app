@@ -49,7 +49,7 @@ export async function deleteProject(id: string): Promise<void> {
   // Cascade: a project's tasks/resources/etc. go with it.
   await db.transaction(
     "rw",
-    [db.projects, db.tasks, db.resources, db.docEntries, db.milestones, db.issues, db.reminders],
+    [db.projects, db.tasks, db.resources, db.docEntries, db.milestones, db.issues, db.reminders, db.calendarEvents, db.scheduleItems],
     async () => {
       await db.tasks.where("projectId").equals(id).delete();
       await db.resources.where("projectId").equals(id).delete();
@@ -57,6 +57,8 @@ export async function deleteProject(id: string): Promise<void> {
       await db.milestones.where("projectId").equals(id).delete();
       await db.issues.where("projectId").equals(id).delete();
       await db.reminders.where("projectId").equals(id).delete();
+      await db.calendarEvents.where("projectId").equals(id).delete();
+      await db.scheduleItems.where("projectId").equals(id).delete();
       await db.projects.delete(id);
     }
   );

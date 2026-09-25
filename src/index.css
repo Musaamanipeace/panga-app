@@ -214,6 +214,99 @@ body {
   color: #6b7280;
 }
 
+/* ---- Dashboard sections ---- */
+.dashboard-section {
+  margin-bottom: 24px;
+}
+.section-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.alert-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.alert-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent-issue);
+  border-radius: var(--radius);
+  background: #fef2f2;
+  font-size: 13px;
+}
+.alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent-issue);
+  flex-shrink: 0;
+}
+.alert-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.alert-title {
+  font-weight: 500;
+  color: var(--color-text);
+}
+.alert-subtitle {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.alert-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent-issue);
+  text-decoration: none;
+}
+.alert-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Summary cards ---- */
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent-task);
+  border-radius: var(--radius);
+  background: white;
+  text-decoration: none;
+  color: var(--color-text);
+  text-align: center;
+}
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+.summary-card-num {
+  font-size: 28px;
+  font-weight: 700;
+}
+.summary-card-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 .task-list {
   list-style: none;
   padding: 0;
@@ -250,12 +343,17 @@ body {
 }
 
 .task-status-btn {
-  width: 26px;
+  min-width: 56px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: white;
   cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .task-title {
@@ -1203,3 +1301,157 @@ button:active,
 }
 .milestone-blocker-list li.task-completed { color: #4ade80; }
 .milestone-blocker-list li:not(.task-completed) { color: #fbbf24; }
+
+/* ---- Scheduler (§3) ---- */
+.scheduler-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.scheduler-mode-toggle .tab-btn {
+  flex: 1;
+}
+.sliding-prompt-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sliding-prompt-box textarea {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.scheduler-status {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin: 8px 0;
+}
+.scheduler-status.loading {
+  background: #eff6ff;
+  color: var(--color-accent-task);
+}
+.scheduler-status.done {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+/* ---- Calendar (§4) ---- */
+.calendar-event-item {
+  position: relative;
+}
+.calendar-hangout-btn {
+  margin-left: auto;
+}
+
+/* ---- Resources (§1) ---- */
+.resource-category-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.resource-category-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+.file-attachment {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-subtle);
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--color-text);
+  margin-right: 6px;
+  transition: var(--transition);
+}
+.file-attachment:hover {
+  background: white;
+  transform: translateY(-1px);
+}
+.file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+.file-preview-name {
+  font-size: 9px;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 2px;
+}
+
+/* ---- Secrets vault (§5) ---- */
+.secrets-vault {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-subtle);
+}
+.secrets-vault input {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+/* ---- Settings page (§9) ---- */
+.settings-page {
+  max-width: 720px;
+}
+.settings-section {
+  margin-bottom: 28px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: white;
+}
+.settings-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.settings-help {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+.settings-help a {
+  color: var(--color-accent-primary);
+  text-decoration: none;
+}
+.settings-help a:hover {
+  text-decoration: underline;
+}
+.settings-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-form input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.settings-form button {
+  flex-shrink: 0;
+}
+

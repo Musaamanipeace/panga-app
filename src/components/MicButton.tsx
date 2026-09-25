@@ -6,7 +6,7 @@ interface Props {
 
 export default function MicButton({ onResult }: Props) {
   const { listening, start, stop, supported } = useVoiceInput(onResult);
-  if (!supported) return null; // hide entirely on unsupported browsers, don't show a broken button
+  if (!supported) return null;
 
   return (
     <button
@@ -15,8 +15,9 @@ export default function MicButton({ onResult }: Props) {
       onClick={listening ? stop : start}
       aria-label={listening ? "Stop recording" : "Start voice input"}
       title={listening ? "Listening... click to stop" : "Click to speak"}
+      data-tip={listening ? "Listening... click to stop" : "Click to speak"}
     >
-      {listening ? "🔴" : "🎤"}
+      {listening ? "● REC" : "MIC"}
     </button>
   );
 }

@@ -21,6 +21,13 @@ export default function AppShell() {
           Panga
         </Link>
         <GlobalSearch />
+        <Link
+          to="/settings"
+          className="btn-secondary btn-small clickable"
+          data-tip="Settings: API keys, calendar connection, secrets vault"
+        >
+          Settings
+        </Link>
         <button
           className="btn-secondary btn-small clickable logout-btn"
           data-tip={email ? `Signed in as ${email} — click to log out` : "Log out"}

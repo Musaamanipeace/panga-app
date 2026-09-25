@@ -72,7 +72,7 @@ export default function ProjectCard({ project, progress, pending, onChange }: Pr
             data-tip="Rename project"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenaming(true); }}
           >
-            ✎
+            Edit
           </button>
           <button
             type="button"
@@ -80,7 +80,7 @@ export default function ProjectCard({ project, progress, pending, onChange }: Pr
             data-tip="Delete project"
             onClick={handleDelete}
           >
-            🗑
+            Del
           </button>
         </div>
       </div>

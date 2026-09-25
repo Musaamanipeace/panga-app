@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { globalSearch, type SearchResult } from "../search/search";
 
 const TYPE_ICON: Record<SearchResult["type"], string> = {
-  project: "📁",
-  task: "☐",
-  resource: "🔗",
-  milestone: "🎯",
-  issue: "⚠",
-  docEntry: "📄",
+  project: "[",
+  task: "-",
+  resource: "#",
+  milestone: "*",
+  issue: "!",
+  docEntry: "=",
+  setting: "@",
+  savedFile: "\u00e6", // file glyph
 };
 
 export default function GlobalSearch() {
@@ -47,7 +49,11 @@ export default function GlobalSearch() {
   function goTo(result: SearchResult) {
     setOpen(false);
     setQuery("");
-    navigate(`/project/${result.projectId}`);
+    if (result.action === "openSettings") {
+      navigate("/settings", { state: { focus: result.target } });
+    } else if (result.action === "navigate" && result.target) {
+      navigate(result.target);
+    }
   }
 
   return (
@@ -57,7 +63,7 @@ export default function GlobalSearch() {
         data-tip="Global search: query settings, platform features, or open saved files"
         onClick={() => setOpen(true)}
       >
-        <span>🔍 Search everything...</span>
+        <span>[ Search ]</span>
         <kbd>Ctrl K</kbd>
       </button>
 
@@ -67,7 +73,7 @@ export default function GlobalSearch() {
             <input
               ref={inputRef}
               type="text"
-              placeholder="Search projects, tasks, resources, milestones, issues, docs..."
+              placeholder="Search projects, tasks, resources, milestones, issues, docs, settings, files..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -78,7 +84,11 @@ export default function GlobalSearch() {
                 <p className="empty-state">No matches.</p>
               ) : (
                 results.map((r) => (
-                  <button key={`${r.type}-${r.id}`} className="search-result-row clickable" onClick={() => goTo(r)}>
+                  <button
+                    key={`${r.type}-${r.id}`}
+                    className="search-result-row clickable"
+                    onClick={() => goTo(r)}
+                  >
                     <span className="search-result-icon">{TYPE_ICON[r.type]}</span>
                     <span className="search-result-text">
                       <span className="search-result-title">{r.title}</span>

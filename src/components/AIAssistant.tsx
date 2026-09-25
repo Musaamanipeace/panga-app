@@ -35,7 +35,7 @@ export default function AIAssistant() {
         onClick={() => setOpen((o) => !o)}
         aria-label="AI Assistant"
       >
-        🤖
+        AI
       </button>
 
       {open && (

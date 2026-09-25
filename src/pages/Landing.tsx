@@ -42,9 +42,9 @@ export default function Landing() {
   }
 
   return (
-    <div className="page landing">
-      <div className="landing-mark">🔪</div>
-      <h1>Panga</h1>
+<div className="page landing">
+        <div className="landing-mark" data-tip="Panga">P</div>
+        <h1>Panga</h1>
       <p>Project &amp; resource planner.</p>
 
       {step === "email" ? (
