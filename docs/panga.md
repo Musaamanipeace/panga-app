@@ -4,7 +4,7 @@ Personal, open-source, offline-first project and resource planner for one user. 
 
 ## 1. Current state
 
-**Built:** Vite, React, TypeScript, PWA scaffold; Dexie (IndexedDB) data layer with create, edit and delete for projects, tasks, resources, documentation, milestones, issues and reminders; in-memory global search; voice input; email + OTP login (EmailJS free tier, dev-mode fallback); milestones with blocking-task links that auto-complete.
+**Built:** Vite, React, TypeScript, PWA scaffold; Dexie (IndexedDB) data layer with create, edit and delete for projects, tasks, resources, documentation, milestones, issues, reminders and insights; in-memory global search; voice input; email + OTP login (EmailJS free tier, dev-mode fallback); milestones with blocking-task links that auto-complete; milestones have a title and description giving the AI context; resources store text and links (no file bytes in IndexedDB).
 
 **Known bugs (fix first, section 12):**
 - The app gets stuck on the Add Project screen.
@@ -20,6 +20,7 @@ Personal, open-source, offline-first project and resource planner for one user. 
 - Every button, icon and feature shows a hover hint explaining what it does.
 - Every component fits at any window size: no fixed widths, no overflow, wrapping handled.
 - Every saved item can be renamed, edited and deleted.
+- **Upload rule (applies to every project tab):** we never store files, we store text. The UI teaches this on hover and via the info icon — keep your resource in your cloud drive and paste the link, or drop in a text document and the app parses it and saves the text content. A protected or encrypted file that only lives behind a link gives an attacker less to reach. See §5.2.
 
 ## 3. Authentication and first screen
 
@@ -49,27 +50,33 @@ After creating a project the user can type text or add files into these scopes.
 Type notes or add text documents describing the project (README, rules, instructions, wireframes, designs, charts, spreadsheets). Purpose: give the AI context.
 
 ### 5.2 Resources
-Categories contain editable subcategories. Defaults can be renamed and restored, and custom subcategories can be added.
 
-- **Notes:** type and save plain text, or upload a text file. Title and tags. Suggested default subcategories: Prompts, Reports and Memos (carried over from the earlier plan; see section 14).
-- **Links:** the URL is validated before saving. Title and tags. Default subcategories:
+Every resource is stored as text, never as a file (the upload rule, §2). The UI guides a new user on hover and via the info icon: keep your resource in your cloud drive and paste the link, or upload a text document and the app parses it and saves the text content. Categories contain editable subcategories implemented as tags (see section 10).
+
+- **Notes:** type and save plain text, or upload a text document (parsed into the body). Title and tags. Suggested default tags: Prompts, Reports and Memos (carried over from the earlier plan; see section 14).
+- **Links:** the URL is validated before saving. Title and tags. Default tags:
   - AI Chats: one click opens a specific Gemini, Claude or GPT conversation (`provider` field; sign-in may be required). Not embedded, to avoid lag.
   - Multi-tab Bookmarks: a group of links opened together.
   - My Links: socials, portfolios, businesses.
-  - More subcategories can be added.
-- **Scripts:** plain text or a text file.
-- **Secrets:** plain text or a text file, for env variables and similar. Encrypted at rest (section 8).
-- **Images:** stores Google Drive links only. Choosing upload sends the file to Google Drive, into an organised folder the user selects.
-- **PDFs:** same behaviour as Images.
+  - More tags can be added freely.
+- **Scripts:** plain text or a text document (parsed into the body).
+- **Secrets:** plain text, for env variables and similar. Encrypted at rest (section 8).
+- **Images:** stores Google Drive links only (text, not the file). Paste a share link, or choose upload to send the file to Google Drive into an organised folder the user selects (section 9).
+- **PDFs:** a Google Drive link (text, not the file). The assistant can also point you to a free site that converts a PDF to plain text so you can paste the result (see Insights, section 5.5, and AI, section 7).
+- Only text documents (.txt) can be uploaded anywhere in Resources; their contents are parsed into the body. PDFs and images are never uploaded as files — they are pasted as links.
 
 ### 5.3 Issues
 GitHub-style issues tailored to personal work. Fields: title, description, labels, severity, open or closed, comments, optional milestone link. No assignees or team features.
 
 ### 5.4 Milestones
-Phase checkpoints with target date and blocking tasks. Hovering a milestone lists its blocking tasks and their state. A milestone auto-completes when all linked tasks are done and reopens if one is reopened. Milestones with no linked tasks are manual.
+
+A milestone is a goal you set for yourself: a **title** and a **body** description. They exist to give the AI context so it can perform agentic action — adding subcategories of work such as notifications, reminders, and tasks — and scheduling tasks, but always with a user/approval workflow (section 7). Phase-checkpoint behaviour is layered on top of the goal: an optional target date and blocking tasks. Hovering a milestone lists its blocking tasks and their state. A milestone auto-completes when all linked tasks are done and reopens if one is reopened. Milestones with no linked tasks are manual.
 
 ### 5.5 Insights
-Task completion rate, milestone progress, open versus closed issues, overdue counts, recent activity.
+
+A tab for notes you add to yourself. Each insight is a saved note with a **title** and a **body**, sub-categorised as an insight. Most entries are plain notes; any entry can instead be categorised as a **link**, an **image**, or a **PDF**. For those categories you store a *text link* to the exact resource (e.g. a Google Drive share link) — never the file itself. You only ever upload a **text document** (the lazy copy-paste escape hatch): the app parses it and saves the text as the insight body. When you need to bring in a PDF, the assistant points you to a free, self-service website that turns a PDF into plain text (with instructions), and you paste the result. All helper resources are free and self-service.
+
+Insights are user notes, **not** generated analysis — there is no automatic completion-rate chart, milestone progress bar, or computed summary here.
 
 ### 5.6 Tasks
 A checklist. Status: active, inactive, completed. Every task is labelled "AI" (to be done by the AI) or "Manual". Optional date and time. This is also where scheduling happens: manual scheduling by setting a date and time, or AI-assisted through the agent (section 7).
@@ -79,7 +86,7 @@ Links, phone numbers and emails, each as its own contact type, with tags. Contac
 
 ## 6. Global search
 
-Always accessible and static: a command palette combined with a file search. Searches projects, tasks, resources, contacts, milestones, issues, documentation, settings (API keys panel, subcategory manager, calendar connection), and saved files by filename. Each result type has a hover hint. Swappable for an indexed engine (FlexSearch) later with no UI changes.
+Always accessible and static: a command palette combined with a file search. Searches projects, tasks, resources, contacts, milestones, issues, documentation, settings (API keys panel, subcategory manager, calendar connection), saved files by filename, and insights by title/body/tags/link. Each result type has a hover hint. Swappable for an indexed engine (FlexSearch) later with no UI changes.
 
 ## 7. AI
 
@@ -87,6 +94,7 @@ Provider: Google Gemini API, free tier (Flash models). Claude and OpenAI have no
 
 - **Assistant:** chat panel. Conversations are stored locally for a limited time (default 7 days).
 - **Agent:** has read, write and edit tools. From context you give it, it can add subcategories, issues, milestones and tasks. It always asks for approval before writing. It stays limited to task work: plans, schedules, editing selections, and web research. It does not design new algorithms or answer general questions.
+- **Content ingestion helper:** the assistant knows how to bring content in from formats the user can't paste directly. For a PDF it names a free, self-service site that renders the PDF as plain text and walks the user through it, then the text is saved normally. No paid APIs.
 - **Scheduling by prompt:** the user types a goal in plain language. If the request is ambiguous, an interactive prompt box slides up from the chat base with targeted clarifying questions. Confirmed changes are written to tasks and the schedule with an animated shift.
 - Web research depends on Gemini free-tier limits, which must be checked before building.
 
@@ -98,7 +106,7 @@ Passphrase-derived key (PBKDF2 to AES-GCM, WebCrypto, no external library), set 
 
 One Google Cloud project, client-side sign-in (Google Identity Services), no backend.
 
-- **Calendar:** real OAuth sync, read-only to start. Imports events including Meet-enabled ones into `calendarEvents`. Each event with a `hangoutLink` shows a Join Meet button that opens it directly. Manually added local events live in the same table (`source: local | google`).
+- **Calendar:** an internal calendar tracks local events with links to other resources (tasks, milestones, resources, insights). Google Calendar is imported via a guided workflow: the assistant prompts the user to export their Google Calendar(s) as .ics files (Google Calendar → Settings → Import & export → Export → download .zip containing .ics per calendar; or export a single calendar via its "More" → Settings and sharing → Export calendar), then the user uploads the .ics file(s) and the app parses them into local `google`-sourced calendarEvents. Device note: export must be done on desktop (not mobile). This keeps all logic local and avoids OAuth/Drive scopes.
 - **Drive:** Images and PDFs. Requires the Drive scope and the Google Picker (extra API key) so the user can choose the destination folder.
 
 **Needed from you** (free, self-service; I cannot create Google resources for you):
@@ -109,17 +117,18 @@ Click-by-click steps will go in the README when this phase starts. The OAuth flo
 
 ## 10. Data model (category + subtype, Supabase-shaped)
 
-- `resources`: one table with `category` (notes, links, scripts, secrets, images, pdfs), `subcategory`, `title`, `tags[]`, and a `meta` object (JSONB in Supabase) for category-specific fields: body or attached text file, URL and `provider`, Drive file id and folder id, encrypted payload.
-- `resourceSubcategories`: editable list per category with an `isDefault` flag so defaults can be renamed and restored.
+- `resources`: one table with `category` (notes, links, scripts, secrets, images, pdfs), `subcategory`, `title`, `tags[]`, and category-specific fields: `body` (text, for notes/scripts/links/pdfs), `url` and `provider` (links), `value` (secrets, encrypted), `images[]` with a `link` each (Drive share link text), `files[]` with a `link` each and a `text` field (parsed text from uploaded text docs). We never store file bytes — images and PDFs are links; uploaded text documents are parsed into `text`.
+- `resourceSubcategories`: editable tags per category with an `isDefault` flag so defaults can be renamed and restored.
+- `insights`: notes for the Insights tab — `projectId`, `title`, `body`, `type` (note|link|image|pdf), `link` (text link for link/image/pdf types), `tags[]`, `createdAt`, `updatedAt`, `syncStatus`.
 - `contacts`: `type` (email, phone, link), `value`, `tags[]`, `linkedProjectIds[]`.
 - `tasks`: adds `executor` (ai or manual) and optional `scheduledAt`.
 - `issues`: adds labels, comments, milestone link.
-- `milestones`: existing, with `blockingTaskIds[]`.
+- `milestones`: adds `description` (body) on top of the existing `blockingTaskIds[]`.
 - `calendarEvents`: `source`, `startsAt`, `endsAt`, `meetLink`.
 - `conversations` and `messages`: assistant history with an expiry.
 - `settings`: key and value (API keys, verification hash).
 - Every record keeps `id`, `createdAt`, `updatedAt`, `syncStatus`, and (where applicable) `projectId`.
-- The Dexie version bump includes a migration from current resources rows (best-effort category mapping, remainder to Notes).
+- The Dexie version bump (v5) includes a migration that creates the `insights` table and backfills `description` on existing milestones.
 
 ## 11. Build order
 
@@ -151,14 +160,19 @@ Resolved in favour of the latest specification:
 - Contacts moved from a resource type to its own tab and a home tab.
 - Images are Drive links, not files stored in IndexedDB.
 - The separate per-project Scheduler tab is folded into Tasks (with a home Schedule tab).
+- **Insights is NOT generated analysis.** It is a tab where you add your own notes (title + body), sub-categorised as insights. Some notes can instead be categorised as a link, image, or PDF — and for those you store a text link to the exact resource, never the file. Only text documents can be uploaded (parsed to text). PDFs get a quick, free, self-service PDF→plain-text helper with instructions. All helper resources are free.
+- **We store text, not files, everywhere.** The UI guides new users on hover and via the info icon to paste a cloud link, or upload a text document that gets parsed. Protected/encrypted files behind links keep the page contents off the server.
+- **Milestones are goals with a title and a body** (description). Their purpose is to give the AI context for agentic actions — adding subcategories such as notifications, reminders, and tasks, plus scheduling — with a user/approval workflow.
 
 Please confirm or correct:
 1. The login to dashboard transition is also removed. Sliding replaces it.
 2. Prompts and Reports and Memos are no longer top-level. Assumed they are default Notes subcategories.
-3. Insights content is as listed in 5.5.
+3. Insights is as described in 5.5 — user notes, not analytics.
 4. Issue fields are as listed in 5.3.
 5. Link validation: format check (valid http or https) plus best-effort reachability. Browsers block most cross-site checks, so reachability cannot be guaranteed.
 6. The agent may work on AI-labelled tasks only within its scope (plans, edits, research).
 7. Assistant history is kept 7 days.
 8. Rename and restore defaults apply to both Resources and Links subcategories.
 9. Drive folder selection: pick once per project, or each upload?
+10. Calendar import: per your guidance, Google Calendar will be an internal calendar with a guided .ics import flow (you paste the steps: Google Calendar → Settings → Import & export → Export → .zip with .ics files). The app will parse the .ics and add local events. Confirm you want this instead of OAuth sync.
+11. Insights link/image/pdf notes: do they link out to the resource (open in browser), or should the assistant also index the linked text? (Currently links out only.)

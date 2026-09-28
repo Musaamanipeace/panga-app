@@ -2,6 +2,8 @@
 import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider } from "./db";
 import { newId, now } from "./utils";
 
+export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider };
+
 export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
   return db.resources.where("projectId").equals(projectId).sortBy("updatedAt");
 }

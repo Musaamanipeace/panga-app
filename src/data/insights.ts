@@ -1,111 +1,53 @@
 // src/data/insights.ts
-// Per-project metrics for the Insights tab. Everything is computed on read.
-import { db } from "./db.ts"
-import { now } from "./utils.ts"
+import { db, type Insight, type InsightType } from "./db";
+import { newId, now } from "./utils";
 
-const DAY = 24 * 60 * 60 * 1000;
+export type { Insight, InsightType };
 
-export interface ProjectInsights {
-  totalTasks: number;
-  completedTasks: number;
-  activeTasks: number;
-  inactiveTasks: number;
-  /** Share of tasks that are completed, as a percentage. */
-  completionRate: number;
-  /** Tasks completed per day over the trailing week. */
-  weeklyCompletion: { day: string; count: number }[];
-  openIssues: number;
-  closedIssues: number;
-  overdueTasks: number;
-  milestonesTotal: number;
-  milestonesAchieved: number;
-  milestoneProgress: number;
-  recentActivity: { id: string; text: string; at: number; kind: string }[];
+export async function listInsights(projectId: string): Promise<Insight[]> {
+  return db.insights.where("projectId").equals(projectId).reverse().sortBy("updatedAt");
 }
 
-export async function getProjectInsights(projectId: string): Promise<ProjectInsights> {
-  const [tasks, issues, milestones, docs, resources] = await Promise.all([
-    db.tasks.where("projectId").equals(projectId).toArray(),
-    db.issues.where("projectId").equals(projectId).toArray(),
-    db.milestones.where("projectId").equals(projectId).toArray(),
-    db.docEntries.where("projectId").equals(projectId).toArray(),
-    db.resources.where("projectId").equals(projectId).toArray(),
-  ]);
+export async function getInsight(id: string): Promise<Insight | undefined> {
+  return db.insights.get(id);
+}
 
+export async function createInsight(input: {
+  projectId: string;
+  title: string;
+  body?: string | null;
+  type?: InsightType;
+  link?: string | null;
+  tags?: string[];
+}): Promise<Insight> {
   const t = now();
-  const completedTasks = tasks.filter((x) => x.status === "completed").length;
-  const activeTasks = tasks.filter((x) => x.status === "active").length;
-  const inactiveTasks = tasks.filter((x) => x.status === "inactive").length;
-  const achieved = milestones.filter((m) => m.status === "achieved").length;
-
-  const overdueTasks = tasks.filter((x) => x.status === "active" && (x.dueDate ?? 0) < t).length;
-
-  // Completion rate over a trailing seven-day window, so the chart reacts to
-  // recent work rather than all-time history.
-  const weeklyCompletion: { day: string; count: number }[] = [];
-  for (let back = 6; back >= 0; back--) {
-    const dayStart = startOfDay(t - back * DAY);
-    const dayEnd = dayStart + DAY;
-    weeklyCompletion.push({
-      day: new Date(dayStart).toLocaleDateString(undefined, { weekday: "short" }),
-      count: tasks.filter(
-        (x) => x.status === "completed" && x.updatedAt >= dayStart && x.updatedAt < dayEnd
-      ).length,
-    });
-  }
-
-  const recentActivity: ProjectInsights["recentActivity"] = [
-    ...tasks.map((x) => ({
-      id: x.id,
-      text:
-        x.status === "completed"
-          ? `Completed task: ${x.title}`
-          : `Updated task: ${x.title}`,
-      at: x.updatedAt,
-      kind: "task",
-    })),
-    ...issues.map((i) => ({
-      id: i.id,
-      text: `${i.status === "open" ? "Logged" : "Closed"} issue: ${i.title}`,
-      at: i.updatedAt,
-      kind: "issue",
-    })),
-    ...docs.map((d) => ({
-      id: d.id,
-      text: `Edited documentation: ${d.title}`,
-      at: d.updatedAt,
-      kind: "doc",
-    })),
-    ...resources.map((r) => ({
-      id: r.id,
-      text: `Updated ${r.category}: ${r.title}`,
-      at: r.updatedAt,
-      kind: "resource",
-    })),
-  ]
-    .sort((a, b) => b.at - a.at)
-    .slice(0, 8);
-
-  return {
-    totalTasks: tasks.length,
-    completedTasks,
-    activeTasks,
-    inactiveTasks,
-    completionRate: tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100),
-    weeklyCompletion,
-    openIssues: issues.filter((i) => i.status === "open").length,
-    closedIssues: issues.filter((i) => i.status === "resolved").length,
-    overdueTasks,
-    milestonesTotal: milestones.length,
-    milestonesAchieved: achieved,
-    milestoneProgress:
-      milestones.length === 0 ? 0 : Math.round((achieved / milestones.length) * 100),
-    recentActivity,
+  const insight: Insight = {
+    id: newId(),
+    projectId: input.projectId,
+    title: input.title,
+    body: input.body ?? null,
+    type: input.type ?? "note",
+    link: input.link ?? null,
+    tags: input.tags ?? [],
+    createdAt: t,
+    updatedAt: t,
+    syncStatus: "pending",
   };
+  await db.insights.add(insight);
+  return insight;
 }
 
-function startOfDay(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+export async function updateInsight(
+  id: string,
+  changes: Partial<Pick<Insight, "title" | "body" | "type" | "link" | "tags">>
+): Promise<void> {
+  await db.insights.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+}
+
+export async function deleteInsight(id: string): Promise<void> {
+  await db.insights.delete(id);
+}
+
+export async function deleteInsightsForProject(projectId: string): Promise<void> {
+  await db.insights.where("projectId").equals(projectId).delete();
 }

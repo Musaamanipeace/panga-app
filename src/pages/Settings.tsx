@@ -1,7 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { getGeminiApiKey, setGeminiApiKey } from "../data/settings";
-import { getSessionKey, lockVault } from "../data/secrets";
-import SecretsVault from "../components/SecretsVault";
 import { syncGoogleCalendarEvents, connectGoogleCalendar, disconnectGoogleCalendar, isGoogleCalendarConnected } from "../sync/googleCalendar";
 
 export default function Settings() {
@@ -52,8 +50,9 @@ export default function Settings() {
         setGoogleImported(result.imported);
         if (result.error) setGoogleError(result.error);
       }
-    } catch (err: { message?: string; toString: () => string }) {
-      setGoogleError(err.message ?? err.toString());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setGoogleError(message);
     }
     setGoogleLoading(false);
   }
@@ -142,26 +141,6 @@ export default function Settings() {
             </button>
           </div>
         )}
-      </section>
-
-      {/* §5 — Secrets vault */}
-      <section className="settings-section">
-        <h2>Secrets Vault</h2>
-        <p className="settings-help">
-          Your secrets are encrypted client-side with AES-GCM using a passphrase-derived
-          key (PBKDF2). The passphrase is never stored — only a verification hash.
-          {getSessionKey() && (
-            <button
-              className="btn-secondary btn-small clickable"
-              style={{ marginLeft: 8 }}
-              data-tip="Lock the vault now"
-              onClick={lockVault}
-            >
-              Lock now
-            </button>
-          )}
-        </p>
-        <SecretsVault />
       </section>
     </div>
   );

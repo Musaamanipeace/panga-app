@@ -11,6 +11,7 @@ const TYPE_ICON: Record<SearchResult["type"], string> = {
   docEntry: "=",
   setting: "@",
   savedFile: "\u00e6", // file glyph
+  insight: "i",
 };
 
 export default function GlobalSearch() {

@@ -33,20 +33,22 @@ export type ResourceCategory =
   | "notes"
   | "scripts"
   | "links"
-  | "secrets"
   | "images"
   | "pdfs";
 
 export interface ResourceImage {
-  dataUrl: string;
+  link: string;
   name: string;
   alt: string;
+  dataUrl?: string; // legacy support for existing base64 images
 }
 
 export interface ResourceFile {
-  dataUrl: string;
   name: string;
-  type: string;
+  link?: string; // for PDFs: Drive link
+  text?: string; // for notes: parsed text content
+  dataUrl?: string; // legacy support for existing base64 files
+  type?: string; // legacy
 }
 
 export interface Project {
@@ -88,7 +90,6 @@ export interface Resource {
   // Category-specific fields:
   url: string | null; // links
   provider: ResourceProvider | null; // links (AI chat links)
-  value: string | null; // secrets (encrypted value)
   body: string | null; // notes, scripts, links
   images: ResourceImage[]; // images
   files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (Drive file info)
@@ -113,6 +114,7 @@ export interface Milestone {
   id: string;
   projectId: string;
   title: string;
+  description: string;
   targetDate: number | null;
   status: MilestoneStatus;
   /** Task ids that must complete before this milestone can be achieved. */
@@ -129,9 +131,20 @@ export interface Issue {
   description: string;
   severity: IssueSeverity;
   status: IssueStatus;
+  labels: string[];
+  comments: IssueComment[];
+  milestoneId: string | null;
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
+}
+
+export interface IssueComment {
+  id: string;
+  issueId: string;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Reminder {
@@ -142,6 +155,21 @@ export interface Reminder {
   message: string;
   triggerAt: number;
   status: "pending" | "fired" | "dismissed";
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+}
+
+export type InsightType = "note" | "link" | "image" | "pdf";
+
+export interface Insight {
+  id: string;
+  projectId: string;
+  title: string;
+  body: string | null;
+  type: InsightType;
+  link: string | null;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -195,7 +223,9 @@ export const SETTINGS_KEYS = {
   geminiApiKey: "geminiApiKey",
   googleCalendarClientId: "googleCalendarClientId",
   googleCalendarToken: "googleCalendarToken",
-  secretsVault: "secretsVault", // { verified: boolean }
+  googlePickerKey: "googlePickerKey",
+  googleAccessToken: "googleAccessToken",
+  driveFolderPrefix: "driveFolder:",
 } as const;
 
 class PangaDB extends Dexie {
@@ -211,6 +241,7 @@ class PangaDB extends Dexie {
   scheduleItems!: Table<ScheduleItem, string>;
   conversations!: Table<Conversation, string>;
   messages!: Table<Message, string>;
+  insights!: Table<Insight, string>;
   settings!: Table<{ key: string; value: any }, string>;
 
   constructor() {
@@ -357,12 +388,28 @@ class PangaDB extends Dexie {
         });
 
         if (migrated.length) {
-          await tx.table("resources").bulkUpdate(migrated);
+          await tx.table("resources").bulkPut(migrated);
         }
 
         // --- Clean up old tables and settings ---
         await tx.table("goals").clear();
         await db.settings.where("key").equals("resourceCategories").delete();
+      });
+
+    // v5: add insights table + milestone description
+    this.version(5)
+      .stores({
+        milestones: "id, projectId, status, targetDate, updatedAt, syncStatus, *blockingTaskIds",
+        insights: "id, projectId, type, updatedAt, syncStatus, *tags",
+      })
+      .upgrade(async (tx) => {
+        // Backfill description for existing milestones
+        const ms = await tx.table("milestones").toArray();
+        for (const m of ms) {
+          if ((m as any).description === undefined || (m as any).description === null) {
+            await tx.table("milestones").where("id").equals(m.id).modify({ description: "" });
+          }
+        }
       });
   }
 }

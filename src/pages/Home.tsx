@@ -115,7 +115,7 @@ export default function Home() {
         <section className="dashboard-section">
           <h2 className="section-heading">Summary</h2>
           <div className="summary-row">
-            {cards.map((card) =>
+            {cards.map((card: { key: string; label: string; value: string | number; hint?: string; tab?: string }) =>
               card.tab ? (
                 <Link
                   key={card.key}

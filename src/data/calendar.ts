@@ -90,6 +90,12 @@ export async function deleteEventsForProject(projectId: string): Promise<void> {
   await db.calendarEvents.where("projectId").equals(projectId).delete();
 }
 
+export async function pruneMissingGoogleEvents(seenIds: Set<string>): Promise<void> {
+  const allGoogle = await db.calendarEvents.where("source").equals("google").toArray();
+  const toDelete = allGoogle.filter((e) => !seenIds.has(e.id)).map((e) => e.id);
+  if (toDelete.length) await db.calendarEvents.bulkDelete(toDelete);
+}
+
 export interface GoogleCalendarEventLike {
   id: string;
   summary?: string;

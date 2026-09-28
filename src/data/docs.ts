@@ -2,6 +2,8 @@
 import { db, type DocEntry } from "./db";
 import { newId, now } from "./utils";
 
+export type { DocEntry };
+
 export async function listDocEntries(projectId: string): Promise<DocEntry[]> {
   return db.docEntries.where("projectId").equals(projectId).sortBy("order");
 }

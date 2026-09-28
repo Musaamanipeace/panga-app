@@ -83,6 +83,23 @@ export interface DashboardSummary {
   projectCount: number;
 }
 
+export interface SummaryCard {
+  key: string;
+  label: string;
+  value: string | number;
+  hint?: string;
+  tab?: string;
+}
+
+export function summaryCards(summary: DashboardSummary): SummaryCard[] {
+  return [
+    { key: "active", label: "Active tasks", value: summary.activeTaskCount, hint: `${summary.activeTaskCount} active task(s). Click to view all tasks.`, tab: "Tasks" },
+    { key: "total", label: "Tasks (total)", value: summary.remainingTaskCount, hint: `${summary.remainingTaskCount} total task(s) across ${summary.projectCount} project(s).`, tab: "Tasks" },
+    { key: "milestones", label: "Milestones", value: `${summary.milestoneProgressPercent}%`, hint: `${summary.milestoneAchieved} of ${summary.milestoneTotal} milestones achieved (${summary.milestoneProgressPercent}%).`, tab: "Milestones" },
+    { key: "projects", label: "Projects", value: summary.projectCount, hint: `${summary.projectCount} project(s). Click to see all.`, tab: "Projects" },
+  ];
+}
+
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const [projects, tasks, milestones] = await Promise.all([listProjects("active"), listAllActiveTasks(), db.milestones.toArray()]);
 

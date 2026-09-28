@@ -14,7 +14,8 @@ export type SearchResultType =
   | "issue"
   | "docEntry"
   | "setting"
-  | "savedFile";
+  | "savedFile"
+  | "insight";
 
 export interface SearchResult {
   type: SearchResultType;
@@ -32,17 +33,18 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return [];
 
-  const [projects, tasks, resources, milestones, issues, docEntries] = await Promise.all([
+  const [projects, tasks, resources, milestones, issues, docEntries, insights] = await Promise.all([
     db.projects.toArray(),
     db.tasks.toArray(),
     db.resources.toArray(),
     db.milestones.toArray(),
     db.issues.toArray(),
     db.docEntries.toArray(),
+    db.insights.toArray(),
   ]);
 
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
-  const matches = (...fields: (string | string[] | undefined)[]) =>
+  const matches = (...fields: (string | string[] | undefined | null)[]) =>
     fields.some((f) =>
       Array.isArray(f) ? f.some((x) => x.toLowerCase().includes(q)) : f?.toLowerCase().includes(q)
     );
@@ -80,7 +82,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   for (const r of resources) {
     const imageNames = (r.images ?? []).map((i) => i.name + (i.alt ? " " + i.alt : ""));
     const fileNames = (r.files ?? []).map((f) => f.name);
-    if (matches(r.title, r.url, r.body, r.value, r.tags, imageNames, fileNames)) {
+    if (matches(r.title, r.url ?? undefined, r.body, r.value, r.tags, imageNames, fileNames)) {
       results.push({
         type: "resource",
         id: r.id,
@@ -132,6 +134,22 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
         subtitle: "Documentation",
         action: "navigate",
         target: `/project/${d.projectId}?tab=Documentation`,
+      });
+    }
+  }
+
+  // §7 — Insights results
+  for (const i of insights) {
+    if (matches(i.title, i.body, i.link, i.tags)) {
+      results.push({
+        type: "insight",
+        id: i.id,
+        projectId: i.projectId,
+        projectName: projectName(i.projectId),
+        title: i.title,
+        subtitle: `Insight · ${i.type}`,
+        action: "navigate",
+        target: `/project/${i.projectId}?tab=Insights`,
       });
     }
   }

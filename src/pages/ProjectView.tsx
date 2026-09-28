@@ -1,33 +1,32 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getProject, getProjectTaskStats } from "../data/projects";
-import { listTasksForProject, listAllActiveTasks, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceCategory } from "../data/resources";
+import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
+import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
-import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, type Issue, type IssueSeverity } from "../data/issues";
+import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, setIssueLabels, setIssueMilestone, type Issue, type IssueSeverity, type IssueComment } from "../data/issues";
+import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type CalendarEvent } from "../data/calendar";
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
-import { listContacts, createContact, updateContact, deleteContact, type Contact, type ContactType } from "../data/contacts";
-import { getGeminiApiKey } from "../data/settings";
-import type { Project } from "../data/db";
+import { db, type Project } from "../data/db";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
-import { SecretViewer } from "../components/SecretsVault";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
 
-const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Insights", "Issues", "Reminders", "Contacts"] as const;
+const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Insights", "Issues", "Reminders", "Contacts", "Calendar"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
   Documentation: "Project README, wireframes, and structural specs",
   Tasks: "Track active, scheduled, and remaining tasks",
-  Resources: "Notes, scripts, links, secrets, images, PDFs",
+  Resources: "Notes, scripts, links, images, PDFs",
   Milestones: "Phase checkpoints — hover to see blocking tasks",
-  Insights: "Task completion rate, milestone progress, issue stats",
-  Issues: "Log setbacks and blockers with a severity rating",
+  Insights: "Your notes — notes, links, images, PDFs",
+  Issues: "Log setbacks and blockers with labels, comments, milestones",
   Reminders: "Schedule follow-up nudges for this project",
   Contacts: "Project contacts — emails, phones, links",
+  Calendar: "Local events with links to tasks, milestones, resources, and insights",
 };
 
 // Map query ?tab= to a tab name
@@ -109,6 +108,7 @@ export default function ProjectView() {
         {activeTab === "Issues" && <IssuesTab projectId={projectId} />}
         {activeTab === "Reminders" && <RemindersTab projectId={projectId} />}
         {activeTab === "Contacts" && <ContactsTab projectId={projectId} />}
+        {activeTab === "Calendar" && <CalendarTab projectId={projectId} />}
       </div>
     </div>
   );
@@ -316,16 +316,16 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [url, setUrl] = useState("");
-  const [value, setValue] = useState("");
   const [provider, setProvider] = useState<"gemini" | "claude" | "gpt" | "other">("other");
-  const [images, setImages] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
+  const [images, setImages] = useState<ResourceImage[]>([]);
+  const [files, setFiles] = useState<ResourceFile[]>([]);
+  const [imgLink, setImgLink] = useState("");
+  const [pdfLink, setPdfLink] = useState("");
 
   const CATEGORY_LABELS: Record<ResourceCategory, string> = {
     notes: "Notes",
     scripts: "Scripts",
     links: "Links",
-    secrets: "Secrets",
     images: "Images",
     pdfs: "PDFs",
   };
@@ -347,11 +347,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       shell: "Shell",
       snippets: "Snippets",
     },
-    secrets: {
-      all: "All",
-      env_vars: "Env Vars",
-      tokens: "Tokens",
-    },
     images: { all: "All" },
     pdfs: { all: "All" },
   };
@@ -364,12 +359,12 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  function fileToDataUrl(file: File): Promise<any> {
-    return new Promise((resolve) => {
+  function fileToText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () =>
-        resolve({ dataUrl: reader.result as string, name: file.name, alt: file.name, type: file.type });
-      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
     });
   }
 
@@ -377,10 +372,11 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setTitle("");
     setBody("");
     setUrl("");
-    setValue("");
     setProvider("other");
     setImages([]);
     setFiles([]);
+    setImgLink("");
+    setPdfLink("");
     setEditing(null);
   }
 
@@ -399,22 +395,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       input.url = url.trim() || null;
       input.provider = subcat === "ai_chats" ? provider : null;
       input.body = body.trim() || null;
-    } else if (cat === "secrets") {
-      // Secrets require the vault — create through the secrets module
-      if (!editing) {
-        await createSecret({ projectId, title: title.trim(), value: value.trim() });
-      } else {
-        await updateResource(editing.id, { title: title.trim(), value: value.trim(), tags: subcat ? [subcat] : [] });
-      }
-      resetForm();
-      refresh();
-      return;
     } else if (cat === "images") {
+      // Store links to the resources (e.g. Google Drive share links), never the files
       input.images = images;
     } else if (cat === "pdfs") {
+      // Store links to the PDFs (e.g. Google Drive share links), never the files
       input.files = files;
       input.body = body.trim() || null;
     } else if (cat === "notes") {
+      // Parse uploaded text files into the body — we store text, not files
+      input.body = body.trim() || null;
+      input.files = files;
+    } else if (cat === "scripts") {
+      // Parse uploaded text files into the body — we store text, not files
       input.body = body.trim() || null;
       input.files = files;
     } else {
@@ -434,7 +427,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setTitle(r.title || "");
     setBody(r.body ?? "");
     setUrl(r.url ?? "");
-    setValue(r.value ?? "");
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
@@ -452,19 +444,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   return (
     <div>
       <form className="resource-form" onSubmit={addResource}>
-        {editing ? (
-          <span className="resource-category-badge">{CATEGORY_LABELS[editing.category] || editing.category}</span>
-        ) : (
-          <select
-            value={editing?.category ?? filter === "all" ? "notes" : (filter as ResourceCategory)}
-            onChange={(e) => {
-              if (!editing) {
-                setFilter(e.target.value);
-                setSubfilter("all");
-              }
-            }}
-            data-tip="Filter resources by category"
-          >
+{editing ? (
+            <span className="resource-category-badge">{CATEGORY_LABELS[editing.category] || editing.category}</span>
+          ) : (
+            <select
+              value={filter === "all" ? "notes" : (filter as ResourceCategory)}
+              onChange={(e) => {
+                if (!editing) {
+                  setFilter(e.target.value);
+                  setSubfilter("all");
+                }
+              }}
+              data-tip="Filter resources by category"
+            >
             <option value="all">All categories</option>
             {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
@@ -545,25 +537,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </>
         )}
 
-        {!editing && filter === "secrets" && (
-          <input
-            type="password"
-            placeholder="Secret value (encrypted at rest)"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            data-tip="Secrets are encrypted with your passphrase via AES-GCM. For env vars, API keys, tokens."
-          />
-        )}
-        {editing && editing.category === "secrets" && (
-          <input
-            type="password"
-            placeholder="Secret value"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            data-tip="Update the secret value (env var, API key, token)"
-          />
-        )}
-
         {/* Body / text for notes, scripts, links, pdfs */}
         {(!editing || ["notes", "scripts", "links", "pdfs"].includes(editing.category)) &&
          ["notes", "scripts", "links", "pdfs"].includes(editing?.category ?? filter === "all" ? "" : filter) && (
@@ -576,60 +549,95 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           />
         )}
 
-        {/* File upload for notes */}
-        {!editing && filter === "notes" && (
+        {/* Text file upload for notes/scripts — parse to body, store text not files */}
+        {(!editing && (filter === "notes" || filter === "scripts")) && (
           <input
             type="file"
-            accept=".doc,.docx,.pdf,.xls,.xlsx,.csv,.txt"
-            multiple
+            accept=".txt"
             onChange={async (e) => {
-              const files = Array.from(e.target.files ?? []);
-              const parsed = await Promise.all(files.map(fileToDataUrl));
-              setFiles((prev) => [...prev, ...parsed]);
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const text = await fileToText(file);
+              setBody((prev) => (prev ? prev + "\n\n" + text : text));
               e.target.value = "";
             }}
-            data-tip="Attach documents, spreadsheets, or text files"
+            data-tip="Upload a .txt file — its contents will be parsed and added to the text above"
           />
         )}
 
-        {/* File upload for pdfs */}
-        {!editing && filter === "pdfs" && (
-          <input
-            type="file"
-            accept=".pdf"
-            multiple
-            onChange={async (e) => {
-              const files = Array.from(e.target.files ?? []);
-              const parsed = await Promise.all(files.map(fileToDataUrl));
-              setFiles((prev) => [...prev, ...parsed]);
-              e.target.value = "";
-            }}
-            data-tip="Attach PDF files (stored as Drive links)"
-          />
-        )}
-
-        {/* Image upload for images category */}
+        {/* Image link input — paste a Drive/share link, never store the file */}
         {(!editing && filter === "images") || (editing && editing.category === "images") ? (
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={async (e) => {
-              const files = Array.from(e.target.files ?? []);
-              const urls = await Promise.all(files.map(fileToDataUrl));
-              setImages((prev) => [...prev, ...urls]);
-              e.target.value = "";
-            }}
-            data-tip="Upload image resources (stored as Drive links)"
-          />
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Image link</label>
+            <input
+              type="url"
+              placeholder="https:// (Google Drive share link)"
+              value={imgLink}
+              onChange={(e) => setImgLink(e.target.value)}
+              data-tip="Paste a link to the image (e.g. a Google Drive share link). We store the link, not the file."
+            />
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                if (!imgLink.trim()) return;
+                setImages((prev) => [...prev, { link: imgLink.trim(), name: imgLink.trim(), alt: imgLink.trim() }]);
+                setImgLink("");
+              }}
+              data-tip="Add image link"
+            >
+              + Add link
+            </button>
+          </div>
         ) : null}
 
-        {/* Image previews */}
+        {/* PDF link input — paste a Drive/share link + PDF-to-text helper */}
+        {(!editing && filter === "pdfs") || (editing && editing.category === "pdfs") ? (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>PDF link</label>
+            <input
+              type="url"
+              placeholder="https:// (Google Drive share link)"
+              value={pdfLink}
+              onChange={(e) => setPdfLink(e.target.value)}
+              data-tip="Paste a link to the PDF (e.g. a Google Drive share link). We store the link, not the file."
+            />
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                if (!pdfLink.trim()) return;
+                setFiles((prev) => [...prev, { name: pdfLink.trim(), link: pdfLink.trim() }]);
+                setPdfLink("");
+              }}
+              data-tip="Add PDF link"
+            >
+              + Add link
+            </button>
+            <p className="form-note" style={{ marginTop: 4 }}>
+              <span data-tip="Convert PDF to plain text, then paste the result into the text area above">
+                Need plain text from a PDF? Use a free converter like{" "}
+                <a href="https://www.ilovepdf.com/pdf_to_text" target="_blank" rel="noreferrer">
+                  ilovepdf.com/pdf_to_text
+                </a>
+                <span data-tip="1. Upload your PDF. 2. Download the extracted text. 3. Paste it into the description below."> — upload, convert, download text, then paste as the PDF description</span>
+              </span>
+            </p>
+          </div>
+        ) : null}
+
+        {/* Image link previews */}
         {images.length > 0 && (
           <div className="image-preview-row">
             {images.map((img, i) => (
               <div key={i} className="image-thumb">
-                <img src={img.dataUrl} alt={img.alt} title={img.name} />
+                {img.link ? (
+                  <a href={img.link || img.dataUrl} target="_blank" rel="noreferrer" data-tip="Open image link">
+                    {img.dataUrl ? <img src={img.dataUrl} alt={img.alt} title={img.name} /> : <span className="thumb-link">{img.name}</span>}
+                  </a>
+                ) : img.dataUrl ? (
+                  <img src={img.dataUrl} alt={img.alt} title={img.name} />
+                ) : null}
                 <button
                   type="button"
                   className="thumb-remove"
@@ -643,13 +651,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* File previews for notes and pdfs */}
+        {/* File link previews for pdfs (and legacy files) */}
         {files.length > 0 && (
           <div className="image-preview-row">
             {files.map((f, i) => (
               <div key={i} className="image-thumb">
                 <div className="file-preview">
-                  <span className="file-preview-name">{f.name}</span>
+                  {f.link ? (
+                    <a href={f.link} target="_blank" rel="noreferrer" className="file-attachment" data-tip="Open link">
+                      {f.name}
+                    </a>
+                  ) : (
+                    <span className="file-preview-name">{f.name}</span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -725,21 +739,32 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                       {r.url}
                     </a>
                   ) : null}
-                  {r.body && <p className="resource-notes">{r.body}</p>}
-                  {r.category === "secrets" && r.value ? (
-                    <SecretViewer resource={r} />
-                  ) : null}
-                  {r.images.length > 0 && (
+{r.body && <p className="resource-notes">{r.body}</p>}
+                   {r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) => (
-                        <img key={i} src={img.dataUrl} alt={img.alt} className="resource-image-thumb" title={img.name} />
+                        img.link ? (
+                          <a key={i} href={img.link} target="_blank" rel="noreferrer" className="resource-image-link" data-tip="Open image link">
+                            {img.dataUrl ? <img src={img.dataUrl} alt={img.alt} className="resource-image-thumb" title={img.name} /> : <span className="thumb-link">{img.name}</span>}
+                          </a>
+                        ) : img.dataUrl ? (
+                          <img key={i} src={img.dataUrl} alt={img.alt} className="resource-image-thumb" title={img.name} />
+                        ) : null
                       ))}
                     </div>
                   )}
                   {r.files.length > 0 && (
                     <div className="resource-image-row">
                       {r.files.map((f, i) => (
-                        <a key={i} href={f.dataUrl} download={f.name} className="file-attachment" data-tip={`Download ${f.name}`}>
+                        <a
+                          key={i}
+                          href={f.link || f.dataUrl || "#"}
+                          target={f.link ? "_blank" : undefined}
+                          rel={f.link ? "noreferrer" : undefined}
+                          download={f.link ? undefined : f.name}
+                          className="file-attachment"
+                          data-tip={f.link ? "Open link" : `Download ${f.name}`}
+                        >
                           {f.name}
                         </a>
                       ))}
@@ -787,10 +812,12 @@ function MilestonesTab({ projectId }: { projectId: string }) {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [blockingTaskIds, setBlockingTaskIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   async function refresh() {
@@ -812,17 +839,19 @@ function MilestonesTab({ projectId }: { projectId: string }) {
     await createMilestone({
       projectId,
       title: title.trim(),
+      description: description.trim(),
       targetDate: targetDate ? new Date(targetDate).getTime() : null,
       blockingTaskIds,
     });
     setTitle("");
+    setDescription("");
     setTargetDate("");
     setBlockingTaskIds([]);
     refresh();
   }
 
   async function saveEdit(id: string) {
-    if (editValue.trim()) await updateMilestone(id, { title: editValue.trim() });
+    if (editValue.trim()) await updateMilestone(id, { title: editValue.trim(), description: editDescription.trim() });
     setEditingId(null);
     refresh();
   }
@@ -836,14 +865,29 @@ function MilestonesTab({ projectId }: { projectId: string }) {
   return (
     <div>
       <form className="resource-form" onSubmit={addMilestone}>
-        <input
-          type="text"
-          placeholder="New milestone (phase checkpoint)..."
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <MicButton onResult={(text) => setTitle(text)} />
-        <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Title</label>
+          <input
+            type="text"
+            placeholder="New milestone (phase checkpoint)..."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <MicButton onResult={(text) => setTitle(text)} />
+        </div>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Description</label>
+          <textarea
+            rows={2}
+            placeholder="Describe this goal — gives context to the AI for agentic actions (notifications, reminders, scheduling)..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label>Target date</label>
+          <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+        </div>
         <button type="submit" className="btn-primary clickable">+ Add milestone</button>
       </form>
 
@@ -886,16 +930,29 @@ function MilestonesTab({ projectId }: { projectId: string }) {
                 <div className="milestone-dot" data-tip="Hover to see blocking tasks" />
                 <div className="milestone-body">
                   {editingId === m.id ? (
-                    <input
-                      className="task-title-input"
-                      autoFocus
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => saveEdit(m.id)}
-                      onKeyDown={(e) => e.key === "Enter" && saveEdit(m.id)}
-                    />
+                    <>
+                      <input
+                        className="task-title-input"
+                        autoFocus
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => saveEdit(m.id)}
+                        onKeyDown={(e) => e.key === "Enter" && saveEdit(m.id)}
+                      />
+                      <textarea
+                        className="task-title-input"
+                        rows={2}
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        onBlur={() => saveEdit(m.id)}
+                        placeholder="Description..."
+                      />
+                    </>
                   ) : (
-                    <span className="milestone-title">{m.title}</span>
+                    <>
+                      <span className="milestone-title">{m.title}</span>
+                      {m.description && <span className="milestone-description">{m.description}</span>}
+                    </>
                   )}
                   {m.targetDate && (
                     <span className="milestone-date">{new Date(m.targetDate).toLocaleDateString()}</span>
@@ -909,13 +966,13 @@ function MilestonesTab({ projectId }: { projectId: string }) {
                     <option value="achieved">Achieved</option>
                     <option value="missed">Missed</option>
                   </select>
-<button
-                className="btn-icon clickable"
-                data-tip="Rename milestone"
-                onClick={() => { setEditingId(m.id); setEditValue(m.title); }}
-              >
-                Edit
-              </button>
+                  <button
+                    className="btn-icon clickable"
+                    data-tip="Rename milestone"
+                    onClick={() => { setEditingId(m.id); setEditValue(m.title); setEditDescription(m.description); }}
+                  >
+                    Edit
+                  </button>
                   <button
                     className="task-delete-btn"
                     data-tip="Delete milestone"
@@ -959,13 +1016,21 @@ function MilestonesTab({ projectId }: { projectId: string }) {
 // ---------- Issues ----------
 function IssuesTab({ projectId }: { projectId: string }) {
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState<IssueSeverity>("medium");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
+  const [editingLabels, setEditingLabels] = useState("");
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+  const [showComments, setShowComments] = useState<Record<string, boolean>>({});
+  const [newComment, setNewComment] = useState("");
 
   async function refresh() {
     setIssues(await listIssues(projectId));
+    setMilestones(await listMilestones(projectId));
   }
   useEffect(() => {
     refresh();
@@ -975,27 +1040,63 @@ function IssuesTab({ projectId }: { projectId: string }) {
   async function addIssue(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    await createIssue({ projectId, title: title.trim(), severity });
+    await createIssue({ projectId, title: title.trim(), severity, description: description.trim() });
     setTitle("");
+    setDescription("");
     refresh();
   }
 
   async function saveEdit(id: string) {
-    if (editValue.trim()) await updateIssue(id, { title: editValue.trim() });
+    if (editValue.trim()) await updateIssue(id, { title: editValue.trim(), description: editingDescription.trim() });
     setEditingId(null);
+    refresh();
+  }
+
+  async function saveLabels(id: string) {
+    const labels = editingLabels.split(",").map((l) => l.trim()).filter(Boolean);
+    await setIssueLabels(id, labels);
+    setEditingId(null);
+    refresh();
+  }
+
+  async function saveMilestone(id: string) {
+    await setIssueMilestone(id, editingMilestoneId);
+    setEditingId(null);
+    refresh();
+  }
+
+  async function addComment(issueId: string) {
+    if (!newComment.trim()) return;
+    await addIssueComment(issueId, newComment.trim());
+    setNewComment("");
+    refresh();
+  }
+
+  async function deleteComment(issueId: string, commentId: string) {
+    await deleteIssueComment(issueId, commentId);
     refresh();
   }
 
   return (
     <div>
       <form className="resource-form" onSubmit={addIssue}>
-        <input type="text" placeholder="New issue / setback..." value={title} onChange={(e) => setTitle(e.target.value)} />
-        <MicButton onResult={(text) => setTitle(text)} />
-        <select value={severity} onChange={(e) => setSeverity(e.target.value as IssueSeverity)} data-tip="Issue severity">
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Title</label>
+          <input type="text" placeholder="New issue / setback..." value={title} onChange={(e) => setTitle(e.target.value)} />
+          <MicButton onResult={(text) => setTitle(text)} />
+        </div>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Description</label>
+          <textarea rows={2} placeholder="Details..." value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Severity</label>
+          <select value={severity} onChange={(e) => setSeverity(e.target.value as IssueSeverity)} data-tip="Issue severity">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
         <button type="submit" className="btn-primary clickable">+ Log issue</button>
       </form>
       {issues.length === 0 ? (
@@ -1005,16 +1106,65 @@ function IssuesTab({ projectId }: { projectId: string }) {
           {issues.map((i) => (
             <li key={i.id} className={`task-item issue-${i.severity}`}>
               {editingId === i.id ? (
-                <input
-                  className="task-title-input"
-                  autoFocus
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onBlur={() => saveEdit(i.id)}
-                  onKeyDown={(e) => e.key === "Enter" && saveEdit(i.id)}
-                />
+                <div className="issue-edit-form">
+                  <input
+                    className="task-title-input"
+                    autoFocus
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => saveEdit(i.id)}
+                    onKeyDown={(e) => e.key === "Enter" && saveEdit(i.id)}
+                  />
+                  <textarea
+                    className="task-title-input"
+                    rows={2}
+                    value={editingDescription}
+                    onChange={(e) => setEditingDescription(e.target.value)}
+                    onBlur={() => saveEdit(i.id)}
+                    placeholder="Description..."
+                  />
+                  <div className="field">
+                    <label>Labels (comma separated)</label>
+                    <input
+                      value={editingLabels}
+                      onChange={(e) => setEditingLabels(e.target.value)}
+                      placeholder="bug, urgent, documentation"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Milestone</label>
+                    <select
+                      value={editingMilestoneId ?? ""}
+                      onChange={(e) => setEditingMilestoneId(e.target.value || null)}
+                    >
+                      <option value="">None</option>
+                      {milestones.map((m) => (
+                        <option key={m.id} value={m.id}>{m.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-actions">
+                    <button type="button" className="btn-primary" onClick={() => saveEdit(i.id)} data-tip="Save changes">Save</button>
+                    <button type="button" className="btn-secondary" onClick={() => setEditingId(null)} data-tip="Cancel">Cancel</button>
+                  </div>
+                </div>
               ) : (
-                <span className="task-title">{i.title}</span>
+                <>
+                  <span className="task-title">{i.title}</span>
+                  {i.description && <p className="issue-description">{i.description}</p>}
+                  {i.labels && i.labels.length > 0 && (
+                    <div className="issue-labels">
+                      {i.labels.map((l) => (
+                        <span key={l} className="label-chip">{l}</span>
+                      ))}
+                    </div>
+                  )}
+                  {i.milestoneId && (
+                    <span className="milestone-link">
+                      Milestone: {milestones.find((m) => m.id === i.milestoneId)?.title ?? i.milestoneId}
+                    </span>
+                  )}
+                </>
               )}
               <select
                 value={i.severity}
@@ -1037,10 +1187,43 @@ function IssuesTab({ projectId }: { projectId: string }) {
               )}
               <button
                 className="btn-icon clickable"
-                data-tip="Rename issue"
-                onClick={() => { setEditingId(i.id); setEditValue(i.title); }}
+                data-tip="Edit issue"
+                onClick={() => {
+                  setEditingId(i.id);
+                  setEditValue(i.title);
+                  setEditingDescription(i.description ?? "");
+                  setEditingLabels(i.labels?.join(", ") ?? "");
+                  setEditingMilestoneId(i.milestoneId ?? null);
+                }}
               >
                 Edit
+              </button>
+              <button
+                className="btn-icon clickable"
+                data-tip={showComments[i.id] ? "Hide comments" : "Show comments"}
+                onClick={() => setShowComments((prev) => ({ ...prev, [i.id]: !prev[i.id] }))}
+              >
+                💬 {i.comments?.length ?? 0}
+              </button>
+              <button
+                className="btn-icon clickable"
+                data-tip="Edit labels"
+                onClick={() => {
+                  setEditingId(i.id);
+                  setEditingLabels(i.labels?.join(", ") ?? "");
+                }}
+              >
+                Labels
+              </button>
+              <button
+                className="btn-icon clickable"
+                data-tip="Link milestone"
+                onClick={() => {
+                  setEditingId(i.id);
+                  setEditingMilestoneId(i.milestoneId ?? null);
+                }}
+              >
+                Milestone
               </button>
               <button
                 className="task-delete-btn"
@@ -1049,6 +1232,33 @@ function IssuesTab({ projectId }: { projectId: string }) {
               >
                 ×
               </button>
+              {showComments[i.id] && (
+                <div className="issue-comments">
+                  {(i.comments ?? []).map((c) => (
+                    <div key={c.id} className="comment-item">
+                      <p>{c.text}</p>
+                      <small>{new Date(c.createdAt).toLocaleString()}</small>
+                      <button
+                        className="btn-icon btn-icon-danger"
+                        data-tip="Delete comment"
+                        onClick={() => deleteComment(i.id, c.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <div className="comment-add">
+                    <input
+                      type="text"
+                      placeholder="Add a comment..."
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addComment(i.id)}
+                    />
+                    <button type="button" className="btn-primary btn-small" onClick={() => addComment(i.id)}>Add</button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -1150,6 +1360,186 @@ function RemindersTab({ projectId }: { projectId: string }) {
               </button>
             </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ---------- Calendar ----------
+function CalendarTab({ projectId }: { projectId: string }) {
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
+  const [hangoutLink, setHangoutLink] = useState("");
+  const [icsFile, setIcsFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function refresh() {
+    setEvents(await listCalendarEvents(projectId));
+  }
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  async function addEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !startAt || !endAt) return;
+    await createLocalEvent({
+      projectId,
+      title: title.trim(),
+      description: description.trim(),
+      startAt: new Date(startAt).getTime(),
+      endAt: new Date(endAt).getTime(),
+      hangoutLink: hangoutLink.trim() || null,
+    });
+    setTitle("");
+    setDescription("");
+    setStartAt("");
+    setEndAt("");
+    setHangoutLink("");
+    refresh();
+  }
+
+  async function handleIcsImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!icsFile) return;
+    setImporting(true);
+    try {
+      const text = await icsFile.text();
+      const events = parseIcs(text);
+      if (events.length === 0) {
+        alert("No events found in the .ics file.");
+        return;
+      }
+      const toImport = events.map((e) => ({
+        id: `google_${newId()}`,
+        projectId,
+        title: e.title ?? "(no title)",
+        description: e.description ?? null,
+        startAt: e.startAt,
+        endAt: e.endAt,
+        source: "google" as CalendarEventSource,
+        hangoutLink: e.hangoutLink ?? null,
+        syncedAt: Date.now(),
+        createdAt: now(),
+        updatedAt: now(),
+      }));
+      await db.calendarEvents.bulkPut(toImport);
+      alert(`Imported ${toImport.length} event(s) from .ics file.`);
+      setIcsFile(null);
+      refresh();
+    } catch (err) {
+      alert("Failed to parse .ics file: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function parseIcs(text: string) {
+    const events: Array<{ title?: string; description?: string; startAt: number; endAt: number; hangoutLink?: string }> = [];
+    const lines = text.split(/\r?\n/);
+    let current: Partial<{ title?: string; description?: string; startAt: number; endAt: number; hangoutLink?: string }> | null = null;
+
+    for (const line of lines) {
+      if (line.startsWith("BEGIN:VEVENT")) {
+        current = {};
+      } else if (line.startsWith("END:VEVENT") && current) {
+        if (current.startAt && current.endAt) events.push(current as any);
+        current = null;
+      } else if (current) {
+        if (line.startsWith("SUMMARY:")) current.title = line.slice(8);
+        else if (line.startsWith("DESCRIPTION:")) current.description = line.slice(12);
+        else if (line.startsWith("DTSTART:") || line.startsWith("DTSTART;")) {
+          const val = line.split(":")[1];
+          current.startAt = parseIcsDate(val);
+        } else if (line.startsWith("DTEND:") || line.startsWith("DTEND;")) {
+          const val = line.split(":")[1];
+          current.endAt = parseIcsDate(val);
+        } else if (line.startsWith("X-GOOGLE-HANGOUT:") || line.startsWith("X-MICROSOFT-TEAMS:") || line.includes("hangoutLink")) {
+          current.hangoutLink = line.split(":").slice(1).join(":").trim();
+        }
+      }
+    }
+    return events;
+  }
+
+  function parseIcsDate(val: string): number {
+    const clean = val.replace(/[^0-9TZ]/g, "").replace("T", "T");
+    const date = new Date(clean);
+    return isNaN(date.getTime()) ? Date.now() : date.getTime();
+  }
+
+  return (
+    <div>
+      {/* Import .ics section */}
+      <section className="dashboard-section">
+        <h3 className="section-heading">Import from Google Calendar</h3>
+        <p className="form-note">
+          Export your Google Calendar as an .ics file (Google Calendar → Settings → Import & export → Export),
+          then upload it here. The app will parse events and add them as local calendar events.
+        </p>
+        <form className="resource-form" onSubmit={handleIcsImport}>
+          <input type="file" accept=".ics" onChange={(e) => setIcsFile(e.target.files?.[0] ?? null)} data-tip="Select an .ics file" />
+          <button type="submit" className="btn-primary clickable" disabled={importing || !icsFile}>
+            {importing ? "Importing..." : "Import .ics file"}
+          </button>
+        </form>
+      </section>
+
+      {/* Local events form */}
+      <form className="resource-form" onSubmit={addEvent}>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Title</label>
+          <input type="text" placeholder="Event title..." value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Description</label>
+          <textarea rows={2} placeholder="Description, links to tasks, milestones, resources, insights..." value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Start</label>
+          <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label>End</label>
+          <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} required />
+        </div>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Meet link (optional)</label>
+          <input type="url" placeholder="https://meet.google.com/..." value={hangoutLink} onChange={(e) => setHangoutLink(e.target.value)} data-tip="Google Meet or other video call link" />
+        </div>
+        <button type="submit" className="btn-primary clickable">+ Add event</button>
+      </form>
+
+      {events.length === 0 ? (
+        <p className="empty-state">
+          No events yet. Add a local event above or import from Google Calendar.
+        </p>
+      ) : (
+        <ul className="resource-list">
+          {events
+            .sort((a, b) => a.startAt - b.startAt)
+            .map((e) => (
+              <li key={e.id} className="resource-item">
+                <span className="resource-category-dot" style={{ backgroundColor: e.source === "google" ? "#4285f4" : "#3b82f6" }} />
+                <span className="resource-text">
+                  <span className="resource-title">{e.title}</span>
+                  <p className="resource-notes">
+                    {new Date(e.startAt).toLocaleString()} — {new Date(e.endAt).toLocaleTimeString()}
+                    {e.hangoutLink && <a href={e.hangoutLink} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open Meet link">📹 Meet</a>}
+                    {e.description && <br />{e.description}}
+                  </p>
+                  <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
+                </span>
+                <button className="btn-icon clickable" data-tip="Delete event" onClick={async () => { await deleteCalendarEvent(e.id); refresh(); }}>
+                  ×
+                </button>
+              </li>
+            ))}
         </ul>
       )}
     </div>

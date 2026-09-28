@@ -2,6 +2,8 @@
 import { db, type Milestone, type MilestoneStatus } from "./db";
 import { newId, now } from "./utils";
 
+export type { Milestone, MilestoneStatus };
+
 export async function listMilestones(projectId: string): Promise<Milestone[]> {
   return db.milestones.where("projectId").equals(projectId).sortBy("targetDate");
 }
@@ -9,6 +11,7 @@ export async function listMilestones(projectId: string): Promise<Milestone[]> {
 export async function createMilestone(input: {
   projectId: string;
   title: string;
+  description?: string;
   targetDate?: number | null;
   blockingTaskIds?: string[];
 }): Promise<Milestone> {
@@ -17,6 +20,7 @@ export async function createMilestone(input: {
     id: newId(),
     projectId: input.projectId,
     title: input.title,
+    description: input.description ?? "",
     targetDate: input.targetDate ?? null,
     status: "in_progress",
     blockingTaskIds: input.blockingTaskIds ?? [],
@@ -30,7 +34,7 @@ export async function createMilestone(input: {
 
 export async function updateMilestone(
   id: string,
-  changes: Partial<Pick<Milestone, "title" | "targetDate" | "blockingTaskIds">>
+  changes: Partial<Pick<Milestone, "title" | "description" | "targetDate" | "blockingTaskIds">>
 ): Promise<void> {
   await db.milestones.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
