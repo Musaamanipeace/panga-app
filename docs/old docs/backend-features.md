@@ -34,22 +34,43 @@ This document describes the non-UI modules: authentication, data access, sync, s
 | `tasks.ts` | Task CRUD, status cycling, executor, scheduling, overdue/due helpers |
 | `subcategories.ts` | Editable subcategory lists per resource category; default rename/restore |
 | `resources.ts` | Unified resource CRUD, link validation, meta normalisation |
-| `contacts.ts` | Contact CRUD, project linking, `mailto:`/`https:` href helpers |
+| `contacts.ts` | Contact CRUD, project linking, `mailto:`/`tel:`/`https:` href helpers |
 | `docs.ts` | DocEntry CRUD, file attachment (dataURL, ≤2 MB) |
 | `milestones.ts` | Milestone CRUD, blocker toggling, auto-reconcile |
 | `issues.ts` | Issue CRUD, labels, comments, severity, milestone link |
 | `reminders.ts` | Reminder CRUD, bucketing (overdue/due/upcoming), dismissal |
 | `calendar.ts` | Local events + Google import, meetLink, pruning |
+| `scheduler.ts` | ScheduleItem CRUD (separate from tasks) |
 | `insights.ts` | Per-project metrics: completion rate, weekly bars, issue counts, activity feed |
 | `dashboard.ts` | Home aggregates: alerts, summary cards, project grid stats |
 | `settings.ts` | Key/value get/set, Gemini/Google/Drive/Vault/Assistant configs |
 | `secrets.ts` | **PBKDF2 → AES-GCM** (WebCrypto only), passphrase never stored |
 | `conversations.ts` | Assistant history with TTL (default 7 days), pruning |
 
+### Resource categories & subcategories (per panga.md §5.2)
+
+```
+notes:
+  - Prompts
+  - Reports and Memos
+scripts:
+  - Shell
+  - Snippets
+links:
+  - AI Chats (provider field: gemini/claude/gpt/other)
+  - Multi-tab Bookmarks
+  - My Links
+secrets:
+  - Env Vars
+  - Tokens
+images: (Drive links only)
+pdfs: (Drive links only)
+```
+
 ### Secrets encryption (`secrets.ts`)
 
 ```
-Passphrase → PBKDF2 (210k iterations, SHA-256, 16-byte salt)
+Passphrase → PBKDF2 (200k iterations, SHA-256, 16-byte salt)
         → 256-bit AES-GCM key (WebCrypto)
         → Encrypt: random 12-byte IV + ciphertext
         → Store: { iv: base64, data: base64 }
@@ -57,6 +78,7 @@ Passphrase → PBKDF2 (210k iterations, SHA-256, 16-byte salt)
 ```
 
 - Passphrase never persisted
+- For environment variables, API keys, tokens, and similar — **NOT a password manager**
 - `unlockVault(passphrase)` → derives key, verifies digest, caches `sessionKey` in memory
 - `lockVault()` / `isVaultUnlocked()` for session management
 - All encryption/decryption happens client-side

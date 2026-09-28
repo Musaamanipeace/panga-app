@@ -10,11 +10,11 @@ This document tracks what's done, what's next, and the exact steps to get runnin
 | 1 | Dexie schema + CRUD for all entities | ✅ Done |
 | 2 | Landing + OTP auth (dev mode) | ✅ Done |
 | 3 | Home screen (alerts, summary, project grid, cross-project tabs) | ✅ Done |
-| 4 | Project workspace (7 tabs) | ✅ Done |
+| 4 | Project workspace (7 tabs: Documentation, Tasks, Resources, Milestones, Insights, Issues, Reminders, Contacts) | ✅ Done |
 | 5 | Settings (Gemini, Google, Vault, Assistant, Sync, Danger) | ✅ Done |
 | 6 | Global search (Ctrl+K palette) | ✅ Done |
 | 7 | Assistant panel (chat, clarification, approval) | ✅ Done |
-| 8 | Secrets vault (PBKDF2 + AES-GCM) | ✅ Done |
+| 8 | Secrets vault (PBKDF2 + AES-GCM) — for env vars, API keys, tokens | ✅ Done |
 | 9 | Google Calendar sync + Drive picker | ✅ Done |
 | 10 | Design system (sliding, no emoji, responsive, hints) | ✅ Done |
 | 11 | Bug fixes (migration, DB open errors, hover hints) | ✅ Done |
@@ -36,7 +36,7 @@ Open `http://localhost:5173` (or the port Vite prints).
 1. Click **Login** on the landing page
 2. Enter any email (e.g. `me@example.com`)
 3. **Dev mode**: the 6-digit code appears on screen — no email service needed
-4. Enter the code → **Verify and enter** → you're on `/home`
+4. Enter the code → **Verify and enter** → you're on `/dashboard`
 
 ### First project
 

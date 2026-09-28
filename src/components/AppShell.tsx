@@ -1,7 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import GlobalSearch from "./GlobalSearch";
 import AIAssistant from "./AIAssistant";
-import MacheteTransition from "./MacheteTransition";
 import { clearSession, getSessionEmail } from "../auth/session";
 
 export default function AppShell() {
@@ -15,7 +14,6 @@ export default function AppShell() {
 
   return (
     <div className="app-shell">
-      <MacheteTransition />
       <header className="app-header">
         <Link to="/dashboard" className="app-logo clickable" data-tip="Back to your project dashboard">
           Panga

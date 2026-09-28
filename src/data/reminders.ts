@@ -2,8 +2,27 @@
 import { db, type Reminder } from "./db";
 import { newId, now } from "./utils";
 
+export type ReminderBucket = "overdue" | "due" | "upcoming";
+
 export async function listReminders(projectId: string): Promise<Reminder[]> {
   return db.reminders.where("projectId").equals(projectId).sortBy("triggerAt");
+}
+
+export async function listPendingReminders(): Promise<Reminder[]> {
+  return db.reminders.where("status").equals("pending").sortBy("triggerAt");
+}
+
+export async function bucketReminders(reminders: Reminder[]): Record<ReminderBucket, Reminder[]> {
+  const now = Date.now();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+  return {
+    overdue: reminders.filter((r) => r.triggerAt < now),
+    due: reminders.filter((r) => r.triggerAt >= now && r.triggerAt < todayEnd.getTime()),
+    upcoming: reminders.filter((r) => r.triggerAt >= todayEnd.getTime()),
+  };
 }
 
 export async function createReminder(input: {

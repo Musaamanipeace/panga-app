@@ -38,38 +38,30 @@ Indexes: `projectId`, `status`, `dueDate`, `scheduledAt`, `executor`, `updatedAt
 ```ts
 id: string (pk)
 projectId: string
-category: "notes" | "links" | "scripts" | "secrets" | "images" | "pdfs"
-subcategory: string  // id from resourceSubcategories, "" = uncategorised
+category: "notes" | "scripts" | "links" | "secrets" | "images" | "pdfs"
 title: string
 tags: string[]
-meta: ResourceMeta  // JSONB-shaped, category-specific fields
+// Category-specific fields:
+url: string | null; // links
+provider: "gemini" | "claude" | "gpt" | "other" | null; // links (AI chat links)
+value: string | null; // secrets (encrypted value)
+body: string | null; // notes, scripts, links
+images: ResourceImage[]; // images
+files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (Drive file info)
 createdAt: number
 updatedAt: number
 syncStatus: "pending" | "synced"
 ```
-Indexes: `projectId`, `category`, `subcategory`, `updatedAt`, `syncStatus`, `*tags`
+Indexes: `projectId`, `category`, `updatedAt`, `syncStatus`, `*tags`, `provider`
 
-`ResourceMeta` (maps 1:1 to JSONB in Supabase):
+`ResourceImage`:
 ```ts
-{
-  // notes, scripts
-  body?: string | null;
-  file?: { name: string; type: string; dataUrl: string } | null;
+{ dataUrl: string; name: string; alt: string }
+```
 
-  // links
-  url?: string | null;
-  provider?: "gemini" | "claude" | "gpt" | "other" | null;
-  extraUrls?: string[] | null;  // for Multi-tab Bookmarks
-
-  // secrets
-  cipher?: { iv: string; data: string } | null;  // AES-GCM ciphertext + IV
-
-  // images, pdfs (Drive only)
-  driveFileId?: string | null;
-  driveFolderId?: string | null;
-  driveWebViewLink?: string | null;
-  driveMimeType?: string | null;
-}
+`ResourceFile`:
+```ts
+{ dataUrl: string; name: string; type: string }
 ```
 
 ### resourceSubcategories
@@ -86,8 +78,8 @@ Indexes: `category`, `order`, `updatedAt`
 
 Defaults (per plan §5.2):
 - notes: ["Prompts", "Reports and Memos"]
-- links: ["AI Chats", "Multi-tab Bookmarks", "My Links"]
 - scripts: ["Shell", "Snippets"]
+- links: ["AI Chats", "Multi-tab Bookmarks", "My Links"]
 - secrets: ["Env Vars", "Tokens"]
 - images: []
 - pdfs: []
@@ -116,7 +108,6 @@ type: "outline" | "phase"
 title: string
 content: string
 order: number
-file: { name: string; type: string; dataUrl: string } | null
 createdAt: number
 updatedAt: number
 syncStatus: "pending" | "synced"
@@ -130,6 +121,7 @@ projectId: string
 title: string
 targetDate: number | null
 status: "in_progress" | "achieved" | "missed"
+/** Task ids that must complete before this milestone can be achieved. */
 blockingTaskIds: string[]
 createdAt: number
 updatedAt: number
@@ -187,6 +179,20 @@ updatedAt: number
 ```
 Indexes: `projectId`, `source`, `startAt`, `endAt`, `updatedAt`
 
+### scheduleItems
+```ts
+id: string (pk)
+projectId: string | null
+title: string
+description: string | null
+scheduledAt: number
+durationMinutes: number | null
+sourceTaskId: string | null
+createdAt: number
+updatedAt: number
+```
+Indexes: `projectId`, `scheduledAt`, `updatedAt`
+
 ### conversations
 ```ts
 id: string (pk)
@@ -215,11 +221,9 @@ value: any
 Keys:
 - `appInitialized` (boolean)
 - `geminiApiKey` (string)
-- `googleClientId` (string)
-- `googlePickerKey` (string)
-- `googleAccessToken` (GoogleToken)
-- `googleDriveFolderByProject` (Record<string, string>)
-- `vaultVerifier` (VaultVerifier)
+- `googleCalendarClientId` (string)
+- `googleCalendarToken` (GoogleToken)
+- `secretsVault` (VaultMeta)
 - `assistantRetentionDays` (number)
 
 ## Migration history
@@ -228,8 +232,7 @@ Keys:
 |---------|-------------|
 | 2 | Initial shipped schema (goals, contacts, freeform resources) |
 | 3 | goals → milestones (`goals: null`) |
-| 4 | Fixed resource categories, calendarEvents, scheduleItems; `contacts` kept for migration |
-| 5 | **Current** — category+subcategory resources, contacts table, task executor/scheduledAt, issue labels/comments/milestone, conversations/messages, subcategories table; drops `goals`, `scheduleItems`, legacy `contacts` |
+| 4 | Fixed resource categories, calendarEvents, scheduleItems; contacts table, task executor/scheduledAt, drop goals |
 
 ## Supabase mapping
 

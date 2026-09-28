@@ -1,7 +1,8 @@
 // src/data/secrets.ts
-// Encrypted secrets vault using PBKDF2-derived key + AES-GCM via WebCrypto.
+// Encrypted secrets storage using PBKDF2-derived key + AES-GCM via WebCrypto.
 // The passphrase is never stored — only a verification hash.
 // Secrets are stored as Resource rows with category: "secrets".
+// For environment variables, API keys, tokens, and similar — NOT a password manager.
 
 import { db, type Resource, type ResourceCategory } from "./db";
 import { getSetting, setSetting } from "./settings";

@@ -1,5 +1,5 @@
 // src/data/resources.ts
-import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile } from "./db";
+import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider } from "./db";
 import { newId, now } from "./utils";
 
 export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
@@ -24,8 +24,7 @@ export interface CreateResourceInput {
   title: string;
   tags?: string[];
   url?: string | null;
-  provider?: string | null;
-  contactType?: string | null;
+  provider?: ResourceProvider | null;
   value?: string | null;
   body?: string | null;
   images?: ResourceImage[];
@@ -42,7 +41,6 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
     tags: input.tags ?? [],
     url: input.url ?? null,
     provider: input.provider ?? null,
-    contactType: input.contactType ?? null,
     value: input.value ?? null,
     body: input.body ?? null,
     images: input.images ?? [],
@@ -60,7 +58,7 @@ export async function updateResource(
   changes: Partial<
     Pick<
       Resource,
-      "title" | "tags" | "url" | "provider" | "contactType" | "value" | "body" | "images" | "files" | "category"
+      "title" | "tags" | "url" | "provider" | "value" | "body" | "images" | "files" | "category"
     >
   >
 ): Promise<void> {

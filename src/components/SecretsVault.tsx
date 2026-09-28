@@ -108,6 +108,9 @@ export default function SecretsVault({ projectId }: VaultProps) {
           <p className="empty-state">
             Secrets vault is not initialized. Set up a passphrase to encrypt secrets at rest.
           </p>
+          <p className="form-note">
+            Secrets are for environment variables, API keys, tokens, and similar — not a password manager.
+          </p>
           <form onSubmit={handleSetup}>
             <input
               type="password"
@@ -148,6 +151,9 @@ export default function SecretsVault({ projectId }: VaultProps) {
         <div>
           <p className="progress-label" style={{ marginBottom: 8 }}>
             Vault unlocked. {secrets.length} secret(s) stored.
+          </p>
+          <p className="form-note">
+            For env vars, API keys, tokens. Not a password manager.
           </p>
           <button
             className="btn-secondary btn-small clickable"

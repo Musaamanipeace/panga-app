@@ -7,9 +7,9 @@ import {
   deleteReminder,
   updateReminder,
   type ReminderBucket,
-} from "../../data/reminders.tsx";
-import { listAllProjects } from "../../data/projects.tsx"
-import { ErrorNote, Loading, StatusLabel, useAsync, Editable } from "../../components/ui.tsx"
+} from "../../data/reminders";
+import { listAllProjects } from "../../data/projects";
+import { ErrorNote, Loading, StatusLabel, useAsync, Editable } from "../../components/ui";
 
 const BUCKET_ORDER: { id: ReminderBucket; label: string; hint: string }[] = [
   { id: "overdue", label: "Overdue", hint: "Reminders whose time has passed" },

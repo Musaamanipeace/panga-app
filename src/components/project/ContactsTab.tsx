@@ -9,21 +9,21 @@ import {
   contactHref,
   linkedProjectIds,
   type Contact,
-} from "../../data/contacts.tsx";
-import MicButton from "../../components/MicButton.tsx"
-import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
+} from "../../data/contacts";
+import MicButton from "../../components/MicButton";
+import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 export default function ContactsTab({ projectId }: { projectId: string }) {
   const contacts = useAsync(() => listAllContacts(), []);
   const [query, setQuery] = useState("");
-  const [type, setType] = useState<"all" | "email" | "phone" | "social">("all");
+  const [type, setType] = useState<"all" | "email" | "phone" | "link">("all");
 
   const shown = (contacts.data ?? []).filter((c) => {
-    if (type !== "all" && c.contactType !== type) return false;
+    if (type !== "all" && c.type !== type) return false;
     const q = query.trim().toLowerCase();
     if (q) {
       return (
-        c.title.toLowerCase().includes(q) ||
+        c.name.toLowerCase().includes(q) ||
         (c.value ?? "").toLowerCase().includes(q) ||
         c.tags.some((t) => t.toLowerCase().includes(q))
       );
@@ -49,7 +49,7 @@ export default function ContactsTab({ projectId }: { projectId: string }) {
           data-tip="Narrows the list as you type"
         />
         <div className="chip-row" style={{ marginBottom: 0 }}>
-          {(["all", "email", "phone", "social"] as const).map((t) => (
+          {(["all", "email", "phone", "link"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -120,7 +120,7 @@ function ContactRow({
   onChange: () => Promise<void>;
 }) {
   const href = contactHref(contact);
-  const ct = contact.contactType ?? "email";
+  const ct = contact.type;
 
   return (
     <li className="item item-row-wrap">
@@ -128,9 +128,9 @@ function ContactRow({
       <span className="item-body">
         <Editable
           className="item-title"
-          value={contact.title}
+          value={contact.name}
           onSave={async (name) => {
-            await updateContact(contact.id, { title: name });
+            await updateContact(contact.id, { name });
             await onChange();
           }}
           label="Rename contact"
@@ -186,7 +186,7 @@ function ContactRow({
 
 function AddContactForm({ projectId, onCreated }: { projectId: string; onCreated: () => Promise<void> }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<"email" | "phone" | "social">("email");
+  const [type, setType] = useState<"email" | "phone" | "link">("email");
   const [value, setValue] = useState("");
   const [tags, setTags] = useState("");
 
@@ -225,23 +225,23 @@ function AddContactForm({ projectId, onCreated }: { projectId: string; onCreated
         <div className="field-label">Type</div>
         <select
           value={type}
-          onChange={(e) => setType(e.target.value as "email" | "phone" | "social")}
+          onChange={(e) => setType(e.target.value as "email" | "phone" | "link")}
           data-tip="Changes the field below and how the value is displayed"
         >
           <option value="email">Email</option>
           <option value="phone">Phone</option>
-          <option value="social">Social</option>
+          <option value="link">Link</option>
         </select>
       </div>
       <div className="field" style={{ flexBasis: "100%" }}>
         <div className="field-label">
           {type === "email" && "Email address"}
           {type === "phone" && "Phone number"}
-          {type === "social" && "Username or handle"}
+          {type === "link" && "URL"}
         </div>
         <input
-          type={type === "social" ? "text" : type === "email" ? "email" : "tel"}
-          placeholder={type === "social" ? "Handle or username" : "Value"}
+          type={type === "link" ? "url" : type === "email" ? "email" : "tel"}
+          placeholder={type === "link" ? "https://..." : type === "email" ? "Email address" : "Phone number"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />

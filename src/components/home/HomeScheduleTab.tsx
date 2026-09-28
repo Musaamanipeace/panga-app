@@ -1,10 +1,9 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { listScheduledTasks, type Task } from "../../data/tasks.tsx"
-import { listAllProjects } from "../../data/projects.tsx"
-import { listAllCalendarEvents } from "../../data/calendar.tsx"
-import type { CalendarEvent } from "../../data/db.tsx"
-import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
+import { listScheduledTasks, type Task } from "../../data/tasks";
+import { listAllProjects } from "../../data/projects";
+import { listAllCalendarEvents, type CalendarEvent } from "../../data/calendar";
+import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -19,7 +18,7 @@ export default function HomeScheduleTab() {
   }, []);
 
   const projectName = useMemo(
-    () => new Map((data?.projects ?? []).map((p) => [p.id, p.name])),
+    () => new Map((data?.projects ?? []).map((p: any) => [p.id, p.name])),
     [data]
   );
 
@@ -66,7 +65,7 @@ export default function HomeScheduleTab() {
                 time={event.startAt}
                 endTime={event.endAt}
                 meta={event.source === "google" ? "Google Calendar" : "Local event"}
-                meetLink={event.meetLink}
+                meetLink={event.hangoutLink}
                 to={event.projectId ? `/project/${event.projectId}?tab=Tasks` : undefined}
                 openTip="Open the project this event belongs to"
               />

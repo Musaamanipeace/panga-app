@@ -14,7 +14,7 @@
 ```
 .app-shell
   ├── .app-header (sticky, z-index 40)
-  │     ├── .app-logo → /home
+  │     ├── .app-logo → /dashboard
   │     ├── <GlobalSearch />  (Ctrl+K trigger)
   │     ├── spacer
   │     ├── Settings link

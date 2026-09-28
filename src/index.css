@@ -973,60 +973,6 @@ button:active,
   transform: translateX(6px);
 }
 
-/* ---- Machete cut page transition ---- */
-.machete-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  overflow: hidden;
-}
-.machete-stroke {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    transparent 0%,
-    transparent 47%,
-    #e5e7eb 49%,
-    #ffffff 50%,
-    #c0c0c0 51%,
-    transparent 53%,
-    transparent 100%
-  );
-  clip-path: polygon(0 0, 0 0, 0 0);
-  animation: machete-stroke-sweep 0.25s linear forwards;
-}
-@keyframes machete-stroke-sweep {
-  0% { clip-path: polygon(100% 0, 100% 0, 100% 0); }
-  100% { clip-path: polygon(100% 0, 100% 100%, 0 100%); }
-}
-.machete-half {
-  position: absolute;
-  inset: 0;
-  background: #0f172a;
-}
-.machete-half-tr {
-  clip-path: polygon(0 0, 100% 0, 100% 100%);
-  animation: machete-slide-tr 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: 0.25s;
-  opacity: 0;
-}
-.machete-half-bl {
-  clip-path: polygon(0 0, 100% 100%, 0 100%);
-  animation: machete-slide-bl 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: 0.25s;
-  opacity: 0;
-}
-@keyframes machete-slide-tr {
-  0% { transform: translate(0, 0); opacity: 1; }
-  100% { transform: translate(120%, -120%); opacity: 1; }
-}
-@keyframes machete-slide-bl {
-  0% { transform: translate(0, 0); opacity: 1; }
-  100% { transform: translate(-120%, 120%); opacity: 1; }
-}
-
 /* ---- Landing page / login ---- */
 .landing {
   min-height: 100vh;
@@ -1058,25 +1004,6 @@ button:active,
   overflow: hidden;
   padding: 12px 32px;
   font-size: 15px;
-}
-.blade-glint::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -60%;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(
-    120deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.55) 50%,
-    transparent 100%
-  );
-  transform: skewX(-20deg);
-  transition: left 0.15s ease-in-out;
-}
-.blade-glint:hover::before {
-  left: 130%;
 }
 .otp-overlay {
   display: flex;

@@ -8,22 +8,22 @@ import {
   CONTACT_TYPE_LABELS,
   linkedProjectIds,
   type Contact,
-} from "../../data/contacts.tsx";
-import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
+} from "../../data/contacts";
+import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 export default function HomeContactsTab() {
   const [query, setQuery] = useState("");
-  const [type, setType] = useState<"all" | "email" | "phone" | "social">("all");
+  const [type, setType] = useState<"all" | "email" | "phone" | "link">("all");
   const { data, error, loading, reload, setData } = useAsync(listAllContacts, []);
 
   const filtered = useMemo(() => {
     let list = data ?? [];
-    if (type !== "all") list = list.filter((c) => c.contactType === type);
+    if (type !== "all") list = list.filter((c) => c.type === type);
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
+          c.name.toLowerCase().includes(q) ||
           (c.value ?? "").toLowerCase().includes(q) ||
           c.tags.some((t) => t.toLowerCase().includes(q))
       );
@@ -35,7 +35,7 @@ export default function HomeContactsTab() {
   if (loading) return <Loading label="Loading contacts..." />;
 
   async function rename(id: string, name: string) {
-    await updateContact(id, { title: name });
+    await updateContact(id, { name });
     setData(await listAllContacts());
   }
 
@@ -56,7 +56,7 @@ export default function HomeContactsTab() {
           data-tip="Narrows the list below as you type"
         />
         <div className="chip-row" style={{ marginBottom: 0 }}>
-           {(["all", "email", "phone", "social"] as const).map((t) => (
+           {(["all", "email", "phone", "link"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -81,7 +81,7 @@ export default function HomeContactsTab() {
         <ul className="item-list">
           {filtered.map((contact) => {
             const href = contactHref(contact);
-            const ct = contact.contactType ?? "email";
+            const ct = contact.type;
             return (
               <li key={contact.id} className="item">
                 <span
@@ -92,7 +92,7 @@ export default function HomeContactsTab() {
                 <span className="item-body">
                   <Editable
                     className="item-title"
-                    value={contact.title}
+                    value={contact.name}
                     onSave={(name) => rename(contact.id, name)}
                     label="Rename contact"
                   />

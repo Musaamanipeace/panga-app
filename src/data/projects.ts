@@ -2,6 +2,8 @@
 import { db, type Project, type ProjectStatus } from "./db";
 import { newId, now } from "./utils";
 
+export type { Project, ProjectStatus };
+
 export async function listProjects(
   status: ProjectStatus = "active"
 ): Promise<Project[]> {
@@ -10,6 +12,10 @@ export async function listProjects(
     .equals(status)
     .reverse()
     .sortBy("updatedAt");
+}
+
+export async function listAllProjects(): Promise<Project[]> {
+  return db.projects.orderBy("updatedAt").reverse().toArray();
 }
 
 export async function getProject(id: string): Promise<Project | undefined> {

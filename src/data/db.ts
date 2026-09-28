@@ -13,20 +13,29 @@ export type MilestoneStatus = "in_progress" | "achieved" | "missed";
 export type SyncStatus = "pending" | "synced";
 export type CalendarEventSource = "local" | "google";
 export type ResourceProvider = "gemini" | "claude" | "gpt" | "other";
-export type ContactType = "email" | "phone" | "social";
+export type ContactType = "email" | "phone" | "link";
+
+export interface Contact {
+  id: string;
+  name: string;
+  type: ContactType;
+  value: string;
+  tags: string[];
+  linkedProjectIds: string[];
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+}
 
 // Fixed resource categories (Supabase-shaped: category column + JSONB meta).
 // No longer user-editable — each category has a known set of meta fields.
 export type ResourceCategory =
   | "notes"
   | "scripts"
-  | "prompts"
-  | "ai_chat_links"
-  | "reports_memos"
   | "links"
-  | "contacts"
   | "secrets"
-  | "images";
+  | "images"
+  | "pdfs";
 
 export interface ResourceImage {
   dataUrl: string;
@@ -56,7 +65,9 @@ export interface Task {
   title: string;
   notes: string;
   status: TaskStatus;
+  executor: "ai" | "manual";
   dueDate: number | null;
+  scheduledAt: number | null;
   estimatedMinutes: number | null;
   tags: string[];
   createdAt: number;
@@ -72,16 +83,15 @@ export interface Resource {
   id: string;
   projectId: string;
   category: ResourceCategory;
-  title: string; // For contacts, this is the person/org name
+  title: string;
   tags: string[];
   // Category-specific fields:
-  url: string | null; // links, ai_chat_links
-  provider: ResourceProvider | null; // ai_chat_links
-  contactType: ContactType | null; // contacts
-  value: string | null; // contacts (email/phone/social value), secrets (encrypted value)
-  body: string | null; // notes, scripts, prompts, reports_memos
+  url: string | null; // links
+  provider: ResourceProvider | null; // links (AI chat links)
+  value: string | null; // secrets (encrypted value)
+  body: string | null; // notes, scripts, links
   images: ResourceImage[]; // images
-  files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet)
+  files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (Drive file info)
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -163,6 +173,22 @@ export interface ScheduleItem {
   updatedAt: number;
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: number;
+}
+
 // Settings keys used across the app
 export const SETTINGS_KEYS = {
   appInitialized: "appInitialized",
@@ -179,9 +205,12 @@ class PangaDB extends Dexie {
   docEntries!: Table<DocEntry, string>;
   milestones!: Table<Milestone, string>;
   issues!: Table<Issue, string>;
+  contacts!: Table<Contact, string>;
   reminders!: Table<Reminder, string>;
   calendarEvents!: Table<CalendarEvent, string>;
   scheduleItems!: Table<ScheduleItem, string>;
+  conversations!: Table<Conversation, string>;
+  messages!: Table<Message, string>;
   settings!: Table<{ key: string; value: any }, string>;
 
   constructor() {
@@ -220,18 +249,21 @@ class PangaDB extends Dexie {
       });
 
     // v4: fixed resource categories + category-specific fields, calendarEvents,
-    // scheduleItems, drop goals/contacts/resourceCategories settings, migrate data.
+    // scheduleItems, contacts table, drop goals/resourceCategories settings, migrate data.
     this.version(4)
       .stores({
         projects: "id, status, updatedAt, syncStatus",
-        tasks: "id, projectId, status, dueDate, updatedAt, syncStatus, *tags",
-        resources: "id, projectId, category, updatedAt, syncStatus, *tags, contactType, provider",
+        tasks: "id, projectId, status, dueDate, scheduledAt, executor, updatedAt, syncStatus, *tags",
+        resources: "id, projectId, category, updatedAt, syncStatus, *tags, provider",
         docEntries: "id, projectId, type, order, updatedAt, syncStatus",
         milestones: "id, projectId, status, targetDate, updatedAt, syncStatus, *blockingTaskIds",
         issues: "id, projectId, status, severity, updatedAt, syncStatus",
+        contacts: "id, name, type, value, updatedAt, syncStatus, *tags, *linkedProjectIds",
         reminders: "id, projectId, triggerAt, status, updatedAt, syncStatus",
         calendarEvents: "id, projectId, source, startAt, endAt, updatedAt",
         scheduleItems: "id, projectId, scheduledAt, updatedAt",
+        conversations: "id, expiresAt, createdAt, updatedAt",
+        messages: "id, conversationId, createdAt",
         settings: "key",
       })
       .upgrade(async (tx) => {
@@ -243,7 +275,6 @@ class PangaDB extends Dexie {
           let url: string | null = null;
           let value: string | null = null;
           let body: string | null = null;
-          let contactType: ContactType | null = null;
           let provider: ResourceProvider | null = null;
 
           switch (cat) {
@@ -254,6 +285,20 @@ class PangaDB extends Dexie {
               break;
             case "script":
               newCategory = "scripts";
+              body = r.textBody || r.value || r.notes || null;
+              break;
+            case "prompts":
+              newCategory = "notes";
+              body = r.textBody || r.value || r.notes || null;
+              break;
+            case "ai_chat_links":
+              newCategory = "links";
+              url = r.value || null;
+              provider = r.provider || null;
+              body = r.textBody || r.notes || null;
+              break;
+            case "reports_memos":
+              newCategory = "notes";
               body = r.textBody || r.value || r.notes || null;
               break;
             case "location":
@@ -280,19 +325,12 @@ class PangaDB extends Dexie {
               newCategory = "notes";
               body = r.textBody || r.notes || null;
               break;
-            case "contact":
-              newCategory = "contacts";
-              if (r.email) {
-                contactType = "email";
-                value = r.email;
-              } else if (r.phone) {
-                contactType = "phone";
-                value = r.phone;
-              } else if (r.discord) {
-                contactType = "social";
-                value = r.discord;
-              }
-              body = r.textBody || null;
+            case "secrets":
+              newCategory = "secrets";
+              value = r.value || null;
+              break;
+            case "images":
+              newCategory = "images";
               break;
             default:
               newCategory = "notes";
@@ -307,7 +345,7 @@ class PangaDB extends Dexie {
             tags: r.tags || [],
             url,
             provider,
-            contactType,
+            contactType: null,
             value,
             body,
             images: r.images || [],
@@ -322,31 +360,7 @@ class PangaDB extends Dexie {
           await tx.table("resources").bulkUpdate(migrated);
         }
 
-        // --- Migrate contacts table into resources ---
-        const oldContacts = await tx.table("contacts").toArray();
-        if (oldContacts.length) {
-          const contactResources = oldContacts.map((c: any) => ({
-            id: c.id,
-            projectId: c.linkedProjectIds?.[0] ?? c.projectId ?? null,
-            category: "contacts" as ResourceCategory,
-            title: c.name,
-            tags: c.tags || [],
-            url: null,
-            provider: null,
-            contactType: c.email ? "email" as ContactType : c.phone ? "phone" : "social",
-            value: c.email || c.phone || c.discord || null,
-            body: null,
-            images: [],
-            files: [],
-            createdAt: c.createdAt,
-            updatedAt: c.updatedAt,
-            syncStatus: c.syncStatus,
-          }));
-          await tx.table("resources").bulkAdd(contactResources);
-        }
-
         // --- Clean up old tables and settings ---
-        await tx.table("contacts").clear();
         await tx.table("goals").clear();
         await db.settings.where("key").equals("resourceCategories").delete();
       });

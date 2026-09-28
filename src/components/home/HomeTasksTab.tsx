@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { listAllTasks, isOverdue, type Task } from "../../data/tasks.tsx"
-import { listAllProjects } from "../../data/projects.tsx"
-import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
+import { listAllTasks, isOverdue, type Task } from "../../data/tasks";
+import { listAllProjects } from "../../data/projects";
+import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 type Filter = "all" | "active" | "inactive" | "completed" | "overdue" | "ai" | "scheduled";
 
@@ -24,7 +24,7 @@ export default function HomeTasksTab() {
   }, []);
 
   const projectName = useMemo(
-    () => new Map((data?.projects ?? []).map((p) => [p.id, p.name])),
+    () => new Map<string, string>((data?.projects ?? []).map((p: any) => [p.id, p.name])),
     [data]
   );
 
@@ -32,18 +32,18 @@ export default function HomeTasksTab() {
     const tasks = data?.tasks ?? [];
     return {
       all: tasks.length,
-      active: tasks.filter((t) => t.status === "active").length,
-      inactive: tasks.filter((t) => t.status === "inactive").length,
-      completed: tasks.filter((t) => t.status === "completed").length,
-      overdue: tasks.filter((t) => isOverdue(t)).length,
-      ai: tasks.filter((t) => t.executor === "ai" && t.status !== "completed").length,
-      scheduled: tasks.filter((t) => t.scheduledAt && t.status !== "completed").length,
+      active: tasks.filter((t: Task) => t.status === "active").length,
+      inactive: tasks.filter((t: Task) => t.status === "inactive").length,
+      completed: tasks.filter((t: Task) => t.status === "completed").length,
+      overdue: tasks.filter((t: Task) => isOverdue(t)).length,
+      ai: tasks.filter((t: Task) => t.executor === "ai" && t.status !== "completed").length,
+      scheduled: tasks.filter((t: Task) => t.scheduledAt && t.status !== "completed").length,
     } as Record<Filter, number>;
   }, [data]);
 
   const filtered = useMemo(() => {
     const tasks = data?.tasks ?? [];
-    const list = tasks.filter((t) => {
+    const list = tasks.filter((t: Task) => {
       switch (filter) {
         case "all":
           return true;
@@ -61,7 +61,7 @@ export default function HomeTasksTab() {
           return t.scheduledAt !== null && t.status !== "completed";
       }
     });
-    return list.sort((a, b) => {
+    return list.sort((a: Task, b: Task) => {
       const at = a.scheduledAt ?? a.dueDate ?? Infinity;
       const bt = b.scheduledAt ?? b.dueDate ?? Infinity;
       return at - bt;

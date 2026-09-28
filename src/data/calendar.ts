@@ -2,6 +2,8 @@
 import { db, type CalendarEvent } from "./db";
 import { newId, now } from "./utils";
 
+export type { CalendarEvent };
+
 export async function listCalendarEvents(projectId?: string | null): Promise<CalendarEvent[]> {
   if (projectId) {
     return db.calendarEvents
@@ -10,6 +12,10 @@ export async function listCalendarEvents(projectId?: string | null): Promise<Cal
       .reverse()
       .sortBy("startAt");
   }
+  return db.calendarEvents.orderBy("startAt").reverse().toArray();
+}
+
+export async function listAllCalendarEvents(): Promise<CalendarEvent[]> {
   return db.calendarEvents.orderBy("startAt").reverse().toArray();
 }
 
@@ -52,8 +58,8 @@ export async function createLocalEvent(input: {
 export async function importGoogleEvents(events: GoogleCalendarEventLike[]): Promise<number> {
   const local: CalendarEvent[] = [];
   for (const e of events) {
-    const startAt = e.start?.dateTime ?? (e.start?.date ? new Date(e.start.date).getTime() : 0);
-    const endAt = e.end?.dateTime ?? (e.end?.date ? new Date(e.end.date).getTime() : 0);
+    const startAt = e.start?.dateTime ? new Date(e.start.dateTime).getTime() : (e.start?.date ? new Date(e.start.date).getTime() : 0);
+    const endAt = e.end?.dateTime ? new Date(e.end.dateTime).getTime() : (e.end?.date ? new Date(e.end.date).getTime() : 0);
     local.push({
       id: `google_${e.id}`,
       projectId: null,

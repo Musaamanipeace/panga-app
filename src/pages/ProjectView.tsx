@@ -7,48 +7,39 @@ import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type Do
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, type Issue, type IssueSeverity } from "../data/issues";
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
-import {
-  listScheduleItems,
-  createScheduleItem,
-  deleteScheduleItem,
-  type ScheduleItem,
-} from "../data/scheduler";
-import {
-  listCalendarEvents,
-  createLocalEvent,
-  deleteCalendarEvent,
-  type CalendarEvent,
-} from "../data/calendar";
+import { listContacts, createContact, updateContact, deleteContact, type Contact, type ContactType } from "../data/contacts";
 import { getGeminiApiKey } from "../data/settings";
 import type { Project } from "../data/db";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
 import { SecretViewer } from "../components/SecretsVault";
+import InsightsTab from "../components/project/InsightsTab";
+import ContactsTab from "../components/project/ContactsTab";
 
-const TABS = ["Documentation", "Tasks", "Scheduler", "Resources", "Milestones", "Calendar", "Issues", "Reminders"] as const;
+const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Insights", "Issues", "Reminders", "Contacts"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
   Documentation: "Project README, wireframes, and structural specs",
   Tasks: "Track active, scheduled, and remaining tasks",
-  Scheduler: "Schedule tasks by time — manually or with AI planning",
-  Resources: "Notes, scripts, prompts, links, contacts, secrets, images",
+  Resources: "Notes, scripts, links, secrets, images, PDFs",
   Milestones: "Phase checkpoints — hover to see blocking tasks",
-  Calendar: "Google Calendar sync and local events — Join Meet buttons",
+  Insights: "Task completion rate, milestone progress, issue stats",
   Issues: "Log setbacks and blockers with a severity rating",
   Reminders: "Schedule follow-up nudges for this project",
+  Contacts: "Project contacts — emails, phones, links",
 };
 
 // Map query ?tab= to a tab name
 const TAB_QUERY: Record<string, Tab> = {
   Documentation: "Documentation",
   Tasks: "Tasks",
-  Scheduler: "Scheduler",
   Resources: "Resources",
   Milestones: "Milestones",
-  Calendar: "Calendar",
+  Insights: "Insights",
   Issues: "Issues",
   Reminders: "Reminders",
+  Contacts: "Contacts",
 };
 
 export default function ProjectView() {
@@ -112,12 +103,12 @@ export default function ProjectView() {
       <div className="tab-panel">
         {activeTab === "Documentation" && <DocumentationTab projectId={projectId} />}
         {activeTab === "Tasks" && <TasksTab projectId={projectId} onChange={refreshProject} />}
-        {activeTab === "Scheduler" && <SchedulerTab projectId={projectId} />}
         {activeTab === "Resources" && <ResourcesTab projectId={projectId} />}
         {activeTab === "Milestones" && <MilestonesTab projectId={projectId} />}
-        {activeTab === "Calendar" && <CalendarTab projectId={projectId} />}
+        {activeTab === "Insights" && <InsightsTab projectId={projectId} />}
         {activeTab === "Issues" && <IssuesTab projectId={projectId} />}
         {activeTab === "Reminders" && <RemindersTab projectId={projectId} />}
+        {activeTab === "Contacts" && <ContactsTab projectId={projectId} />}
       </div>
     </div>
   );
@@ -316,217 +307,15 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
   );
 }
 
-// ---------- Scheduler (§3) ----------
-function SchedulerTab({ projectId }: { projectId: string }) {
-  const [items, setItems] = useState<ScheduleItem[]>([]);
-  const [mode, setMode] = useState<"manual" | "ai">("manual");
-  const [title, setTitle] = useState("");
-  const [when, setWhen] = useState("");
-  const [duration, setDuration] = useState("");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState<string | null>(null);
-
-  async function refresh() {
-    setItems(await listScheduleItems(projectId));
-  }
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
-  async function addManual(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !when) return;
-    await createScheduleItem({
-      projectId,
-      title: title.trim(),
-      scheduledAt: new Date(when).getTime(),
-      durationMinutes: duration ? parseInt(duration, 10) : null,
-    });
-    setTitle("");
-    setWhen("");
-    setDuration("");
-    refresh();
-  }
-
-  async function runAiPlanning(e: React.FormEvent) {
-    e.preventDefault();
-    if (!aiPrompt.trim()) return;
-    setAiLoading(true);
-    setAiStatus("Planning...");
-    try {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) {
-        setAiStatus("No Gemini API key configured. Add one in Settings.");
-        setAiLoading(false);
-        return;
-      }
-
-      const tasks = await listAllActiveTasks();
-      const existingItems = await listScheduleItems(projectId);
-
-      const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `You are a scheduling assistant. Given the following tasks and existing schedule items, ` +
-                      `interpret the user's natural-language scheduling request and return ONLY a JSON array ` +
-                      `of objects with fields: {title, scheduledAt (ISO), durationMinutes, description}. ` +
-                      `If the request is ambiguous, ask a clarifying question instead as a single string starting with "CLARIFY:".\n\n` +
-                      `Tasks (active, across all projects):\n${JSON.stringify(tasks.map((t) => ({ id: t.id, title: t.title, projectId: t.projectId, dueDate: t.dueDate, estimatedMinutes: t.estimatedMinutes, tags: t.tags })))}\n\n` +
-                      `Existing scheduled items:\n${JSON.stringify(existingItems)}\n\n` +
-                      `User request: "${aiPrompt}"`,
-              }],
-            }],
-          }),
-        }
-      );
-
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      const trimmed = text.trim();
-
-      if (trimmed.startsWith("CLARIFY:")) {
-        setAiStatus(trimmed);
-        setAiLoading(false);
-        return;
-      }
-
-      const items = JSON.parse(trimmed.replace(/```json\s*/, "").replace(/```\s*/, "")) as Array<{
-        title: string;
-        scheduledAt: string;
-        durationMinutes: number;
-        description?: string;
-      }>;
-
-      for (const item of items) {
-        await createScheduleItem({
-          projectId,
-          title: item.title,
-          description: item.description ?? null,
-          scheduledAt: new Date(item.scheduledAt).getTime(),
-          durationMinutes: item.durationMinutes ?? null,
-        });
-      }
-      setAiStatus(`Added ${items.length} item(s) to your schedule.`);
-      setAiPrompt("");
-    } catch (err: any) {
-      setAiStatus(`Error: ${err.message ?? "Failed to plan schedule"}`);
-    }
-    setAiLoading(false);
-    refresh();
-  }
-
-  async function deleteItem(id: string) {
-    await deleteScheduleItem(id);
-    refresh();
-  }
-
-  return (
-    <div>
-      {/* Mode toggle */}
-      <div className="scheduler-mode-toggle">
-        <button
-          className={`tab-btn clickable ${mode === "manual" ? "tab-btn-active" : ""}`}
-          data-tip="Add a schedule entry manually"
-          onClick={() => setMode("manual")}
-        >
-          Manual
-        </button>
-        <button
-          className={`tab-btn clickable ${mode === "ai" ? "tab-btn-active" : ""}`}
-          data-tip="Plan with AI — describe what you want to schedule"
-          onClick={() => setMode("ai")}
-        >
-          AI Plan
-        </button>
-      </div>
-
-      {/* Manual mode form */}
-      {mode === "manual" && (
-        <form className="resource-form" onSubmit={addManual}>
-          <input
-            type="text"
-            placeholder="What needs scheduling?"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <MicButton onResult={(text) => setTitle(text)} />
-          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
-          <input
-            type="number"
-            placeholder="Minutes"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            min="1"
-          />
-          <button type="submit" className="btn-primary clickable">+ Schedule</button>
-        </form>
-      )}
-
-      {/* AI mode form */}
-      {mode === "ai" && (
-        <div>
-          <form className="sliding-prompt-box" onSubmit={runAiPlanning}>
-            <textarea
-              placeholder="e.g. 'Schedule the API design review tomorrow at 2pm for 90 minutes, then block 3-4pm for the presentation.'"
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              rows={2}
-              disabled={aiLoading}
-            />
-            <button type="submit" className="btn-primary clickable" disabled={aiLoading}>
-              {aiLoading ? "Planning..." : "Plan with AI"}
-            </button>
-          </form>
-          {aiStatus && <p className={`scheduler-status ${aiLoading ? "loading" : "done"}`}>{aiStatus}</p>}
-        </div>
-      )}
-
-      {/* Schedule list */}
-      {items.length === 0 ? (
-        <p className="empty-state">
-          No scheduled items yet. Use manual mode for a quick entry or AI Plan to let
-          the assistant organize your tasks by time.
-        </p>
-      ) : (
-        <ul className="task-list">
-          {items.map((item) => (
-            <li key={item.id} className="task-item" style={{ borderLeftColor: "var(--color-accent-milestone)" }}>
-              <span className="task-title">{item.title}</span>
-              <span className="task-status-label">
-                {new Date(item.scheduledAt).toLocaleString()}
-                {item.durationMinutes && ` · ${item.durationMinutes} min`}
-              </span>
-              <button
-                className="btn-icon clickable"
-                data-tip="Delete schedule item"
-                onClick={() => deleteItem(item.id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 // ---------- Resources ----------
 function ResourcesTab({ projectId }: { projectId: string }) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [filter, setFilter] = useState<string>("all");
+  const [subfilter, setSubfilter] = useState<string>("all");
   const [editing, setEditing] = useState<Resource | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [url, setUrl] = useState("");
-  const [contactType, setContactType] = useState<"email" | "phone" | "social">("email");
   const [value, setValue] = useState("");
   const [provider, setProvider] = useState<"gemini" | "claude" | "gpt" | "other">("other");
   const [images, setImages] = useState<any[]>([]);
@@ -535,13 +324,36 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const CATEGORY_LABELS: Record<ResourceCategory, string> = {
     notes: "Notes",
     scripts: "Scripts",
-    prompts: "Prompts",
-    ai_chat_links: "AI Chat Links",
-    reports_memos: "Reports & Memos",
     links: "Links",
-    contacts: "Contacts",
     secrets: "Secrets",
     images: "Images",
+    pdfs: "PDFs",
+  };
+
+  const SUBCATEGORY_LABELS: Record<string, Record<string, string>> = {
+    notes: {
+      all: "All",
+      prompts: "Prompts",
+      reports_memos: "Reports & Memos",
+    },
+    links: {
+      all: "All",
+      ai_chats: "AI Chats",
+      bookmark_groups: "Multi-tab Bookmarks",
+      my_links: "My Links",
+    },
+    scripts: {
+      all: "All",
+      shell: "Shell",
+      snippets: "Snippets",
+    },
+    secrets: {
+      all: "All",
+      env_vars: "Env Vars",
+      tokens: "Tokens",
+    },
+    images: { all: "All" },
+    pdfs: { all: "All" },
   };
 
   async function refresh() {
@@ -566,7 +378,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setBody("");
     setUrl("");
     setValue("");
-    setContactType("email");
     setProvider("other");
     setImages([]);
     setFiles([]);
@@ -577,32 +388,32 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     e.preventDefault();
     if (!title.trim()) return;
     const cat = editing?.category ?? "notes";
+    const subcat = subfilter === "all" ? "" : subfilter;
     const input: any = {
       projectId,
       category: cat,
       title: title.trim(),
-      tags: [],
+      tags: subcat ? [subcat] : [],
     };
-    if (cat === "links" || cat === "ai_chat_links") {
+    if (cat === "links") {
       input.url = url.trim() || null;
-      input.provider = cat === "ai_chat_links" ? provider : null;
-      input.body = body.trim() || null;
-    } else if (cat === "contacts") {
-      input.contactType = contactType;
-      input.value = value.trim() || null;
+      input.provider = subcat === "ai_chats" ? provider : null;
       input.body = body.trim() || null;
     } else if (cat === "secrets") {
       // Secrets require the vault — create through the secrets module
       if (!editing) {
         await createSecret({ projectId, title: title.trim(), value: value.trim() });
       } else {
-        await updateResource(editing.id, { title: title.trim(), value: value.trim(), tags: [] });
+        await updateResource(editing.id, { title: title.trim(), value: value.trim(), tags: subcat ? [subcat] : [] });
       }
       resetForm();
       refresh();
       return;
     } else if (cat === "images") {
       input.images = images;
+    } else if (cat === "pdfs") {
+      input.files = files;
+      input.body = body.trim() || null;
     } else if (cat === "notes") {
       input.body = body.trim() || null;
       input.files = files;
@@ -624,13 +435,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setBody(r.body ?? "");
     setUrl(r.url ?? "");
     setValue(r.value ?? "");
-    setContactType((r.contactType as any) ?? "email");
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
+    // Set subfilter based on first tag
+    if (r.tags.length > 0 && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]]) {
+      setSubfilter(r.tags[0]);
+    } else {
+      setSubfilter("all");
+    }
   }
 
   const filtered = filter === "all" ? resources : resources.filter((r) => r.category === filter);
+  const subFiltered = subfilter === "all" ? filtered : filtered.filter((r) => r.tags.includes(subfilter));
 
   return (
     <div>
@@ -643,6 +460,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             onChange={(e) => {
               if (!editing) {
                 setFilter(e.target.value);
+                setSubfilter("all");
               }
             }}
             data-tip="Filter resources by category"
@@ -654,17 +472,41 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </select>
         )}
 
+        {/* Subcategory filter for links and notes */}
+        {!editing && (filter === "links" || filter === "notes") && SUBCATEGORY_LABELS[filter] && Object.keys(SUBCATEGORY_LABELS[filter]).length > 1 && (
+          <select
+            value={subfilter}
+            onChange={(e) => setSubfilter(e.target.value)}
+            data-tip="Filter by subcategory"
+          >
+            {Object.entries(SUBCATEGORY_LABELS[filter]).map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        )}
+        {editing && (editing.category === "links" || editing.category === "notes") && SUBCATEGORY_LABELS[editing.category] && Object.keys(SUBCATEGORY_LABELS[editing.category]).length > 1 && (
+          <select
+            value={subfilter}
+            onChange={(e) => setSubfilter(e.target.value)}
+            data-tip="Subcategory"
+          >
+            {Object.entries(SUBCATEGORY_LABELS[editing.category]).map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        )}
+
         <input
           type="text"
-          placeholder={editing?.category === "contacts" ? "Name" : "Title"}
+          placeholder="Title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          data-tip={editing?.category === "contacts" ? "Contact person or organization" : "Resource title"}
+          data-tip="Resource title"
         />
         <MicButton onResult={(text) => setTitle(text)} />
 
         {/* Category-specific fields */}
-        {!editing && (filter === "links" || filter === "ai_chat_links") && (
+        {!editing && filter === "links" && (
           <>
             <input
               type="url"
@@ -673,65 +515,33 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               onChange={(e) => setUrl(e.target.value)}
               data-tip="URL to open"
             />
+            {subfilter === "ai_chats" && (
+              <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
+                <option value="gemini">Gemini</option>
+                <option value="claude">Claude</option>
+                <option value="gpt">GPT</option>
+                <option value="other">Other</option>
+              </select>
+            )}
           </>
         )}
-        {editing && (editing.category === "links" || editing.category === "ai_chat_links") && (
-          <input
-            type="url"
-            placeholder="https://..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            data-tip="URL to open"
-          />
-        )}
-
-        {!editing && filter === "ai_chat_links" && (
-          <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude</option>
-            <option value="gpt">GPT</option>
-            <option value="other">Other</option>
-          </select>
-        )}
-        {editing && editing.category === "ai_chat_links" && (
-          <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
-            <option value="gemini">Gemini</option>
-            <option value="claude">Claude</option>
-            <option value="gpt">GPT</option>
-            <option value="other">Other</option>
-          </select>
-        )}
-
-        {!editing && filter === "contacts" && (
+        {editing && editing.category === "links" && (
           <>
-            <select value={contactType} onChange={(e) => setContactType(e.target.value as any)} data-tip="Contact method type">
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="social">Social</option>
-            </select>
             <input
-              type="text"
-              placeholder="Contact value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              data-tip="The email address, phone number, or social handle"
+              type="url"
+              placeholder="https://..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              data-tip="URL to open"
             />
-          </>
-        )}
-        {editing && editing.category === "contacts" && (
-          <>
-            <select value={contactType} onChange={(e) => setContactType(e.target.value as any)} data-tip="Contact method type">
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="social">Social</option>
-            </select>
-            <input
-              type="text"
-              placeholder="Contact value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              data-tip="The email address, phone number, or social handle"
-            />
+            {subfilter === "ai_chats" && (
+              <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
+                <option value="gemini">Gemini</option>
+                <option value="claude">Claude</option>
+                <option value="gpt">GPT</option>
+                <option value="other">Other</option>
+              </select>
+            )}
           </>
         )}
 
@@ -741,7 +551,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             placeholder="Secret value (encrypted at rest)"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            data-tip="Secrets are encrypted with your passphrase via AES-GCM"
+            data-tip="Secrets are encrypted with your passphrase via AES-GCM. For env vars, API keys, tokens."
           />
         )}
         {editing && editing.category === "secrets" && (
@@ -750,13 +560,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             placeholder="Secret value"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            data-tip="Update the secret value"
+            data-tip="Update the secret value (env var, API key, token)"
           />
         )}
 
-        {/* Body / text for notes, scripts, prompts, reports, links, ai_chat_links */}
-        {(!editing || ["notes", "scripts", "prompts", "reports_memos", "links", "ai_chat_links"].includes(editing.category)) &&
-         ["notes", "scripts", "prompts", "reports_memos", "links", "ai_chat_links"].includes(editing?.category ?? filter === "all" ? "" : filter) && (
+        {/* Body / text for notes, scripts, links, pdfs */}
+        {(!editing || ["notes", "scripts", "links", "pdfs"].includes(editing.category)) &&
+         ["notes", "scripts", "links", "pdfs"].includes(editing?.category ?? filter === "all" ? "" : filter) && (
           <textarea
             placeholder="Notes, description, details..."
             value={body}
@@ -782,6 +592,22 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           />
         )}
 
+        {/* File upload for pdfs */}
+        {!editing && filter === "pdfs" && (
+          <input
+            type="file"
+            accept=".pdf"
+            multiple
+            onChange={async (e) => {
+              const files = Array.from(e.target.files ?? []);
+              const parsed = await Promise.all(files.map(fileToDataUrl));
+              setFiles((prev) => [...prev, ...parsed]);
+              e.target.value = "";
+            }}
+            data-tip="Attach PDF files (stored as Drive links)"
+          />
+        )}
+
         {/* Image upload for images category */}
         {(!editing && filter === "images") || (editing && editing.category === "images") ? (
           <input
@@ -794,7 +620,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               setImages((prev) => [...prev, ...urls]);
               e.target.value = "";
             }}
-            data-tip="Upload image resources"
+            data-tip="Upload image resources (stored as Drive links)"
           />
         ) : null}
 
@@ -817,7 +643,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* File previews for notes */}
+        {/* File previews for notes and pdfs */}
         {files.length > 0 && (
           <div className="image-preview-row">
             {files.map((f, i) => (
@@ -857,60 +683,47 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         <button
           className={`chip ${filter === "all" ? "chip-active" : ""}`}
           data-tip="Show all resources"
-          onClick={() => setFilter("all")}
+          onClick={() => { setFilter("all"); setSubfilter("all"); }}
         >
           All
         </button>
-        {Object.entries({
-          notes: "Notes",
-          scripts: "Scripts",
-          prompts: "Prompts",
-          ai_chat_links: "AI Chat",
-          reports_memos: "Reports",
-          links: "Links",
-          contacts: "Contacts",
-          secrets: "Secrets",
-          images: "Images",
-        }).map(([id, label]) => (
+        {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
           <button
             key={id}
             className={`chip ${filter === id ? "chip-active" : ""}`}
             data-tip={`Show only ${label.toLowerCase()}`}
-            onClick={() => setFilter(id)}
+            onClick={() => { setFilter(id); setSubfilter("all"); }}
           >
             {label}
           </button>
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {subFiltered.length === 0 ? (
         <p className="empty-state">No resources in this category yet.</p>
       ) : (
         <ul className="resource-list">
-          {filtered.map((r) => {
+          {subFiltered.map((r) => {
             let label = "Resource";
             if (r.category === "links") label = "Link";
-            else if (r.category === "ai_chat_links") label = "AI Chat";
-            else if (r.category === "contacts") label = "Contact";
             else if (r.category === "secrets") label = "Secret";
             else if (r.category === "scripts") label = "Script";
-            else if (r.category === "prompts") label = "Prompt";
-            else if (r.category === "reports_memos") label = "Report";
             else if (r.category === "images") label = "Image";
+            else if (r.category === "pdfs") label = "PDF";
             else label = "Note";
+
+            // Show subcategory tag
+            const subTag = r.tags[0] && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]] ? SUBCATEGORY_LABELS[r.category][r.tags[0]] : "";
 
             return (
               <li key={r.id} className="resource-item">
                 <span className="resource-category-dot" style={{ backgroundColor: getCategoryColor(r.category) }} />
                 <span className="resource-text">
                   <span className="resource-title">{r.title || "(untitled)"}</span>
-                  {r.category === "links" || r.category === "ai_chat_links" ? (
-                    <a href={r.url ?? ""} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open link">
+                  {r.category === "links" && r.url ? (
+                    <a href={r.url} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open link">
                       {r.url}
                     </a>
-                  ) : null}
-                  {r.category === "contacts" && r.value ? (
-                    <span className="resource-value">{r.contactType}: {r.value}</span>
                   ) : null}
                   {r.body && <p className="resource-notes">{r.body}</p>}
                   {r.category === "secrets" && r.value ? (
@@ -932,7 +745,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                       ))}
                     </div>
                   )}
-                  <span className="chip-small">{label}</span>
+                  <span className="chip-small">{label}{subTag ? ` · ${subTag}` : ""}</span>
                 </span>
                 <button
                   className="btn-icon clickable"
@@ -961,13 +774,10 @@ function getCategoryColor(cat: ResourceCategory): string {
   const colors: Record<ResourceCategory, string> = {
     notes: "#3b82f6",
     scripts: "#8b5cf6",
-    prompts: "#06b6d4",
-    ai_chat_links: "#ec4899",
-    reports_memos: "#f59e0b",
     links: "#22c55e",
-    contacts: "#14b8a6",
     secrets: "#ef4444",
     images: "#a855f7",
+    pdfs: "#f59e0b",
   };
   return colors[cat] ?? "#6b7280";
 }
@@ -1141,106 +951,6 @@ function MilestonesTab({ projectId }: { projectId: string }) {
             );
           })}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ---------- Calendar (§4) ----------
-function CalendarTab({ projectId }: { projectId: string }) {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      setEvents(await listCalendarEvents(projectId));
-    } catch (err: any) {
-      setError(err.message);
-    }
-    setLoading(false);
-  }
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
-  async function addLocalEvent(e: React.FormEvent) {
-    e.preventDefault();
-    const title = (e.target.elements.title as HTMLInputElement).value.trim();
-    const start = (e.target.elements.start as HTMLInputElement).value;
-    const end = (e.target.elements.end as HTMLInputElement).value;
-    if (!title || !start) return;
-    await createLocalEvent({
-      projectId,
-      title,
-      startAt: new Date(start).getTime(),
-      endAt: end ? new Date(end).getTime() : new Date(start).getTime() + 60 * 60 * 1000,
-    });
-    (e.target as HTMLFormElement).reset();
-    refresh();
-  }
-
-  async function deleteEvent(id: string) {
-    await deleteCalendarEvent(id);
-    refresh();
-  }
-
-  if (loading) {
-    return <p className="empty-state">Loading calendar...</p>;
-  }
-
-  return (
-    <div>
-      <form className="resource-form" onSubmit={addLocalEvent}>
-        <input type="text" name="title" placeholder="Event title..." data-tip="Local calendar event title" />
-        <MicButton onResult={(text) => { (document.querySelector('input[name="title"]') as HTMLInputElement).value = text; }} />
-        <input type="datetime-local" name="start" data-tip="Start time" />
-        <input type="datetime-local" name="end" data-tip="End time" />
-        <button type="submit" className="btn-primary clickable">+ Add local event</button>
-      </form>
-
-      {error && <p className="otp-error">{error}</p>}
-
-      {events.length === 0 ? (
-        <p className="empty-state">
-          No calendar events for this project. Add a local event above, or connect
-          Google Calendar in Settings to import events (including Meet links).
-        </p>
-      ) : (
-        <ul className="task-list">
-          {events.map((e) => (
-            <li key={e.id} className="task-item" style={{ borderLeft: "4px solid var(--color-accent-milestone)" }}>
-              <span className="task-title">{e.title}</span>
-              <span className="task-status-label">
-                {new Date(e.startAt).toLocaleString()}
-                {e.endAt && ` – ${new Date(e.endAt).toLocaleTimeString()}`}
-              </span>
-              {e.hangoutLink && (
-                <a
-                  href={e.hangoutLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-secondary btn-small clickable"
-                  data-tip="Join Google Meet"
-                >
-                  Join Meet
-                </a>
-              )}
-              <span className={`chip-small ${e.source === "google" ? "" : "chip-active"}`}>
-                {e.source === "google" ? "Google" : "Local"}
-              </span>
-              <button
-                className="task-delete-btn"
-                data-tip="Delete event"
-                onClick={() => deleteEvent(e.id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
       )}
     </div>
   );
