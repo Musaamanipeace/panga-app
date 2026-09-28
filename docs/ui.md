@@ -1,45 +1,275 @@
-# UI / UX
+# Panga — Design System & UI Specification
 
-Panga's visual language is utilitarian, monospace, and animation-driven. This doc describes what's implemented and where to find it in the code.
+## Design Principles
 
-## Pages
+- **No emojis anywhere.** Status is conveyed through text labels and CSS-drawn shapes (squares, circles, bars).
+- **Monospace, utilitarian type** — `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace`. No proportional or promotional text.
+- **Motion is sliding only.** Pages and tabs slide horizontally; drawers and panels enter from their own edge; lists expand/collapse; buttons compress on click.
+- **Every interactive element has a hover hint** (`data-tip`) explaining what it does.
+- **Everything fits at any window size.** No fixed widths, no overflow, wrapping handled everywhere.
+- **Every saved item can be renamed, edited, and deleted** — inline where possible, via drawer for confirmations.
 
-- **Landing (`/`)** — Dark login screen. Email → OTP → dashboard (see [`backend-features.md`](./backend-features.md#authentication) for the auth flow).
-- **Dashboard (`/dashboard`)** — Home screen with:
-  - **Alerts** (computed, not stored): overdue tasks, due/overdue reminders, missed milestones. Clickable deep-links.
-  - **Summary row**: Active tasks count, total tasks count, milestones progress %, project count. Each card is clickable and deep-links.
-  - **Add Project** drawer (slide-in from right).
-  - **Project grid** (existing cards with progress, rename, delete).
-- **Project view (`/project/:id`)** — Tabbed workspace: Documentation, Tasks, Scheduler, Resources, Milestones, Calendar, Issues, Reminders. Every list item can be created, edited, and deleted.
-- **Settings (`/settings`)** — Gemini API key, Google Calendar OAuth connection, Secrets vault management.
+## Layout
 
-## Motion System
+```
+.app-shell
+  ├── .app-header (sticky, z-index 40)
+  │     ├── .app-logo → /home
+  │     ├── <GlobalSearch />  (Ctrl+K trigger)
+  │     ├── spacer
+  │     ├── Settings link
+  │     └── Logout button
+  ├── .app-main
+  │     └── <Outlet />  (page content)
+  └── <AssistantPanel />  (fixed FAB + sliding panel)
+```
 
-| Interaction | Behavior | Where |
-| --- | --- | --- |
-| Route change | "Machete cut": diagonal metallic stroke (0.25s) then the old screen splits and slides off in two triangular halves (0.35s) | `components/MacheteTransition.tsx` |
-| Login → dashboard | Same machete cut, played manually after OTP verifies | `playMacheteCut()` in `MacheteTransition.tsx` |
-| Hover tooltips | Every interactive element carries a `data-tip` attribute; a 150ms-delayed, monospaced, solid dark-slate tooltip renders via pure CSS | `index.css` → `[data-tip]` rules |
-| Click feedback | All buttons/cards compress to `scale(0.97)` on `:active` | `index.css` → `.clickable` rules |
-| Dropdowns / expandable cards | Scale-and-fade from `translateY(-8px) scaleY(0.95)` | `.dropdown-anim` |
-| Side drawers | Slide in from the right (`translateX(100%) → 0`) | `.drawer-panel` / `.drawer-anim` (Add-project drawer, AI panel) |
-| Global search | Central overlay scale-expands open; result rows slide 6px right on hover | `components/GlobalSearch.tsx` + `.search-panel-open` |
-| Login button | Diagonal "blade glint" sweep on hover | `.blade-glint` |
-| Resource cards | Lift on hover (`translateY(-2px)`) | `.resource-item:hover` |
-| Link resources | Hover shows a diagonal arrow offset | `.resource-value-link:hover` |
-| Image resources | Thumbnail scales to 1.05 on hover | `.resource-image-thumb:hover` |
-| Milestone / progress bars | Hovering shows exact `%` complete and pending task count | `components/ProgressBar.tsx` |
-| Milestone nodes | Hovering a milestone reveals its full list of blocking tasks and their status | `pages/ProjectView.tsx` → `MilestonesTab` |
-| Scheduler AI prompt box | Slides up from bottom when AI mode is selected | `.sliding-prompt-box` |
+### Page frame
 
-## Editing & Deleting
+```css
+.page {
+  width: 100%;
+  max-width: 1180px;   /* caps line length, never pins fixed size */
+  margin: 0 auto;
+  padding: 16px 12px 64px;
+  min-width: 0;        /* allows children to shrink */
+}
+```
 
-Every savable entity (projects, tasks, doc sections, resources, milestones, issues, reminders, schedule items, calendar events, secrets) has both an inline rename/edit control and a delete (`×`) control next to it in its list. Deleting a project cascades: its tasks, resources, docs, milestones, issues, reminders, calendar events, and schedule items go with it (`data/projects.ts` → `deleteProject`).
+All long content (titles, URLs, notes) uses `min-width: 0; overflow-wrap: anywhere; word-break: break-word;` so nothing forces horizontal scroll.
 
-## Design Tokens
+## Motion
 
-Color, spacing, and radius tokens live at the top of `src/index.css` (`:root { --color-... }`). Change them there to re-theme the whole app.
+### Page / tab sliding
 
-## Icon / Glyph System
+```css
+.slide-stage { display: flex; overflow: hidden; }
+.slide-track { display: flex; width: 100%; }
+.slide-panel { flex: 0 0 100%; min-width: 0; }
 
-All emoji glyphs have been removed. Interactive elements use text labels (`Edit`, `Del`, `MIC`, `REC`, `AI`, `Done`, `o`) or CSS-drawn shapes (checkmarks via border, close via `×` multiplication sign). The landing mark uses a single letter `P` in the app's monospace type treatment.
+.slide-panel-enter-right { animation: slideInFromRight 220ms cubic-bezier(0.22,0.61,0.36,1) both; }
+.slide-panel-enter-left  { animation: slideInFromLeft  220ms cubic-bezier(0.22,0.61,0.36,1) both; }
+```
+
+Changing a `slideKey` on the panel triggers the animation. Direction is derived from the previous vs current order index.
+
+### Drawer sliding
+
+```css
+.drawer-backdrop-right .drawer-panel { animation: slideInFromEdgeRight 220ms ... both; }
+.drawer-backdrop-left  .drawer-panel { animation: slideInFromEdgeLeft  220ms ... both; }
+.drawer-backdrop-bottom .drawer-panel { animation: slideInFromBottom 220ms ... both; }
+```
+
+### List expand/collapse
+
+```css
+.collapsible { overflow: hidden; animation: collapse 220ms ... both; }
+@keyframes collapse { from { max-height: 0; opacity: 0; } to { max-height: 900px; opacity: 1; } }
+```
+
+### Button press
+
+All buttons compress: `transform: scale(0.94)` on `:active`.
+
+### Reduced motion
+
+All animations/transitions disabled when `prefers-reduced-motion: reduce`.
+
+## Colour palette (CSS custom properties)
+
+```css
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f6f7f8;
+  --bg-inset: #eef0f2;
+  --text: #14171a;
+  --text-muted: #5f676f;
+  --text-faint: #868e96;
+  --border: #d8dce0;
+  --border-strong: #b4bbc2;
+
+  --accent: #1f5fd0;
+  --accent-soft: #e8effb;
+  --task: #1f5fd0;
+  --resource: #17794a;
+  --milestone: #a2600a;
+  --issue: #b3261e;
+  --secret: #6b3fa0;
+  --ai: #7a3fb8;
+}
+```
+
+Semantic colours are used consistently:
+- Task = blue (`--task`)
+- Resource = green (`--resource`)
+- Milestone = amber (`--milestone`)
+- Issue = red (`--issue`)
+- Secret = purple (`--secret`)
+- AI = violet (`--ai`)
+
+## Hover hints
+
+Every interactive element carries `data-tip="…"`. The hint is rendered with CSS:
+
+```css
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  max-width: min(260px, 78vw);
+  background: #14171a;
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 140ms, transform 140ms;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+```
+
+Hints near the right edge use `data-tip-edge="left"` to flip positioning.
+
+## Component primitives
+
+### Button variants
+
+| Class | Use |
+|-------|-----|
+| `.btn-primary` | Primary action (blue) |
+| `.btn-secondary` | Secondary/neutral |
+| `.btn-danger` | Destructive (red) |
+| `.btn-icon` | Icon/text only, no bg |
+| `.btn-small` | Compact size |
+
+### Status marks (CSS shapes, never emoji)
+
+```css
+.mark { width: 14px; height: 14px; border: 1px solid; border-radius: 3px; }
+.mark-active     { border-color: var(--task); background: var(--task); }
+.mark-inactive   { border-style: dashed; }
+.mark-completed  { border-color: var(--resource); background: var(--resource); }
+.mark-completed::after { content:""; position:absolute; left:3px; top:0; width:6px; height:10px; border:solid #fff; border-width:0 2px 2px 0; transform:rotate(42deg); }
+```
+
+Severity marks (three bars, low→high):
+```css
+.mark-severity { width:16px; height:12px; background: linear-gradient(currentColor 0 0) 0 100%/3px 4px no-repeat, ...; }
+.mark-severity-low    { color: var(--border-strong); }
+.mark-severity-medium { color: var(--milestone); }
+.mark-severity-high   { color: var(--issue); }
+```
+
+### Chips
+
+```css
+.chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--text-muted); }
+.chip-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+```
+
+### List items (grid)
+
+```css
+.item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+}
+.item-body { min-width: 0; }
+@media (max-width: 560px) { .item { grid-template-columns: minmax(0, 1fr); } }
+```
+
+### Form fields
+
+All inputs/textarea/select use consistent styling:
+```css
+input, textarea, select {
+  width: 100%; min-width: 0;
+  padding: 7px 9px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 13px;
+}
+```
+
+Inline forms wrap:
+```css
+.inline-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline-form > input { flex: 1 1 180px; }
+```
+
+### Search palette
+
+`Ctrl/Cmd+K` opens a centred modal with:
+- Input field
+- Grouped results (type label + items)
+- Keyboard navigation (↑/↓, Enter, Esc)
+- Each item has `data-tip` hint
+
+### Assistant panel
+
+Fixed FAB (bottom-right) → sliding drawer from right:
+- Tabs: History (list) / Chat
+- Messages slide in from bottom
+- Clarification box slides up from composer
+- Approval box slides up for agent actions
+
+## Landing page
+
+- Monospace mark `P` in a bordered square
+- `h1` in uppercase, letter-spaced
+- Login form slides in from right
+- Dev-mode OTP shown inline (no email service needed)
+- No page-load transition, no glint
+
+## Settings page
+
+Tab bar across sections:
+1. General — account, database reopen
+2. Gemini API — key input
+3. Google Calendar — OAuth client ID, connect/disconnect, sync
+4. Google Drive — Picker API key, folder picker
+5. Subcategories — managed inside Resources tab
+6. Vault — passphrase create/unlock/lock
+7. Assistant — retention days, prune button
+8. Sync — Supabase status, sync button
+9. Danger — wipe local DB
+
+## Responsive breakpoints
+
+| Width | Adjustments |
+|-------|-------------|
+| > 1180px | Page centred at max-width |
+| ≤ 1180px | Page full-width, padding 12px |
+| ≤ 760px | Tab bar scrolls, chips wrap, grid stacks |
+| ≤ 560px | Item grid becomes single column, drawers full-width, tab labels may abbreviate |
+
+No horizontal scrollbar ever appears.
+
+## Accessibility
+
+- All interactive elements reachable by keyboard
+- Focus visible: `outline: 2px solid var(--accent); outline-offset: 2px;`
+- ARIA labels on icon-only buttons
+- `aria-expanded` on disclosures
+- `aria-current` on active tabs
+- `role="dialog" aria-modal="true"` on drawers/palette
+- `prefers-reduced-motion` respected
+
+## Dark mode (future)
+
+CSS variables structured for easy dark mode override — swap `--bg`, `--text`, `--border`, etc.
+
+---
+
+_This document reflects the implementation as of the merged plan. Update when design changes._
