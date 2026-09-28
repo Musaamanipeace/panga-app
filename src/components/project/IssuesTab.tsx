@@ -9,9 +9,9 @@ import {
   deleteIssue,
   toggleIssueLabel,
   SEVERITY_LABELS,
-} from "../../data/issues.tsx";
-import { listMilestones } from "../../data/milestones.tsx"
-import type { Issue, IssueSeverity } from "../../data/db.tsx"
+} from "../../data/issues.ts";
+import { listMilestones } from "../../data/milestones.ts"
+import type { Issue, IssueSeverity } from "../../data/db.ts"
 import MicButton from "../../components/MicButton.tsx"
 import { Editable, ErrorNote, Loading, SeverityMark, StatusLabel, useAsync } from "../../components/ui.tsx"
 

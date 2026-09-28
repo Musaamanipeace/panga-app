@@ -7,9 +7,9 @@ import {
   deleteMilestone,
   MILESTONE_STATUS_LABELS,
   summariseBlockers,
-} from "../../data/milestones.tsx";
-import { listTasksForProject } from "../../data/tasks.tsx"
-import type { Milestone } from "../../data/db.tsx"
+} from "../../data/milestones.ts";
+import { listTasksForProject } from "../../data/tasks.ts"
+import type { Milestone } from "../../data/db.ts"
 import MicButton from "../../components/MicButton.tsx"
 import { Editable, ErrorNote, Loading, useAsync } from "../../components/ui.tsx"
 

@@ -6,8 +6,8 @@ import {
   deleteDocEntry,
   fileToDataUrl,
   type AttachedFile,
-} from "../../data/docs.tsx";
-import type { DocEntry } from "../../data/db.tsx"
+} from "../../data/docs.ts";
+import type { DocEntry } from "../../data/db.ts"
 import MicButton from "../../components/MicButton.tsx"
 import { Editable, ErrorNote, Loading, useAsync } from "../../components/ui.tsx"
 

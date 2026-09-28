@@ -7,7 +7,7 @@ import {
   type Resource,
   type ResourceCategory,
   type ResourceProvider,
-} from "../../data/db.tsx";
+} from "../../data/db.ts";
 import {
   listResourcesForProject,
   createResource,
@@ -16,7 +16,7 @@ import {
   validateLink,
   linkProviderFromUrl,
   PROVIDER_LABELS,
-} from "../../data/resources.tsx";
+} from "../../data/resources.ts";
 import {
   listSubcategories,
   createSubcategory,
@@ -25,10 +25,10 @@ import {
   restoreCategoryDefaults,
   deleteSubcategory,
   isRenamedFromDefault,
-} from "../../data/subcategories.tsx";
-import { createSecret, decryptSecret, isVaultUnlocked } from "../../data/secrets.tsx"
-import { fileToDataUrl } from "../../data/docs.tsx"
-import { pickAndUploadToDrive, isDriveReady } from "../../sync/googleDrive.tsx"
+} from "../../data/subcategories.ts";
+import { createSecret, decryptSecret, isVaultUnlocked } from "../../data/secrets.ts"
+import { fileToDataUrl } from "../../data/docs.ts"
+import { pickAndUploadToDrive, isDriveReady } from "../../sync/googleDrive.ts"
 import MicButton from "../../components/MicButton.tsx"
 import { Disclosure, Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
 

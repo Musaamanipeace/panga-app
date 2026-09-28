@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { playMacheteCut } from "../components/MacheteTransition";
 import { sendOtp, verifyOtp } from "../auth/otp";
 import { setSession } from "../auth/session";
 
@@ -37,7 +36,6 @@ export default function Landing() {
       return;
     }
     setSession(email.trim());
-    await playMacheteCut();
     navigate("/dashboard");
   }
 

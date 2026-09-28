@@ -1,5 +1,5 @@
 import { useAsync } from "../../components/ui.tsx"
-import { getProjectInsights } from "../../data/insights.tsx"
+import { getProjectInsights } from "../../data/insights.ts"
 import { ErrorNote, Loading, StatusLabel } from "../../components/ui.tsx"
 
 export default function InsightsTab({ projectId }: { projectId: string }) {

@@ -7,13 +7,13 @@ import {
   deleteTask,
   isOverdue,
   type Task,
-} from "../../data/tasks.tsx";
-import { reconcileMilestoneStatuses } from "../../data/milestones.tsx"
-import { createReminder, listReminders, deleteReminder } from "../../data/reminders.tsx"
+} from "../../data/tasks.ts";
+import { reconcileMilestoneStatuses } from "../../data/milestones.ts"
+import { createReminder, listReminders, deleteReminder } from "../../data/reminders.ts"
 import { toLocalInput } from "../home/HomeRemindersTab.tsx"
 import MicButton from "../../components/MicButton.tsx"
 import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui.tsx"
-import type { TaskStatus } from "../../data/db.tsx"
+import type { TaskStatus } from "../../data/db.ts"
 
 const STATUS_ORDER: TaskStatus[] = ["active", "inactive", "completed"];
 
