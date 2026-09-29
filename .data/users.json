@@ -1,0 +1,9 @@
+{
+  "testuser@example.com": {
+    "id": "usr_a8e6eb24a7e9e7b1",
+    "email": "testuser@example.com",
+    "salt": "873fedec96f298ad17fc1cbf2bc80ea4",
+    "hash": "47fa9f2621a9c445664de8f5dc9174bdb881499b7d6d4422381717ffe4e433249a3250e43e01181b7e57e1ad0c1eb5555d7fc16688333cef48d35833dbc8dd3d",
+    "createdAt": 1790717973842
+  }
+}

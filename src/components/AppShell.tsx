@@ -69,10 +69,11 @@ export default function AppShell() {
         <button
           className="btn-secondary btn-small clickable"
           onClick={handleManualSync}
+          disabled={syncState.status === "syncing"}
           style={{ marginRight: "8px" }}
-          data-tip="Force sync now"
+          data-tip={syncState.message || "Sync with cloud database"}
         >
-          ☁️ Sync
+          {syncState.status === "syncing" ? "⟳ Syncing..." : "☁️ Sync"}
         </button>
         <span
           className="sync-status"

@@ -1,0 +1,28 @@
+{
+  "userId": "usr_a8e6eb24a7e9e7b1",
+  "email": "testuser@example.com",
+  "updatedAt": 1790717983973,
+  "tables": {
+    "projects": {
+      "proj-1": {
+        "id": "proj-1",
+        "name": "Test Project Alpha",
+        "status": "active",
+        "updatedAt": 1727645000000,
+        "syncStatus": "synced"
+      }
+    },
+    "tasks": {},
+    "resources": {},
+    "milestones": {},
+    "issues": {},
+    "contacts": {},
+    "reminders": {},
+    "calendarEvents": {},
+    "scheduleItems": {},
+    "docEntries": {},
+    "insights": {},
+    "settings": {}
+  },
+  "deletions": {}
+}
