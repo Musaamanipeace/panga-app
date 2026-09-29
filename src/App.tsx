@@ -19,13 +19,16 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void restoreSession().then(() => {
-      void ensureSeedData().then(() => {
-        if (isLoggedIn()) {
-          void syncAll();
+    void restoreSession().then(async () => {
+      await ensureSeedData();
+      if (isLoggedIn()) {
+        try {
+          await syncAll();
+        } catch (e) {
+          console.warn("Initial sync error:", e);
         }
-        setReady(true);
-      });
+      }
+      setReady(true);
     });
 
     const handleFocus = () => {

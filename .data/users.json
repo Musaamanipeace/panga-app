@@ -1,9 +1,16 @@
 {
   "testuser@example.com": {
-    "id": "usr_a8e6eb24a7e9e7b1",
+    "id": "usr_a744863d83aefc35",
     "email": "testuser@example.com",
     "salt": "873fedec96f298ad17fc1cbf2bc80ea4",
     "hash": "47fa9f2621a9c445664de8f5dc9174bdb881499b7d6d4422381717ffe4e433249a3250e43e01181b7e57e1ad0c1eb5555d7fc16688333cef48d35833dbc8dd3d",
     "createdAt": 1790717973842
+  },
+  "amanimosespeace@gmail.com": {
+    "id": "usr_35594624f02bfde0",
+    "email": "amanimosespeace@gmail.com",
+    "salt": "7ceeadbfb24380b34ade81544e240dcd",
+    "hash": "ce72da26d74256ce73abff69ef6c155f1f90356709f94c080f1d64dfefa2457505aaa85057b9b780b91570dba9c7dcbbfdfb44340abf7c2403d81c1ad21bf979",
+    "createdAt": 1790718564174
   }
 }

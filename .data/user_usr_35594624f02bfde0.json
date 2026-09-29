@@ -1,0 +1,30 @@
+{
+  "userId": "usr_35594624f02bfde0",
+  "email": "amanimosespeace@gmail.com",
+  "updatedAt": 1790718820661,
+  "tables": {
+    "projects": {
+      "7a143ce6-12ee-4138-b01e-8a1c80c03962": {
+        "id": "7a143ce6-12ee-4138-b01e-8a1c80c03962",
+        "name": "juu",
+        "description": "",
+        "status": "active",
+        "createdAt": 1790718536858,
+        "updatedAt": 1790718536858,
+        "syncStatus": "synced"
+      }
+    },
+    "tasks": {},
+    "resources": {},
+    "milestones": {},
+    "issues": {},
+    "contacts": {},
+    "reminders": {},
+    "calendarEvents": {},
+    "scheduleItems": {},
+    "docEntries": {},
+    "insights": {},
+    "settings": {}
+  },
+  "deletions": {}
+}

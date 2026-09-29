@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { listProjects, createProject, getProjectTaskStats } from "../data/projects.ts"
 import {
@@ -51,6 +51,14 @@ export default function Home() {
     const statsMap = Object.fromEntries(statsEntries);
     return { projects, alerts, summary, statsMap };
   }, []);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      reload();
+    };
+    window.addEventListener("panga-data-updated", handleUpdate);
+    return () => window.removeEventListener("panga-data-updated", handleUpdate);
+  }, [reload]);
 
   const projects: Project[] = data?.projects ?? [];
   const alerts: Alert[] = data?.alerts ?? [];

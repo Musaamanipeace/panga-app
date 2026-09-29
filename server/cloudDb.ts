@@ -58,6 +58,11 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
 }
 
+export function getUserIdForEmail(email: string): string {
+  const clean = email.trim().toLowerCase();
+  return "usr_" + crypto.createHash("sha256").update(clean).digest("hex").slice(0, 16);
+}
+
 function loadUsers(): Record<string, StoredUser> {
   if (!fs.existsSync(USERS_FILE)) return {};
   try {
@@ -85,7 +90,7 @@ export function registerUser(email: string, password: string): { user?: { id: st
 
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = hashPassword(password, salt);
-  const id = "usr_" + crypto.randomBytes(8).toString("hex");
+  const id = getUserIdForEmail(cleanEmail);
 
   const newUser: StoredUser = {
     id,
@@ -98,7 +103,7 @@ export function registerUser(email: string, password: string): { user?: { id: st
   users[cleanEmail] = newUser;
   saveUsers(users);
 
-  // Initialize empty cloud database for user
+  // Initialize cloud database for user
   getUserCloudData(id, cleanEmail);
 
   return { user: { id, email: cleanEmail } };
@@ -110,7 +115,7 @@ export function authenticateUser(email: string, password: string): { user?: { id
   if (!password) return { error: "Password is required." };
 
   const users = loadUsers();
-  const user = users[cleanEmail];
+  let user = users[cleanEmail];
   if (!user) {
     // Automatically register user on first login for smooth onboarding
     return registerUser(email, password);
@@ -119,6 +124,14 @@ export function authenticateUser(email: string, password: string): { user?: { id
   const calculatedHash = hashPassword(password, user.salt);
   if (calculatedHash !== user.hash) {
     return { error: "Invalid password for this account." };
+  }
+
+  // Ensure user ID is the canonical deterministic ID
+  const canonicalId = getUserIdForEmail(cleanEmail);
+  if (user.id !== canonicalId) {
+    user.id = canonicalId;
+    users[cleanEmail] = user;
+    saveUsers(users);
   }
 
   return { user: { id: user.id, email: user.email } };
@@ -306,7 +319,7 @@ export function reconcileSync(
   for (const [table, recordsObj] of Object.entries(data.tables)) {
     serverUpdates[table] = [];
     for (const item of Object.values(recordsObj)) {
-      if (!lastSyncTime || (item.updatedAt && item.updatedAt > lastSyncTime)) {
+      if (!lastSyncTime || !item.updatedAt || item.updatedAt > lastSyncTime) {
         serverUpdates[table].push(item);
       }
     }
@@ -331,3 +344,73 @@ export function reconcileSync(
     serverDeletions,
   };
 }
+
+// Migrate any legacy user files to deterministic ID structure
+function migrateLegacyUserFiles() {
+  try {
+    const users = loadUsers();
+    let updatedUsers = false;
+
+    // Check users in users.json
+    for (const [email, user] of Object.entries(users)) {
+      const canonicalId = getUserIdForEmail(email);
+      if (user.id !== canonicalId) {
+        // Move data from old user file if it exists
+        const oldFile = path.join(DATA_DIR, `user_${user.id}.json`);
+        const canonicalFile = path.join(DATA_DIR, `user_${canonicalId}.json`);
+
+        const canonicalData = getUserCloudData(canonicalId, email);
+
+        if (fs.existsSync(oldFile)) {
+          try {
+            const raw = fs.readFileSync(oldFile, "utf8");
+            const parsed = JSON.parse(raw);
+            if (parsed.tables) {
+              for (const [tbl, records] of Object.entries(parsed.tables)) {
+                if (!canonicalData.tables[tbl]) canonicalData.tables[tbl] = {};
+                Object.assign(canonicalData.tables[tbl], records as Record<string, any>);
+              }
+            }
+          } catch {}
+        }
+
+        saveUserCloudData(canonicalData);
+        user.id = canonicalId;
+        updatedUsers = true;
+      }
+    }
+
+    // Check any orphan user files in DATA_DIR (e.g. user_usr_2gvo7k_mun7k5qr.json)
+    if (fs.existsSync(DATA_DIR)) {
+      const files = fs.readdirSync(DATA_DIR);
+      for (const file of files) {
+        if (!file.startsWith("user_") || !file.endsWith(".json")) continue;
+        if (file.includes("2gvo7k")) {
+          // This was amanimosespeace@gmail.com
+          const canonicalId = getUserIdForEmail("amanimosespeace@gmail.com");
+          const canonicalData = getUserCloudData(canonicalId, "amanimosespeace@gmail.com");
+          try {
+            const raw = fs.readFileSync(path.join(DATA_DIR, file), "utf8");
+            const parsed = JSON.parse(raw);
+            if (parsed.tables) {
+              for (const [tbl, records] of Object.entries(parsed.tables)) {
+                if (!canonicalData.tables[tbl]) canonicalData.tables[tbl] = {};
+                Object.assign(canonicalData.tables[tbl], records as Record<string, any>);
+              }
+            }
+            saveUserCloudData(canonicalData);
+            console.log(`Migrated ${file} to canonical user_${canonicalId}.json`);
+          } catch {}
+        }
+      }
+    }
+
+    if (updatedUsers) {
+      saveUsers(users);
+    }
+  } catch (err) {
+    console.error("Migration error:", err);
+  }
+}
+
+migrateLegacyUserFiles();

@@ -4,14 +4,14 @@ import { db } from "../data/db";
 import {
   signIn,
   signUp,
-  signOut,
   restoreSession,
   getSessionUserId,
+  clearSession,
   type AuthResult,
 } from "../auth/session";
 
 export type { AuthResult };
-export { signIn, signUp, signOut, restoreSession };
+export { signIn, signUp, restoreSession };
 
 export type SyncStatusState = "idle" | "syncing" | "synced" | "error";
 
@@ -328,6 +328,11 @@ export async function syncAll(forceFullUpload = false): Promise<{ ok: boolean; m
         : "Cloud database up to date";
 
     updateStatus("synced", summaryMsg);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("panga-data-updated"));
+    }
+
     return { ok: true, message: summaryMsg };
   } catch (err: any) {
     console.error("syncAll execution error:", err);
@@ -335,4 +340,17 @@ export async function syncAll(forceFullUpload = false): Promise<{ ok: boolean; m
     updateStatus("error", errorMsg);
     return { ok: false, message: `Sync failed: ${errorMsg}` };
   }
+}
+
+/** Pre-syncs and signs out, ensuring no progress is lost on logout */
+export async function signOut(): Promise<void> {
+  try {
+    updateStatus("syncing", "Saving all progress to cloud...");
+    await syncAll(true);
+  } catch (err) {
+    console.warn("Logout pre-sync error:", err);
+  }
+  clearSession();
+  safeSetStorage(LAST_SYNC_KEY, null);
+  window.location.assign("/");
 }

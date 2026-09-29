@@ -20,8 +20,8 @@ export default function AppShell() {
     return unsubscribe;
   }, []);
 
-  function handleLogout() {
-    signOut();
+  async function handleLogout() {
+    await signOut();
   }
 
   async function handleManualSync() {

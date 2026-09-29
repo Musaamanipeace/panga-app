@@ -38,9 +38,7 @@ export default function Landing() {
         setError(result.error);
         return;
       }
-      setSuccessNotice(result.successMessage || `Account created successfully.`);
-      setMode("login");
-      setPassword("");
+      window.location.assign("/dashboard");
       return;
     }
 
