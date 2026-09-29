@@ -1,16 +1,16 @@
 // src/sync/supabaseSync.ts
-// Handles cloud persistence and multi-device sync with Supabase.
+// Handles cloud persistence, multi-device sync, and auth with Supabase.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { db } from "../data/db";
-import { getSessionEmail } from "../auth/session";
+import { getSessionUserId, setSession, clearSession } from "../auth/session";
 
 const SUPABASE_URL_KEY = "panga_supabase_url";
 const SUPABASE_KEY_KEY = "panga_supabase_anon_key";
 const LAST_SYNC_KEY = "panga_last_sync_time";
 
-/** Returns the current user's email to use as user_id in Supabase. */
+/** Returns the current user's Supabase UUID to use as user_id in queries. */
 function getCurrentUserId(): string {
-  return getSessionEmail() || "anonymous";
+  return getSessionUserId() || "anonymous";
 }
 
 function safeGetStorage(key: string): string | null {
@@ -87,7 +87,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   try {
     cachedClient = createClient(url, anonKey, {
-      auth: { persistSession: false },
+      auth: { persistSession: true },
     });
     cachedConfigKey = configKey;
     return cachedClient;
@@ -601,13 +601,34 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
 
     /** Fetch a table, preferring user_id filter; falls back if column missing. */
     async function fetchTable(table: string) {
-      const q = client!.from(table).select("*").eq("user_id", userId);
-      const res = await q;
-      if (res.error?.message?.includes("user_id")) {
-        // Column doesn't exist yet — fall back to unfiltered query
-        return await client!.from(table).select("*");
+      try {
+        const q = client!.from(table).select("*").eq("user_id", userId);
+        const res = await q;
+        if (res.error?.message?.includes("user_id")) {
+          // Column doesn't exist yet — fall back to unfiltered query
+          return await client!.from(table).select("*");
+        }
+        return res;
+      } catch (e) {
+        // Return a result-like object with error for consistent handling
+        return { data: [] as any[], error: e as any };
       }
-      return res;
+    }
+
+    /** Safely merge a table's remote data into local Dexie, skipping on error. */
+    async function mergeTable(
+      res: { data?: any[] | null; error?: any } | undefined,
+      dexieTable: "projects" | "tasks" | "resources" | "milestones" | "issues" | "contacts" | "reminders" | "calendarEvents" | "insights" | "docEntries",
+      mapper: (r: any) => any
+    ) {
+      if (!res) return;
+      if (res.error) {
+        console.warn(`Supabase fetch warning for ${dexieTable}:`, res.error?.message || String(res.error));
+        return;
+      }
+      if (res.data && res.data.length > 0) {
+        await (db as any)[dexieTable].bulkPut(res.data.map(mapper));
+      }
     }
 
     const [
@@ -636,51 +657,17 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       fetchTable("settings"),
     ]);
 
-    // Check if table error occurred
-    if (projRes.error) {
-      throw new Error(`Failed to query Supabase: ${projRes.error.message}`);
-    }
-
-    // Merge into local Dexie
-    if (projRes.data && projRes.data.length > 0) {
-      await db.projects.bulkPut(projRes.data.map(projectFromRemote));
-    }
-
-    if (tasksRes.data && tasksRes.data.length > 0) {
-      await db.tasks.bulkPut(tasksRes.data.map(taskFromRemote));
-    }
-
-    if (resourcesRes.data && resourcesRes.data.length > 0) {
-      await db.resources.bulkPut(resourcesRes.data.map(resourceFromRemote));
-    }
-
-    if (milestonesRes.data && milestonesRes.data.length > 0) {
-      await db.milestones.bulkPut(milestonesRes.data.map(milestoneFromRemote));
-    }
-
-    if (issuesRes.data && issuesRes.data.length > 0) {
-      await db.issues.bulkPut(issuesRes.data.map(issueFromRemote));
-    }
-
-    if (contactsRes.data && contactsRes.data.length > 0) {
-      await db.contacts.bulkPut(contactsRes.data.map(contactFromRemote));
-    }
-
-    if (remindersRes.data && remindersRes.data.length > 0) {
-      await db.reminders.bulkPut(remindersRes.data.map(reminderFromRemote));
-    }
-
-    if (calendarRes.data && calendarRes.data.length > 0) {
-      await db.calendarEvents.bulkPut(calendarRes.data.map(calendarEventFromRemote));
-    }
-
-    if (insightsRes.data && insightsRes.data.length > 0) {
-      await db.insights.bulkPut(insightsRes.data.map(insightFromRemote));
-    }
-
-    if (docsRes.data && docsRes.data.length > 0) {
-      await db.docEntries.bulkPut(docsRes.data.map(docEntryFromRemote));
-    }
+    // Merge into local Dexie — individual table failures are logged, not fatal
+    await mergeTable(projRes, "projects", projectFromRemote);
+    await mergeTable(tasksRes, "tasks", taskFromRemote);
+    await mergeTable(resourcesRes, "resources", resourceFromRemote);
+    await mergeTable(milestonesRes, "milestones", milestoneFromRemote);
+    await mergeTable(issuesRes, "issues", issueFromRemote);
+    await mergeTable(contactsRes, "contacts", contactFromRemote);
+    await mergeTable(remindersRes, "reminders", reminderFromRemote);
+    await mergeTable(calendarRes, "calendarEvents", calendarEventFromRemote);
+    await mergeTable(insightsRes, "insights", insightFromRemote);
+    await mergeTable(docsRes, "docEntries", docEntryFromRemote);
 
     // Settings (including Gemini API Key and Global Subcategories)
     if (settingsRes.data && settingsRes.data.length > 0) {
@@ -707,24 +694,27 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       remoteTable: string,
       mapper: (r: any) => any
     ) {
-      const pending = await (db as any)[dexieTable].where("syncStatus").equals("pending").toArray();
-      if (pending.length === 0) return;
-      const mapped = pending.map(mapper);
-      let result = await client!.from(remoteTable).upsert(mapped, { onConflict: "id,user_id" });
-      // Fallback for databases without user_id column
-      if (result.error?.message?.includes("user_id")) {
-        const fallback = mapped.map((({ user_id: _uid, ...rest }: Record<string, any>) => rest));
-        result = await client!.from(remoteTable).upsert(fallback, { onConflict: "id" });
+      try {
+        const pending = await (db as any)[dexieTable].where("syncStatus").equals("pending").toArray();
+        if (pending.length === 0) return;
+        const mapped = pending.map(mapper);
+        let result = await client!.from(remoteTable).upsert(mapped, { onConflict: "id,user_id" });
+        // Fallback for databases without user_id column
+        if (result.error?.message?.includes("user_id")) {
+          const fallback = mapped.map((({ user_id: _uid, ...rest }: Record<string, any>) => rest));
+          result = await client!.from(remoteTable).upsert(fallback, { onConflict: "id" });
+        }
+        const { error } = result;
+        if (error) {
+          console.warn(`Pending push warning (${remoteTable}):`, error.message);
+          return;
+        }
+        await (db as any)[dexieTable].bulkPut(
+          pending.map((r: any) => ({ ...r, syncStatus: "synced" as const }))
+        );
+      } catch (err) {
+        console.warn(`Sync push error (${remoteTable}):`, err);
       }
-      const { error } = result;
-      if (error) {
-        console.warn(`Pending push warning (${remoteTable}):`, error.message);
-        updateStatus("error", `${remoteTable}: ${error.message}`);
-        return;
-      }
-      await (db as any)[dexieTable].bulkPut(
-        pending.map((r: any) => ({ ...r, syncStatus: "synced" as const }))
-      );
     }
 
     await pushPending("projects", "projects", projectToRemote);
@@ -741,16 +731,20 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
     // Push local Gemini API key to Supabase settings if present locally
     const localGeminiKey = (await db.settings.get("geminiApiKey"))?.value;
     if (localGeminiKey) {
-      let result = await client!.from("settings").upsert(
-        { user_id: getCurrentUserId(), key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
-        { onConflict: "user_id,key" }
-      );
-      // Fallback for databases without user_id column
-      if (result.error?.message?.includes("user_id")) {
-        result = await client!.from("settings").upsert(
-          { key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
-          { onConflict: "key" }
+      try {
+        let result = await client!.from("settings").upsert(
+          { user_id: getCurrentUserId(), key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
+          { onConflict: "user_id,key" }
         );
+        // Fallback for databases without user_id column
+        if (result.error?.message?.includes("user_id")) {
+          result = await client!.from("settings").upsert(
+            { key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
+            { onConflict: "key" }
+          );
+        }
+      } catch (err) {
+        console.warn("Failed to push Gemini key:", err);
       }
     }
 
@@ -762,5 +756,73 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
     console.error("Supabase sync error:", err);
     updateStatus("error", err?.message || "Sync failed");
     return { ok: false, message: `Sync error: ${err?.message || String(err)}` };
+  }
+}
+
+// ─── Auth helpers ─────────────────────────────────────────────
+
+export interface AuthResult {
+  error?: string;
+  successMessage?: string;
+}
+
+/** Sign up with email + password. Supabase sends a confirmation email. */
+export async function signUp(email: string, password: string): Promise<AuthResult> {
+  const client = getSupabaseClient();
+  if (!client) return { error: "Supabase is not configured." };
+
+  const { error } = await client.auth.signUp({ email, password });
+  if (error) return { error: error.message };
+
+  return {
+    successMessage: `Confirmation email sent to ${email}. Please check your inbox and click the link to verify your account before logging in.`,
+  };
+}
+
+/** Resend the confirmation email for an unconfirmed account. */
+export async function resendConfirmationEmail(email: string): Promise<AuthResult> {
+  const client = getSupabaseClient();
+  if (!client) return { error: "Supabase is not configured." };
+
+  const { error } = await client.auth.resend({ type: "signup", email });
+  if (error) return { error: error.message };
+  return { successMessage: `Confirmation email resent to ${email}.` };
+}
+
+/** Sign in with email + password. */
+export async function signIn(email: string, password: string): Promise<AuthResult> {
+  const client = getSupabaseClient();
+  if (!client) return { error: "Supabase is not configured." };
+
+  const { data: { user }, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) return { error: error.message };
+
+  if (!user) return { error: "Authentication failed. Please try again." };
+  // Store session so db.ts and other modules can use the user ID immediately
+  setSession(user.email || email, user.id);
+  return {};
+}
+
+/** Sign out and clear local session. */
+export async function signOut(): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    await client.auth.signOut();
+  }
+  clearSession();
+  // Force page reload so the db singleton is recreated for the anonymous user
+  window.location.assign("/");
+}
+
+/** Restore session from Supabase on app load (called on mount). */
+export async function restoreSession(): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  const { data: { session } } = await client.auth.getSession();
+  if (session?.user) {
+    setSession(session.user.email || "", session.user.id);
+  } else {
+    clearSession();
   }
 }

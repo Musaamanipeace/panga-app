@@ -6,12 +6,27 @@ const errors = [];
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}\n${e.stack}`));
 
+// Set the session email so the app uses the correct per-user database name.
+const userEmail = "t@e.com";
+const dbName = (function(email) {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = ((hash << 5) - hash + email.toLowerCase().charCodeAt(i)) | 0;
+  }
+  return "panga-db-" + (hash >>> 0);
+})(userEmail);
+console.log("Seeding into database:", dbName);
+
 // Build a legacy Dexie v2 database (idb version 20) with pre-migration data.
 await page.route("**/*", (r) => (r.request().resourceType() === "script" ? r.abort() : r.continue()));
 await page.goto(URL, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(500);
-const seeded = await page.evaluate(async () => {
-  await new Promise((res) => { const d = indexedDB.deleteDatabase("panga-db"); d.onsuccess = () => res("deleted"); d.onerror = () => res("err"); d.onblocked = () => res("blocked"); });
+const seeded = await page.evaluate(async (email, dbName) => {
+  // Set session so the app will use this db on load
+  localStorage.setItem("panga_session_email", email);
+
+  await new Promise((res) => { const d = indexedDB.deleteDatabase(dbName); d.onsuccess = () => res("deleted"); d.onerror = () => res("err"); d.onblocked = () => res("blocked"); });
+
   const schemas = {
     projects: "id, status, updatedAt, syncStatus",
     tasks: "id, projectId, status, dueDate, updatedAt, syncStatus, *tags",
@@ -24,7 +39,7 @@ const seeded = await page.evaluate(async () => {
     settings: "key",
   };
   const db = await new Promise((res, rej) => {
-    const r = indexedDB.open("panga-db", 20);
+    const r = indexedDB.open(dbName, 20);
     r.onupgradeneeded = () => { for (const [n, s] of Object.entries(schemas)) { const st = r.result.createObjectStore(n, { keyPath: "id" }); for (const p of s.split(",").slice(1)) { const t = p.trim(); const multi = t.startsWith("*"); const name = multi ? t.slice(1) : t; st.createIndex(name, name, multi ? { multiEntry: true } : undefined); } } };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
@@ -38,20 +53,25 @@ const seeded = await page.evaluate(async () => {
   await put("settings", { id: "appInitialized", key: "appInitialized", value: true });
   db.close();
   return "ok";
-});
+}, userEmail, dbName);
 console.log("seeded:", seeded);
 await page.unroute("**/*");
 
 await page.goto(URL, { waitUntil: "networkidle" });
-await page.fill("#email-input", "t@e.com");
+await page.fill("#email-input", userEmail);
 await page.click("button[type=submit]");
-const dev = await page.textContent(".otp-dev-hint strong");
-await page.fill("#otp-input", dev);
+// Read the OTP code from sessionStorage (set by sendOtp)
+const otp = await page.evaluate(() => {
+  const raw = sessionStorage.getItem("panga_otp_pending");
+  if (!raw) return "";
+  try { return JSON.parse(raw).code; } catch { return ""; }
+});
+await page.fill("#otp-input", otp);
 await page.click("button[type=submit]");
 await page.waitForTimeout(3000);
 
-const state = await page.evaluate(() => new Promise((res) => {
-  const r = indexedDB.open("panga-db");
+const state = await page.evaluate((dbName) => new Promise((res) => {
+  const r = indexedDB.open(dbName);
   r.onsuccess = () => {
     const d = r.result; const out = { idbVersion: d.version, stores: [...d.objectStoreNames] };
     const tx = d.transaction(["projects","milestones","resources","contacts","resourceSubcategories"], "readonly");
@@ -59,7 +79,7 @@ const state = await page.evaluate(() => new Promise((res) => {
     tx.oncomplete = () => { d.close(); res(out); };
   };
   r.onerror = () => res({ error: String(r.error) });
-}));
+}), dbName);
 console.log("idbVersion:", state.idbVersion, "stores:", JSON.stringify(state.stores));
 console.log("projects:", JSON.stringify(state.projects));
 console.log("milestones:", JSON.stringify(state.milestones));

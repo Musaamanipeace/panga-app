@@ -8,12 +8,15 @@ page.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}\n${e.stack}`))
 
 await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForSelector("#email-input", { timeout: 30000 });
+
+// Try signup
 await page.fill("#email-input", "test@example.com");
+await page.fill("#password-input", "password123");
+// Switch to signup mode
+await page.click("text=Sign Up");
 await page.click("button[type=submit]");
-const dev = await page.textContent(".otp-dev-hint strong");
-await page.fill("#otp-input", dev);
-await page.click("button[type=submit]");
-await page.waitForTimeout(5000);
+await page.waitForTimeout(2000);
+
 console.log("URL:", page.url());
 console.log("body:", (await page.textContent("body")).replace(/\s+/g," ").slice(0,500));
 console.log("errors:", errors.join("\n") || "(none)");

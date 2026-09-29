@@ -1,16 +1,41 @@
 import { Link, Outlet } from "react-router-dom";
+import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
-import { clearSession, getSessionEmail } from "../auth/session";
+import { getSessionEmail } from "../auth/session";
+import { signOut, getSyncStatus, subscribeSyncStatus, syncAll } from "../sync/supabaseSync";
 
 export default function AppShell() {
   const email = getSessionEmail();
+  const [syncState, setSyncState] = useState<{ status: string; message: string; timestamp: number }>({
+    status: "idle",
+    message: "",
+    timestamp: 0,
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeSyncStatus((status, message) => {
+      setSyncState({ status, message, timestamp: Date.now() });
+    });
+    return unsubscribe;
+  }, []);
 
   function handleLogout() {
-    clearSession();
-    // Reload so the IndexedDB database switches back to anonymous mode
-    window.location.assign("/");
+    signOut();
   }
+
+  async function handleManualSync() {
+    const result = await syncAll();
+    setSyncState({ status: result.ok ? "synced" : "error", message: result.message, timestamp: Date.now() });
+  }
+
+  const statusColors: Record<string, string> = {
+    idle: "var(--color-text-muted)",
+    syncing: "#f59e0b",
+    synced: "#10b981",
+    error: "#ef4444",
+    unconfigured: "var(--color-text-muted)",
+  };
 
   return (
     <div className="app-shell">
@@ -40,6 +65,32 @@ export default function AppShell() {
           title={email || ""}
         >
           {email || ""}
+        </span>
+        <button
+          className="btn-secondary btn-small clickable"
+          onClick={handleManualSync}
+          style={{ marginRight: "8px" }}
+          data-tip="Force sync now"
+        >
+          ☁️ Sync
+        </button>
+        <span
+          className="sync-status"
+          style={{
+            fontSize: "11px",
+            color: statusColors[syncState.status] || "var(--color-text-muted)",
+            marginRight: "8px",
+            fontFamily: "monospace",
+          }}
+          title={syncState.message || "No sync yet"}
+        >
+          {syncState.status === "idle" 
+            ? "⏸" 
+            : syncState.status === "syncing" 
+              ? "⟳" 
+              : syncState.status === "synced" 
+                ? "✓" 
+                : "✗"}
         </span>
         <button
           className="btn-secondary btn-small clickable logout-btn"

@@ -4,7 +4,7 @@
 // from this /data folder — never imports Dexie itself.
 
 import Dexie, { type Table } from "dexie";
-import { getSessionEmail } from "../auth/session";
+import { getSessionUserId } from "../auth/session";
 
 export type TaskStatus = "active" | "inactive" | "completed";
 export type ProjectStatus = "active" | "archived";
@@ -230,17 +230,12 @@ export const SETTINGS_KEYS = {
   driveFolderPrefix: "driveFolder:",
 } as const;
 
-// Derive a stable, per-user database name from the logged-in email.
+// Derive a stable, per-user database name from the logged-in Supabase user ID.
 // This ensures each user gets their own isolated IndexedDB database.
 export function getUserDbName(): string {
-  const email = getSessionEmail();
-  if (!email) return "panga-db";
-  // Deterministic hash so the same email always maps to the same db name
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = ((hash << 5) - hash + email.toLowerCase().charCodeAt(i)) | 0;
-  }
-  return `panga-db-${hash >>> 0}`;
+  const userId = getSessionUserId();
+  if (!userId) return "panga-db";
+  return `panga-db-${userId}`;
 }
 
 class PangaDB extends Dexie {

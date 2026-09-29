@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Home from "./pages/Home";
@@ -6,7 +6,7 @@ import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
-import { syncAll, isSupabaseConfigured } from "./sync/supabaseSync";
+import { syncAll, isSupabaseConfigured, restoreSession } from "./sync/supabaseSync";
 import { isLoggedIn } from "./auth/session";
 import "./index.css";
 
@@ -16,13 +16,18 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
-    void ensureSeedData().then(() => {
-      if (isLoggedIn() && isSupabaseConfigured()) {
-        void syncAll().then((result) => {
-          if (!result.ok) console.warn("Supabase Sync warning:", result.message);
-        });
-      }
+    void restoreSession().then(() => {
+      void ensureSeedData().then(() => {
+        if (isLoggedIn() && isSupabaseConfigured()) {
+          void syncAll().then((result) => {
+            if (!result.ok) console.warn("Supabase Sync warning:", result.message);
+          });
+        }
+        setReady(true);
+      });
     });
 
     const handleFocus = () => {
@@ -44,6 +49,17 @@ function App() {
       clearInterval(interval);
     };
   }, []);
+
+  if (!ready) {
+    return (
+      <div className="page landing">
+        <div className="landing-mark" data-tip="Panga">P</div>
+        <h1>Panga</h1>
+        <p>Project &amp; resource planner.</p>
+        <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

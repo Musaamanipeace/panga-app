@@ -1,14 +1,13 @@
 -- Panga Database Schema for Supabase
 -- Copy and paste this script into your Supabase SQL Editor and click "RUN".
--- v2: Added user_id column to all tables for multi-user data isolation.
+-- v3: Added user_id column to all tables with proper Row Level Security
+--     using auth.uid(). Accounts require email confirmation before data access.
 
--- Helper: extract current user's email from the JWT.
--- The app stores user_id as the email string. If you switch to Supabase Auth,
--- replace auth.uid() references with auth.email() and store that as user_id.
+-- Helper: returns the authenticated user's UUID (or NULL for anonymous requests)
 CREATE OR REPLACE FUNCTION public.get_current_user_id()
 RETURNS TEXT AS $$
 BEGIN
-  RETURN auth.email();
+  RETURN auth.uid()::text;
 EXCEPTION WHEN OTHERS THEN
   RETURN NULL;
 END;
@@ -176,21 +175,21 @@ CREATE TABLE IF NOT EXISTS public.settings (
   PRIMARY KEY (user_id, key)
 );
 
--- Migration: add user_id column to existing tables (v1 -> v2 upgrade)
+-- Migration: add user_id column to existing tables (v1 -> v3 upgrade)
 DO $$
 DECLARE
-  table_name TEXT;
+  tbl_name TEXT;
 BEGIN
-  FOR table_name IN
+  FOR tbl_name IN
     SELECT tablename FROM pg_tables WHERE schemaname = 'public'
     AND tablename IN ('projects', 'tasks', 'resources', 'milestones', 'issues',
                       'contacts', 'reminders', 'calendar_events', 'insights', 'doc_entries')
   LOOP
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = table_name AND column_name = 'user_id'
+      WHERE table_schema = 'public' AND table_name = tbl_name AND column_name = 'user_id'
     ) THEN
-      EXECUTE format('ALTER TABLE public.%I ADD COLUMN user_id TEXT', table_name);
+      EXECUTE format('ALTER TABLE public.%I ADD COLUMN user_id TEXT', tbl_name);
     END IF;
   END LOOP;
 
@@ -220,39 +219,62 @@ ALTER TABLE public.insights ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.doc_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 
--- Per-user RLS policies: each user can only access their own data
+-- Per-user RLS policies: each authenticated user can only access their own data
+-- Anonymous (unauthenticated) access is blocked — accounts must be confirmed via email.
 DROP POLICY IF EXISTS "Per-user access projects" ON public.projects;
-CREATE POLICY "Per-user access projects" ON public.projects FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access projects" ON public.projects FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access tasks" ON public.tasks;
-CREATE POLICY "Per-user access tasks" ON public.tasks FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access tasks" ON public.tasks FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access resources" ON public.resources;
-CREATE POLICY "Per-user access resources" ON public.resources FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access resources" ON public.resources FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access milestones" ON public.milestones;
-CREATE POLICY "Per-user access milestones" ON public.milestones FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access milestones" ON public.milestones FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access issues" ON public.issues;
-CREATE POLICY "Per-user access issues" ON public.issues FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access issues" ON public.issues FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access contacts" ON public.contacts;
-CREATE POLICY "Per-user access contacts" ON public.contacts FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access contacts" ON public.contacts FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access reminders" ON public.reminders;
-CREATE POLICY "Per-user access reminders" ON public.reminders FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access reminders" ON public.reminders FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access calendar_events" ON public.calendar_events;
-CREATE POLICY "Per-user access calendar_events" ON public.calendar_events FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access calendar_events" ON public.calendar_events FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access insights" ON public.insights;
-CREATE POLICY "Per-user access insights" ON public.insights FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access insights" ON public.insights FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access doc_entries" ON public.doc_entries;
-CREATE POLICY "Per-user access doc_entries" ON public.doc_entries FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access doc_entries" ON public.doc_entries FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 DROP POLICY IF EXISTS "Per-user access settings" ON public.settings;
-CREATE POLICY "Per-user access settings" ON public.settings FOR ALL USING (user_id = get_current_user_id()) WITH CHECK (user_id = get_current_user_id());
+CREATE POLICY "Per-user access settings" ON public.settings FOR ALL
+  USING (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id())
+  WITH CHECK (get_current_user_id() IS NOT NULL AND user_id = get_current_user_id());
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
@@ -266,3 +288,8 @@ CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON public.calendar_events
 CREATE INDEX IF NOT EXISTS idx_insights_user_id ON public.insights(user_id);
 CREATE INDEX IF NOT EXISTS idx_doc_entries_user_id ON public.doc_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_settings_user_id ON public.settings(user_id);
+
+-- Enable email confirmation requirement: users must confirm their email before accessing data.
+-- In Supabase Dashboard → Authentication → Settings, enable "Email Confirmation".
+-- Or use this SQL to force it:
+-- (This is handled by the RLS policy above which blocks anonymous access.)

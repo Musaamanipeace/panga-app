@@ -10,8 +10,13 @@ await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForSelector("#email-input", { timeout: 30000 });
 await page.fill("#email-input", "test@example.com");
 await page.click("button[type=submit]");
-const dev = await page.textContent(".otp-dev-hint strong");
-await page.fill("#otp-input", dev);
+// Read the OTP code from sessionStorage (set by sendOtp)
+const otp = await page.evaluate(() => {
+  const raw = sessionStorage.getItem("panga_otp_pending");
+  if (!raw) return "";
+  try { return JSON.parse(raw).code; } catch { return ""; }
+});
+await page.fill("#otp-input", otp);
 await page.click("button[type=submit]");
 await page.waitForSelector(".page.home", { timeout: 15000 });
 await page.waitForTimeout(1000);
