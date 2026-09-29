@@ -82,7 +82,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   for (const r of resources) {
     const imageNames = (r.images ?? []).map((i) => i.name + (i.alt ? " " + i.alt : ""));
     const fileNames = (r.files ?? []).map((f) => f.name);
-    if (matches(r.title, r.url ?? undefined, r.body, r.value, r.tags, imageNames, fileNames)) {
+    if (matches(r.title, r.url ?? undefined, r.body, r.tags, imageNames, fileNames)) {
       results.push({
         type: "resource",
         id: r.id,

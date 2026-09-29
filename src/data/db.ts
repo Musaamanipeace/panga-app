@@ -304,7 +304,6 @@ class PangaDB extends Dexie {
           const cat = r.category as string;
           let newCategory: ResourceCategory = "notes";
           let url: string | null = null;
-          let value: string | null = null;
           let body: string | null = null;
           let provider: ResourceProvider | null = null;
 
@@ -356,12 +355,11 @@ class PangaDB extends Dexie {
               newCategory = "notes";
               body = r.textBody || r.notes || null;
               break;
-            case "secrets":
-              newCategory = "secrets";
-              value = r.value || null;
-              break;
             case "images":
               newCategory = "images";
+              break;
+            case "pdfs":
+              newCategory = "pdfs";
               break;
             default:
               newCategory = "notes";
@@ -376,8 +374,6 @@ class PangaDB extends Dexie {
             tags: r.tags || [],
             url,
             provider,
-            contactType: null,
-            value,
             body,
             images: r.images || [],
             files: [],

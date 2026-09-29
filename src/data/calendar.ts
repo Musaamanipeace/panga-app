@@ -1,8 +1,8 @@
 // src/data/calendar.ts
-import { db, type CalendarEvent } from "./db";
+import { db, type CalendarEvent, type CalendarEventSource } from "./db";
 import { newId, now } from "./utils";
 
-export type { CalendarEvent };
+export type { CalendarEvent, CalendarEventSource };
 
 export async function listCalendarEvents(projectId?: string | null): Promise<CalendarEvent[]> {
   if (projectId) {

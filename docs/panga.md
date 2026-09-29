@@ -4,7 +4,7 @@ Personal, open-source, offline-first project and resource planner for one user. 
 
 ## 1. Current state
 
-**Built:** Vite, React, TypeScript, PWA scaffold; Dexie (IndexedDB) data layer with create, edit and delete for projects, tasks, resources, documentation, milestones, issues, reminders and insights; in-memory global search; voice input; email + OTP login (EmailJS free tier, dev-mode fallback); milestones with blocking-task links that auto-complete; milestones have a title and description giving the AI context; resources store text and links (no file bytes in IndexedDB).
+**Built:** Vite, React, TypeScript, PWA scaffold; Dexie (IndexedDB) data layer with create, edit and delete for projects, tasks, resources, documentation, milestones, issues, reminders, insights and calendar; in-memory global search; voice input; email + OTP login (EmailJS free tier, dev-mode fallback); milestones with blocking-task links that auto-complete; milestones have a title and description giving the AI context; resources store text and links (no file bytes in IndexedDB); file upload parses .txt/.md into text; custom resource subcategories (tags) per project; calendar tab with .ics import from Google Calendar.
 
 **Known bugs (fix first, section 12):**
 - The app gets stuck on the Add Project screen.
@@ -53,17 +53,17 @@ Type notes or add text documents describing the project (README, rules, instruct
 
 Every resource is stored as text, never as a file (the upload rule, §2). The UI guides a new user on hover and via the info icon: keep your resource in your cloud drive and paste the link, or upload a text document and the app parses it and saves the text content. Categories contain editable subcategories implemented as tags (see section 10).
 
-- **Notes:** type and save plain text, or upload a text document (parsed into the body). Title and tags. Suggested default tags: Prompts, Reports and Memos (carried over from the earlier plan; see section 14).
+- **Notes:** type and save plain text, or upload a text document (parsed into the body). Supports .txt, .md, .doc, .docx files — .txt and .md are parsed directly; .doc/.docx must be saved as .txt or .md first (Word cannot be parsed in-browser). Title and tags. Suggested default tags: Prompts, Reports and Memos (carried over from the earlier plan; see section 14).
 - **Links:** the URL is validated before saving. Title and tags. Default tags:
   - AI Chats: one click opens a specific Gemini, Claude or GPT conversation (`provider` field; sign-in may be required). Not embedded, to avoid lag.
   - Multi-tab Bookmarks: a group of links opened together.
   - My Links: socials, portfolios, businesses.
   - More tags can be added freely.
-- **Scripts:** plain text or a text document (parsed into the body).
-- **Secrets:** plain text, for env variables and similar. Encrypted at rest (section 8).
+- **Scripts:** plain text or a text document (parsed into the body). Supports .txt, .md, .doc, .docx — .doc/.docx must be saved as .txt/.md first.
 - **Images:** stores Google Drive links only (text, not the file). Paste a share link, or choose upload to send the file to Google Drive into an organised folder the user selects (section 9).
 - **PDFs:** a Google Drive link (text, not the file). The assistant can also point you to a free site that converts a PDF to plain text so you can paste the result (see Insights, section 5.5, and AI, section 7).
-- Only text documents (.txt) can be uploaded anywhere in Resources; their contents are parsed into the body. PDFs and images are never uploaded as files — they are pasted as links.
+- Only text documents (.txt, .md) can be uploaded anywhere in Resources; their contents are parsed into the body. PDFs and images are never uploaded as files — they are pasted as links. Word documents (.doc/.docx) must be saved as .txt or .md first.
+- **Subcategories:** each resource category supports custom subcategories (tags). Default subcategories are provided per category; users can add, rename, and remove their own subcategories. Subcategories are stored as tags on resources. Subcategory management is available via the "Manage subcategories" panel in the Resources tab.
 
 ### 5.3 Issues
 GitHub-style issues tailored to personal work. Fields: title, description, labels, severity, open or closed, comments, optional milestone link. No assignees or team features.
@@ -117,14 +117,14 @@ Click-by-click steps will go in the README when this phase starts. The OAuth flo
 
 ## 10. Data model (category + subtype, Supabase-shaped)
 
-- `resources`: one table with `category` (notes, links, scripts, secrets, images, pdfs), `subcategory`, `title`, `tags[]`, and category-specific fields: `body` (text, for notes/scripts/links/pdfs), `url` and `provider` (links), `value` (secrets, encrypted), `images[]` with a `link` each (Drive share link text), `files[]` with a `link` each and a `text` field (parsed text from uploaded text docs). We never store file bytes — images and PDFs are links; uploaded text documents are parsed into `text`.
-- `resourceSubcategories`: editable tags per category with an `isDefault` flag so defaults can be renamed and restored.
+- `resources`: one table with `category` (notes, links, scripts, images, pdfs), `subcategory`, `title`, `tags[]`, and category-specific fields: `body` (text, for notes/scripts/links/pdfs), `url` and `provider` (links), `images[]` with a `link` each (Drive share link text), `files[]` with a `link` each and a `text` field (parsed text from uploaded text docs). We never store file bytes — images and PDFs are links; uploaded text documents (.txt, .md) are parsed into `text`. Word documents (.doc/.docx) must be saved as .txt/.md first.
+- `resourceSubcategories`: editable tags per category with an `isDefault` flag so defaults can be renamed and restored. Custom subcategories are stored per-project in localStorage and merged with defaults at runtime.
 - `insights`: notes for the Insights tab — `projectId`, `title`, `body`, `type` (note|link|image|pdf), `link` (text link for link/image/pdf types), `tags[]`, `createdAt`, `updatedAt`, `syncStatus`.
 - `contacts`: `type` (email, phone, link), `value`, `tags[]`, `linkedProjectIds[]`.
 - `tasks`: adds `executor` (ai or manual) and optional `scheduledAt`.
 - `issues`: adds labels, comments, milestone link.
 - `milestones`: adds `description` (body) on top of the existing `blockingTaskIds[]`.
-- `calendarEvents`: `source`, `startsAt`, `endsAt`, `meetLink`.
+- `calendarEvents`: `source`, `startsAt`, `endsAt`, `meetLink`, `description` (links to tasks, milestones, resources, insights).
 - `conversations` and `messages`: assistant history with an expiry.
 - `settings`: key and value (API keys, verification hash).
 - Every record keeps `id`, `createdAt`, `updatedAt`, `syncStatus`, and (where applicable) `projectId`.

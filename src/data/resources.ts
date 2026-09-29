@@ -27,7 +27,6 @@ export interface CreateResourceInput {
   tags?: string[];
   url?: string | null;
   provider?: ResourceProvider | null;
-  value?: string | null;
   body?: string | null;
   images?: ResourceImage[];
   files?: ResourceFile[];
@@ -43,7 +42,6 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
     tags: input.tags ?? [],
     url: input.url ?? null,
     provider: input.provider ?? null,
-    value: input.value ?? null,
     body: input.body ?? null,
     images: input.images ?? [],
     files: input.files ?? [],
@@ -60,7 +58,7 @@ export async function updateResource(
   changes: Partial<
     Pick<
       Resource,
-      "title" | "tags" | "url" | "provider" | "value" | "body" | "images" | "files" | "category"
+      "title" | "tags" | "url" | "provider" | "body" | "images" | "files" | "category"
     >
   >
 ): Promise<void> {

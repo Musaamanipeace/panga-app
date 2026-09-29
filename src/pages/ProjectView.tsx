@@ -5,10 +5,11 @@ import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask,
 import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
-import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, setIssueLabels, setIssueMilestone, type Issue, type IssueSeverity, type IssueComment } from "../data/issues";
-import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type CalendarEvent } from "../data/calendar";
+import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
+import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type CalendarEvent, type CalendarEventSource } from "../data/calendar";
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
 import { db, type Project } from "../data/db";
+import { newId, now } from "../data/utils";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
 import InsightsTab from "../components/project/InsightsTab";
@@ -39,6 +40,7 @@ const TAB_QUERY: Record<string, Tab> = {
   Issues: "Issues",
   Reminders: "Reminders",
   Contacts: "Contacts",
+  Calendar: "Calendar",
 };
 
 export default function ProjectView() {
@@ -351,6 +353,46 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     pdfs: { all: "All" },
   };
 
+  // Custom subcategories state (loaded from localStorage per project)
+  const [customSubcategories, setCustomSubcategories] = useState<Record<string, string[]>>({});
+  const [newSubcategory, setNewSubcategory] = useState("");
+
+  // Load custom subcategories from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`panga-subcategories-${projectId}`);
+      if (stored) setCustomSubcategories(JSON.parse(stored));
+    } catch {}
+  }, [projectId]);
+
+  // Save custom subcategories to localStorage
+  useEffect(() => {
+    localStorage.setItem(`panga-subcategories-${projectId}`, JSON.stringify(customSubcategories));
+  }, [customSubcategories, projectId]);
+
+  function addSubcategory() {
+    if (!newSubcategory.trim()) return;
+    const key = newSubcategory.trim().toLowerCase().replace(/\s+/g, "_");
+    setCustomSubcategories((prev) => ({
+      ...prev,
+      [filter]: [...(prev[filter] || []), key].filter((v, i, a) => a.indexOf(v) === i),
+    }));
+    setNewSubcategory("");
+  }
+
+  function removeSubcategory(cat: string, subcat: string) {
+    setCustomSubcategories((prev) => ({
+      ...prev,
+      [cat]: (prev[cat] || []).filter((s) => s !== subcat),
+    }));
+  }
+
+  // Merge default and custom subcategories for display
+  const getAllSubcategories = (cat: string) => ({
+    ...SUBCATEGORY_LABELS[cat],
+    ...Object.fromEntries((customSubcategories[cat] || []).map((s) => [s, s.replace(/_/g, " ")])),
+  });
+
   async function refresh() {
     setResources(await listResourcesForProject(projectId));
   }
@@ -465,18 +507,65 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         )}
 
         {/* Subcategory filter for links and notes */}
-        {!editing && (filter === "links" || filter === "notes") && SUBCATEGORY_LABELS[filter] && Object.keys(SUBCATEGORY_LABELS[filter]).length > 1 && (
+        {!editing && (filter === "links" || filter === "notes") && getAllSubcategories(filter) && Object.keys(getAllSubcategories(filter)).length > 1 && (
           <select
             value={subfilter}
             onChange={(e) => setSubfilter(e.target.value)}
             data-tip="Filter by subcategory"
           >
-            {Object.entries(SUBCATEGORY_LABELS[filter]).map(([id, label]) => (
+            {Object.entries(getAllSubcategories(filter)).map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
         )}
-        {editing && (editing.category === "links" || editing.category === "notes") && SUBCATEGORY_LABELS[editing.category] && Object.keys(SUBCATEGORY_LABELS[editing.category]).length > 1 && (
+
+        {/* Subcategory manager */}
+        {!editing && (filter === "links" || filter === "notes") && (
+          <details className="subcategory-manager" style={{ marginTop: 8 }}>
+            <summary data-tip="Manage custom subcategories for this category">Manage subcategories</summary>
+            <div className="subcategory-manager-content">
+              <div className="field">
+                <label>Add subcategory for {CATEGORY_LABELS[filter]}</label>
+                <div className="inline-form" style={{ marginBottom: 0 }}>
+                  <input
+                    type="text"
+                    placeholder="e.g. research, meeting-notes, reference"
+                    value={newSubcategory}
+                    onChange={(e) => setNewSubcategory(e.target.value)}
+                    data-tip="Enter a name for the new subcategory (used as a tag)"
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={addSubcategory}
+                    data-tip="Add this subcategory"
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+              {customSubcategories[filter] && customSubcategories[filter].length > 0 && (
+                <div className="subcategory-list">
+                  {customSubcategories[filter].map((sc) => (
+                    <span key={sc} className="subcategory-tag">
+                      {sc.replace(/_/g, " ")}
+                      <button
+                        type="button"
+                        className="subcategory-remove"
+                        onClick={() => removeSubcategory(filter, sc)}
+                        data-tip="Remove this subcategory"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
+
+        {editing && (editing.category === "links" || editing.category === "notes") && getAllSubcategories(editing.category) && Object.keys(getAllSubcategories(editing.category)).length > 1 && (
           <select
             value={subfilter}
             onChange={(e) => setSubfilter(e.target.value)}
@@ -553,15 +642,20 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         {(!editing && (filter === "notes" || filter === "scripts")) && (
           <input
             type="file"
-            accept=".txt"
+            accept=".txt,.md,.doc,.docx"
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              if (file.name.endsWith(".doc") || file.name.endsWith(".docx")) {
+                alert("Word documents (.doc/.docx) cannot be parsed directly in the browser. Please save as .txt or .md first, or copy/paste the content.");
+                e.target.value = "";
+                return;
+              }
               const text = await fileToText(file);
               setBody((prev) => (prev ? prev + "\n\n" + text : text));
               e.target.value = "";
             }}
-            data-tip="Upload a .txt file — its contents will be parsed and added to the text above"
+            data-tip="Upload .txt or .md files — contents parsed into the text above. Word docs must be saved as .txt/.md first."
           />
         )}
 
@@ -718,13 +812,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       ) : (
         <ul className="resource-list">
           {subFiltered.map((r) => {
-            let label = "Resource";
-            if (r.category === "links") label = "Link";
-            else if (r.category === "secrets") label = "Secret";
-            else if (r.category === "scripts") label = "Script";
-            else if (r.category === "images") label = "Image";
-            else if (r.category === "pdfs") label = "PDF";
-            else label = "Note";
+            let label = r.category === "links" ? "Link" :
+                r.category === "scripts" ? "Script" :
+                r.category === "images" ? "Image" :
+                r.category === "pdfs" ? "PDF" : "Note";
 
             // Show subcategory tag
             const subTag = r.tags[0] && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]] ? SUBCATEGORY_LABELS[r.category][r.tags[0]] : "";
@@ -800,7 +891,6 @@ function getCategoryColor(cat: ResourceCategory): string {
     notes: "#3b82f6",
     scripts: "#8b5cf6",
     links: "#22c55e",
-    secrets: "#ef4444",
     images: "#a855f7",
     pdfs: "#f59e0b",
   };
@@ -1047,20 +1137,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
   }
 
   async function saveEdit(id: string) {
-    if (editValue.trim()) await updateIssue(id, { title: editValue.trim(), description: editingDescription.trim() });
-    setEditingId(null);
-    refresh();
-  }
-
-  async function saveLabels(id: string) {
-    const labels = editingLabels.split(",").map((l) => l.trim()).filter(Boolean);
-    await setIssueLabels(id, labels);
-    setEditingId(null);
-    refresh();
-  }
-
-  async function saveMilestone(id: string) {
-    await setIssueMilestone(id, editingMilestoneId);
+    if (editValue.trim()) await updateIssue(id, { title: editValue.trim(), description: editingDescription.trim(), labels: editingLabels.split(",").map(l => l.trim()).filter(Boolean), milestoneId: editingMilestoneId });
     setEditingId(null);
     refresh();
   }
@@ -1531,7 +1608,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
                   <p className="resource-notes">
                     {new Date(e.startAt).toLocaleString()} — {new Date(e.endAt).toLocaleTimeString()}
                     {e.hangoutLink && <a href={e.hangoutLink} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open Meet link">📹 Meet</a>}
-                    {e.description && <br />{e.description}}
+                    {e.description && <><br />{e.description}</>}
                   </p>
                   <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
                 </span>
