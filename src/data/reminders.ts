@@ -1,7 +1,7 @@
 // src/data/reminders.ts
 import { db, type Reminder } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Reminder };
 export type ReminderBucket = "overdue" | "due" | "upcoming";

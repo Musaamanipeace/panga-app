@@ -6,7 +6,7 @@ import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
-import { syncAll, isSupabaseConfigured, restoreSession } from "./sync/supabaseSync";
+import { syncAll, restoreSession } from "./sync/sync";
 import { isLoggedIn } from "./auth/session";
 import "./index.css";
 
@@ -21,25 +21,23 @@ function App() {
   useEffect(() => {
     void restoreSession().then(() => {
       void ensureSeedData().then(() => {
-        if (isLoggedIn() && isSupabaseConfigured()) {
-          void syncAll().then((result) => {
-            if (!result.ok) console.warn("Supabase Sync warning:", result.message);
-          });
+        if (isLoggedIn()) {
+          void syncAll();
         }
         setReady(true);
       });
     });
 
     const handleFocus = () => {
-      if (isSupabaseConfigured() && isLoggedIn()) {
+      if (isLoggedIn()) {
         void syncAll();
       }
     };
 
     window.addEventListener("focus", handleFocus);
-    // Periodically sync every 2 minutes if active
+    // Periodically save/sync every 2 minutes if active
     const interval = setInterval(() => {
-      if (isSupabaseConfigured() && isLoggedIn()) {
+      if (isLoggedIn()) {
         void syncAll();
       }
     }, 120_000);

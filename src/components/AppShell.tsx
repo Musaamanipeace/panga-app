@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
 import { getSessionEmail } from "../auth/session";
-import { signOut, getSyncStatus, subscribeSyncStatus, syncAll } from "../sync/supabaseSync";
+import { signOut, subscribeSyncStatus, syncAll } from "../sync/sync";
 
 export default function AppShell() {
   const email = getSessionEmail();
@@ -15,7 +15,7 @@ export default function AppShell() {
 
   useEffect(() => {
     const unsubscribe = subscribeSyncStatus((status, message) => {
-      setSyncState({ status, message, timestamp: Date.now() });
+      setSyncState({ status, message: message || "", timestamp: Date.now() });
     });
     return unsubscribe;
   }, []);

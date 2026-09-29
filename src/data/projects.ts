@@ -1,7 +1,7 @@
 // src/data/projects.ts
 import { db, type Project, type ProjectStatus } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Project, ProjectStatus };
 

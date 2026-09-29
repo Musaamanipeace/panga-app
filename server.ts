@@ -7,10 +7,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 
 app.use(express.json({ limit: "10mb" }));
+
+// Health check endpoint for Fly.io machine monitoring and health checks
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+});
 
 // Server-side Gemini API route
 app.post("/api/assistant/chat", async (req, res) => {
@@ -68,14 +73,19 @@ async function start() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, "dist")));
-    app.get("{*path}", (_req, res) => {
-      res.sendFile(path.resolve(__dirname, "dist", "index.html"));
+    const distPath = path.resolve(__dirname, "dist");
+    app.use(express.static(distPath));
+    app.use((req, res, next) => {
+      if (req.method === "GET" && !req.path.startsWith("/api")) {
+        res.sendFile(path.resolve(distPath, "index.html"));
+      } else {
+        next();
+      }
     });
   }
 
   app.listen(PORT, HOST, () => {
-    console.log(`Server running at http://${HOST}:${PORT}`);
+    console.log(`Server running at http://${HOST}:${PORT} [NODE_ENV=${process.env.NODE_ENV || "development"}]`);
   });
 }
 

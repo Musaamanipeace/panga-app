@@ -1,7 +1,7 @@
 // src/data/issues.ts
 import { db, type Issue, type IssueSeverity, type IssueStatus, type IssueComment } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Issue, IssueSeverity, IssueStatus, IssueComment };
 

@@ -1,7 +1,7 @@
 // src/data/calendar.ts
 import { db, type CalendarEvent, type CalendarEventSource } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { CalendarEvent, CalendarEventSource };
 

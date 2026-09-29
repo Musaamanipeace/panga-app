@@ -1,7 +1,7 @@
 // src/data/tasks.ts
 import { db, type Task, type TaskStatus } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Task, TaskStatus };
 

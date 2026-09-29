@@ -1,7 +1,7 @@
 // src/data/resources.ts
 import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider };
 

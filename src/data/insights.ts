@@ -1,7 +1,7 @@
 // src/data/insights.ts
 import { db, type Insight, type InsightType } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
+import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Insight, InsightType };
 

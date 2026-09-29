@@ -79,9 +79,8 @@ export interface Task {
 }
 
 // Resource: a single unified entity with a fixed `category` enum.
-// Category-specific fields live as explicit columns (locally) and map to a
-// JSONB `meta` column in a future Supabase schema. Only fields relevant to
-// a given category are populated; the rest are null / empty arrays.
+// Category-specific fields live as explicit columns locally.
+// Only fields relevant to a given category are populated; the rest are null / empty arrays.
 export interface Resource {
   id: string;
   projectId: string | null;
@@ -230,7 +229,7 @@ export const SETTINGS_KEYS = {
   driveFolderPrefix: "driveFolder:",
 } as const;
 
-// Derive a stable, per-user database name from the logged-in Supabase user ID.
+// Derive a stable, per-user database name from the logged-in user ID.
 // This ensures each user gets their own isolated IndexedDB database.
 export function getUserDbName(): string {
   const userId = getSessionUserId();
