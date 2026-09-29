@@ -5,11 +5,13 @@ import { newId, now } from "./utils";
 export type { Task, TaskStatus };
 
 export async function listTasksForProject(projectId: string): Promise<Task[]> {
-  return db.tasks.where("projectId").equals(projectId).sortBy("createdAt");
+  const list = await db.tasks.where("projectId").equals(projectId).toArray();
+  return list.sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function listAllTasks(): Promise<Task[]> {
-  return db.tasks.orderBy("createdAt").reverse().toArray();
+  const all = await db.tasks.toArray();
+  return all.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function listScheduledTasks(): Promise<Task[]> {

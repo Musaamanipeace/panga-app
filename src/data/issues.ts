@@ -5,7 +5,8 @@ import { newId, now } from "./utils";
 export type { Issue, IssueSeverity, IssueStatus, IssueComment };
 
 export async function listIssues(projectId: string): Promise<Issue[]> {
-  return db.issues.where("projectId").equals(projectId).sortBy("createdAt");
+  const list = await db.issues.where("projectId").equals(projectId).toArray();
+  return list.sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function createIssue(input: {

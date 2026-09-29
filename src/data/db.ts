@@ -407,6 +407,12 @@ class PangaDB extends Dexie {
           }
         }
       });
+
+    // v6: index createdAt on tasks and issues for sorting
+    this.version(6).stores({
+      tasks: "id, projectId, status, dueDate, scheduledAt, executor, createdAt, updatedAt, syncStatus, *tags",
+      issues: "id, projectId, status, severity, createdAt, updatedAt, syncStatus",
+    });
   }
 }
 
