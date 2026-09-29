@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   listAllContacts,
+  createContact,
   updateContact,
   deleteContact,
   contactHref,
@@ -9,12 +10,28 @@ import {
   linkedProjectIds,
   type Contact,
 } from "../../data/contacts";
+import { listAllProjects } from "../../data/projects";
+import MicButton from "../../components/MicButton";
 import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 export default function HomeContactsTab() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<"all" | "email" | "phone" | "link">("all");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"email" | "phone" | "link">("email");
+  const [newValue, setNewValue] = useState("");
+  const [newTags, setNewTags] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+
   const { data, error, loading, reload, setData } = useAsync(listAllContacts, []);
+
+  useEffect(() => {
+    listAllProjects().then((projs) => {
+      setProjects(projs.map((p) => ({ id: p.id, name: p.name })));
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     let list = data ?? [];
@@ -34,18 +51,132 @@ export default function HomeContactsTab() {
   if (error) return <ErrorNote error={error} onRetry={reload} />;
   if (loading) return <Loading label="Loading contacts..." />;
 
+  async function handleAddContact(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim() || !newValue.trim()) return;
+    await createContact({
+      name: newName.trim(),
+      type: newType,
+      value: newValue.trim(),
+      tags: newTags.split(",").map((t) => t.trim()).filter(Boolean),
+      linkedProjectIds: selectedProjectId ? [selectedProjectId] : [],
+    });
+    setNewName("");
+    setNewValue("");
+    setNewTags("");
+    setSelectedProjectId("");
+    setShowAddForm(false);
+    setData(await listAllContacts());
+  }
+
   async function rename(id: string, name: string) {
     await updateContact(id, { name });
     setData(await listAllContacts());
   }
 
   async function remove(contact: Contact) {
+    if (!confirm(`Delete contact "${contact.name}"?`)) return;
     await deleteContact(contact.id);
     setData(await listAllContacts());
   }
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <button
+          type="button"
+          className="btn-primary clickable"
+          onClick={() => setShowAddForm((s) => !s)}
+          data-tip="Add a new contact"
+        >
+          {showAddForm ? "Close contact form" : "+ Add contact"}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <form className="resource-form" onSubmit={handleAddContact} style={{ marginBottom: 16 }}>
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Contact name</label>
+            <div className="inline-form" style={{ marginBottom: 0 }}>
+              <input
+                type="text"
+                placeholder="Person or organisation name..."
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                required
+                autoFocus
+              />
+              <MicButton onResult={setNewName} />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Type</label>
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as "email" | "phone" | "link")}
+            >
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+              <option value="link">Link</option>
+            </select>
+          </div>
+
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>
+              {newType === "email" && "Email address"}
+              {newType === "phone" && "Phone number"}
+              {newType === "link" && "URL / Link"}
+            </label>
+            <input
+              type={newType === "link" ? "url" : newType === "email" ? "email" : "tel"}
+              placeholder={newType === "link" ? "https://..." : newType === "email" ? "you@example.com" : "+1 (555) 000-0000"}
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Link to project (optional)</label>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+            >
+              <option value="">No project (General contact)</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Tags (comma separated)</label>
+            <input
+              type="text"
+              placeholder="work, client, urgent, contractor"
+              value={newTags}
+              onChange={(e) => setNewTags(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 8, width: "100%" }}>
+            <button type="submit" className="btn-primary clickable">
+              Save contact
+            </button>
+            <button
+              type="button"
+              className="btn-secondary clickable"
+              onClick={() => setShowAddForm(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="inline-form">
         <input
           type="search"
@@ -56,16 +187,16 @@ export default function HomeContactsTab() {
           data-tip="Narrows the list below as you type"
         />
         <div className="chip-row" style={{ marginBottom: 0 }}>
-           {(["all", "email", "phone", "link"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`chip ${type === t ? "chip-active" : ""}`}
-                  onClick={() => setType(t)}
-                  data-tip={t === "all" ? "Show every contact type" : `Show only ${CONTACT_TYPE_LABELS[t]} contacts`}
-                  aria-pressed={type === t}
-                >
-                  {t === "all" ? "All" : CONTACT_TYPE_LABELS[t]}
+          {(["all", "email", "phone", "link"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`chip ${type === t ? "chip-active" : ""}`}
+              onClick={() => setType(t)}
+              data-tip={t === "all" ? "Show every contact type" : `Show only ${CONTACT_TYPE_LABELS[t]} contacts`}
+              aria-pressed={type === t}
+            >
+              {t === "all" ? "All" : CONTACT_TYPE_LABELS[t]}
             </button>
           ))}
         </div>
@@ -74,7 +205,7 @@ export default function HomeContactsTab() {
       {filtered.length === 0 ? (
         <p className="empty-state">
           {(data?.length ?? 0) === 0
-            ? "No contacts yet. Contacts are added from a project's Contacts tab, and every one of them shows up here."
+            ? "No contacts yet. Add your first contact above."
             : "No contacts match this filter."}
         </p>
       ) : (

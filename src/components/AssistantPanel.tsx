@@ -6,12 +6,31 @@ import {
   addMessage,
   deleteConversation,
   pruneExpiredConversations,
-} from "../data/conversations.ts"
-import { getGeminiApiKey } from "../data/settings.ts"
-import MicButton from "../components/MicButton.tsx"
-import { useAsync } from "../components/ui.tsx"
+  type Message,
+} from "../data/conversations";
+import { getGeminiApiKey } from "../data/settings";
+import { listAllProjects, createProject } from "../data/projects";
+import { listAllTasks, createTask, updateTask, deleteTask } from "../data/tasks";
+import { createMilestone } from "../data/milestones";
+import { createReminder } from "../data/reminders";
+import { createInsight } from "../data/insights";
+import { db } from "../data/db";
+import MicButton from "../components/MicButton";
+import { useAsync } from "../components/ui";
 
-const SYSTEM_PROMPT = `You are Panga's assistant. You help with planning, scheduling, editing and research within this personal project manager. You do NOT answer general questions, write code for other purposes, or design new algorithms. You have tools to read and write tasks, resources, milestones, issues and documentation — you always ask for approval before writing. Keep responses concise.`;
+interface ActionProposal {
+  type:
+    | "create_task"
+    | "update_task"
+    | "delete_task"
+    | "create_project"
+    | "create_milestone"
+    | "create_reminder"
+    | "create_insight"
+    | "add_subcategory";
+  description: string;
+  data: any;
+}
 
 export default function AssistantPanel() {
   const [open, setOpen] = useState(false);
@@ -26,7 +45,7 @@ export default function AssistantPanel() {
 
   const conversations = useAsync(listConversations, []);
   const messages = useAsync(
-    () => (conversationId ? listMessages(conversationId) : Promise.resolve([] as import("../data/conversations.ts").Message[])),
+    () => (conversationId ? listMessages(conversationId) : Promise.resolve([] as Message[])),
     [conversationId]
   );
 
@@ -38,51 +57,140 @@ export default function AssistantPanel() {
     const c = await createConversation("New conversation");
     setConversationId(c.id);
     setOpen(true);
+    conversations.reload();
+  }
+
+  async function buildSystemInstruction(): Promise<string> {
+    const [projects, tasks, milestones] = await Promise.all([
+      listAllProjects(),
+      listAllTasks(),
+      db.milestones.toArray(),
+    ]);
+
+    const projList = projects
+      .map((p) => `- Project "${p.name}" (id: ${p.id}): ${p.description || "no description"} [status: ${p.status}]`)
+      .join("\n");
+    const taskList = tasks
+      .slice(0, 50)
+      .map(
+        (t) =>
+          `- Task "${t.title}" (id: ${t.id}, project: ${t.projectId}): [status: ${t.status}, executor: ${t.executor}${
+            t.scheduledAt ? `, scheduled: ${new Date(t.scheduledAt).toLocaleString()}` : ""
+          }]`
+      )
+      .join("\n");
+    const milestoneList = milestones
+      .map((m) => `- Milestone "${m.title}" (id: ${m.id}, project: ${m.projectId}): ${m.description || "no description"} [status: ${m.status}]`)
+      .join("\n");
+
+    return `You are Panga's intelligent personal assistant and agent.
+Panga is a personal, offline-first project and resource planner.
+
+Core principles & instructions:
+1. Upload & storage philosophy: Panga never stores binary files, only text and cloud links. For images and PDFs, links to Google Drive (or any cloud drive) are stored. For text documents (.txt, .md), their contents are parsed into text.
+2. PDF guidance: If asked about PDFs or ingesting PDF documents, explain the upload rule: recommend free, self-service tools such as ilovepdf.com/pdf_to_text to convert the PDF to plain text, and paste that text into Notes or Insights, or store the PDF in Google Drive and paste the share link.
+3. Milestones: Milestones are goals with a title and a description body context. Use them to understand user goals, suggest task breakdowns, set reminders, and schedule action items.
+4. Agent actions with user approval: You have the ability to read, write, edit, add subcategories, add projects, add tasks, delete tasks, check/tick off tasks, add milestones, add reminders, and save insights.
+Whenever the user asks you to perform an action (or when you suggest concrete actions that should be executed), explain what you are doing in your message, and append machine-readable ACTION blocks at the very end of your response, one per action, like this:
+ACTION:{"type":"create_task","description":"Add task '...' to project '...'","data":{"projectId":"...","title":"...","notes":"...","executor":"ai"|"manual","scheduledAt":null}}
+ACTION:{"type":"update_task","description":"Mark task '...' as completed","data":{"id":"...","status":"completed"}}
+ACTION:{"type":"delete_task","description":"Delete task '...'","data":{"id":"..."}}
+ACTION:{"type":"create_project","description":"Create project '...'","data":{"name":"...","description":"..."}}
+ACTION:{"type":"create_milestone","description":"Create milestone '...'","data":{"projectId":"...","title":"...","description":"..."}}
+ACTION:{"type":"create_reminder","description":"Set reminder '...'","data":{"message":"...","triggerAt":1234567890,"projectId":"..."}}
+ACTION:{"type":"create_insight","description":"Save insight '...'","data":{"projectId":"...","title":"...","body":"...","type":"note"}}
+ACTION:{"type":"add_subcategory","description":"Add shared subcategory '...'","data":{"category":"notes","name":"..."}}
+
+If the user's request is ambiguous or missing a critical choice, you can instead ask a clarifying question by starting your response with:
+CLARIFY: Question text || Option 1 || Option 2 || Option 3
+
+Current application state:
+Projects:
+${projList || "None"}
+
+Tasks:
+${taskList || "None"}
+
+Milestones:
+${milestoneList || "None"}
+`;
   }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim()) return;
-    if (!conversationId) return;
+    const userText = text.trim();
+    if (!userText) return;
+
+    let convId = conversationId;
+    if (!convId) {
+      const c = await createConversation(userText.slice(0, 30));
+      convId = c.id;
+      setConversationId(c.id);
+      conversations.reload();
+    }
 
     setError(null);
     setComposing(true);
-    await addMessage(conversationId, "user", text);
+    await addMessage(convId, "user", userText);
     setText("");
     messages.reload();
 
     try {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) {
-        setError("No Gemini API key in Settings. Add one to use the assistant.");
-        setComposing(false);
-        return;
-      }
+      const clientApiKey = await getGeminiApiKey();
+      const allMsgs = await listMessages(convId);
+      const systemInstruction = await buildSystemInstruction();
+      const needsSearch = /\b(search|research|look up|find online|latest|what is|news)\b/i.test(userText);
 
-      const all = await listMessages(conversationId);
+      const contents = allMsgs.map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.text }],
+      }));
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
+      // Call server-side proxy route
+      let reply = "";
+      try {
+        const res = await fetch("/api/assistant/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
-              { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
-              ...all.map((m) => ({
-                role: m.role === "user" ? "user" : "model",
-                parts: [{ text: m.text }],
-              })),
-            ],
+            contents,
+            systemInstruction,
+            enableSearch: needsSearch,
+            clientApiKey: clientApiKey || undefined,
           }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          reply = data.text ?? "";
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server responded with ${res.status}`);
         }
-      );
+      } catch (serverErr) {
+        // Fallback to client-side direct call if client has custom API key
+        if (clientApiKey) {
+          const fallbackRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${clientApiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                system_instruction: { parts: [{ text: systemInstruction }] },
+                contents,
+              }),
+            }
+          );
+          const fallbackData = await fallbackRes.json();
+          reply = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        } else {
+          throw serverErr;
+        }
+      }
 
-      const data = await response.json();
-      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      if (!reply) throw new Error("Empty response from the model.");
+      if (!reply) throw new Error("Empty response received from the assistant.");
 
-      // If the model asks for clarification, show the box.
+      // Check for clarification
       if (reply.startsWith("CLARIFY:")) {
         const parts = reply.replace("CLARIFY:", "").split("||");
         setClarifying({
@@ -93,22 +201,146 @@ export default function AssistantPanel() {
         return;
       }
 
-      await addMessage(conversationId, "assistant", reply);
-      messages.reload();
+      // Parse ACTION: blocks
+      const lines = reply.split(/\r?\n/);
+      const actionProposals: ActionProposal[] = [];
+      const cleanLines: string[] = [];
+
+      for (const line of lines) {
+        if (line.trim().startsWith("ACTION:")) {
+          try {
+            const rawJson = line.trim().slice(7).trim();
+            const parsed = JSON.parse(rawJson) as ActionProposal;
+            if (parsed && parsed.type) {
+              actionProposals.push(parsed);
+            }
+          } catch (e) {
+            console.warn("Failed to parse action line:", line, e);
+          }
+        } else {
+          cleanLines.push(line);
+        }
+      }
+
+      const cleanReply = cleanLines.join("\n").trim();
+      if (cleanReply) {
+        await addMessage(convId, "assistant", cleanReply);
+        messages.reload();
+      }
+
+      // Convert parsed actions to approval items
+      if (actionProposals.length > 0) {
+        const newApprovals = actionProposals.map((act) => ({
+          id: crypto.randomUUID(),
+          description: act.description || `Execute ${act.type}`,
+          action: async () => {
+            await executeAction(act);
+            await addMessage(convId!, "assistant", `Approved and executed: ${act.description}`);
+            window.dispatchEvent(new Event("panga-data-updated"));
+            messages.reload();
+          },
+        }));
+        setApprovals((prev) => [...prev, ...newApprovals]);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Assistant error.");
+      setError(err instanceof Error ? err.message : "Assistant error occurred.");
     } finally {
       setComposing(false);
+    }
+  }
+
+  async function executeAction(act: ActionProposal): Promise<void> {
+    const { type, data } = act;
+    switch (type) {
+      case "create_task": {
+        const defaultProj = (await listAllProjects())[0];
+        const projId = data.projectId || defaultProj?.id;
+        if (!projId) throw new Error("No project found to attach task to.");
+        await createTask({
+          projectId: projId,
+          title: data.title,
+          notes: data.notes ?? "",
+          executor: data.executor ?? "manual",
+          scheduledAt: data.scheduledAt ? Number(data.scheduledAt) : null,
+          dueDate: data.dueDate ? Number(data.dueDate) : null,
+          tags: data.tags ?? [],
+        });
+        break;
+      }
+      case "update_task": {
+        if (!data.id) throw new Error("Task id missing.");
+        await updateTask(data.id, data);
+        break;
+      }
+      case "delete_task": {
+        if (!data.id) throw new Error("Task id missing.");
+        await deleteTask(data.id);
+        break;
+      }
+      case "create_project": {
+        await createProject({
+          name: data.name,
+          description: data.description ?? "",
+        });
+        break;
+      }
+      case "create_milestone": {
+        const defaultProj = (await listAllProjects())[0];
+        const projId = data.projectId || defaultProj?.id;
+        if (!projId) throw new Error("No project found to attach milestone to.");
+        await createMilestone({
+          projectId: projId,
+          title: data.title,
+          description: data.description ?? "",
+          targetDate: data.targetDate ? Number(data.targetDate) : null,
+        });
+        break;
+      }
+      case "create_reminder": {
+        const currentTime = Date.now();
+        await createReminder({
+          message: data.message,
+          triggerAt: data.triggerAt ? Number(data.triggerAt) : currentTime + 3600000,
+          projectId: data.projectId ?? null,
+        });
+        break;
+      }
+      case "create_insight": {
+        const defaultProj = (await listAllProjects())[0];
+        const projId = data.projectId || defaultProj?.id;
+        if (!projId) throw new Error("No project found to attach insight to.");
+        await createInsight({
+          projectId: projId,
+          title: data.title,
+          body: data.body ?? null,
+          type: data.type ?? "note",
+          link: data.link ?? null,
+          tags: data.tags ?? [],
+        });
+        break;
+      }
+      case "add_subcategory": {
+        const cat = data.category || "notes";
+        const name = (data.name || "").trim().toLowerCase().replace(/\s+/g, "_");
+        if (name) {
+          const stored = localStorage.getItem("panga-subcategories-global");
+          const existing = stored ? JSON.parse(stored) : {};
+          existing[cat] = [...(existing[cat] || []), name].filter((v, i, a) => a.indexOf(v) === i);
+          localStorage.setItem("panga-subcategories-global", JSON.stringify(existing));
+        }
+        break;
+      }
+      default:
+        console.warn("Unknown action type:", type);
     }
   }
 
   function resolveClarify(option: string) {
     if (!conversationId) return;
     setClarifying(null);
-    // Re-send with the chosen option appended.
-    setText(`${text} [clarification: ${option}]`);
+    setText(`${text} [Selected: ${option}]`);
     setComposing(true);
-    void handleSend({ preventDefault: () => {}, currentTarget: null } as unknown as React.FormEvent);
+    void handleSend({ preventDefault: () => {} } as React.FormEvent);
   }
 
   function dismissClarify() {
@@ -138,11 +370,11 @@ export default function AssistantPanel() {
       <button
         ref={fabRef}
         type="button"
-        className="assistant-fab"
+        className="assistant-fab clickable"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls="assistant-panel"
-        data-tip="Open the assistant. Ctrl Shift A"
+        data-tip="Open the AI Assistant agent"
       >
         AI
       </button>
@@ -158,11 +390,11 @@ export default function AssistantPanel() {
         >
           <div className="drawer-panel assistant-panel" onClick={(e) => e.stopPropagation()}>
             <header className="drawer-header">
-              <h2>Assistant</h2>
+              <h2>Assistant &amp; Agent</h2>
               <div className="btn-row">
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-icon clickable"
                   onClick={startNew}
                   data-tip="Start a new conversation"
                 >
@@ -170,7 +402,7 @@ export default function AssistantPanel() {
                 </button>
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-icon clickable"
                   onClick={() => setOpen(false)}
                   data-tip="Close the assistant"
                 >
@@ -187,17 +419,20 @@ export default function AssistantPanel() {
                   setConversationId(null);
                   setError(null);
                 }}
-                data-tip="Conversations"
+                data-tip="View conversation history"
               >
                 History
               </button>
             </div>
 
-            <div className="drawer-body" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+            <div className="drawer-body" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               {conversationId === null ? (
                 <ConversationList
                   conversations={conversations.data ?? []}
-                  onSelect={setConversationId}
+                  onSelect={(id) => {
+                    setConversationId(id);
+                    setError(null);
+                  }}
                   onDelete={async (id) => {
                     await deleteConversation(id);
                     conversations.reload();
@@ -206,25 +441,43 @@ export default function AssistantPanel() {
               ) : (
                 <>
                   {error && (
-                    <div className="error-banner" style={{ marginBottom: 8 }}>
-                      <p>{error}</p>
-                      <button type="button" className="btn-secondary btn-small" onClick={() => setError(null)} data-tip="Dismiss">
+                    <div className="error-banner" style={{ margin: "8px 12px", padding: 8 }}>
+                      <p style={{ margin: 0, fontSize: 13 }}>{error}</p>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-small clickable"
+                        style={{ marginTop: 6 }}
+                        onClick={() => setError(null)}
+                        data-tip="Dismiss error"
+                      >
                         Dismiss
                       </button>
                     </div>
                   )}
+
                   <div className="assistant-log" role="log" aria-live="polite">
-                    {(messages.data ?? []).map((m) => (
-                      <div
-                        key={m.id}
-                        className={`assistant-message ${
-                          m.role === "user" ? "assistant-message-user" : "assistant-message-assistant"
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                    ))}
+                    {(messages.data ?? []).length === 0 ? (
+                      <p className="empty-state" style={{ margin: "auto", textAlign: "center" }}>
+                        Ask me anything about your projects, tasks, schedule, or resources.
+                        <br />
+                        <span className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
+                          I can plan tasks, schedule your day, search the web, and guide you on converting PDFs to text.
+                        </span>
+                      </p>
+                    ) : (
+                      (messages.data ?? []).map((m) => (
+                        <div
+                          key={m.id}
+                          className={`assistant-message ${
+                            m.role === "user" ? "assistant-message-user" : "assistant-message-assistant"
+                          }`}
+                        >
+                          {m.text}
+                        </div>
+                      ))
+                    )}
                   </div>
+
                   {clarifying && (
                     <div className="clarify-box" role="alertdialog" aria-label="Clarification needed">
                       <p className="clarify-prompt">{clarifying.question}</p>
@@ -233,7 +486,7 @@ export default function AssistantPanel() {
                           <button
                             key={opt}
                             type="button"
-                            className="btn-secondary btn-small"
+                            className="btn-secondary btn-small clickable"
                             onClick={() => resolveClarify(opt)}
                             data-tip="Answer with this option"
                           >
@@ -242,7 +495,7 @@ export default function AssistantPanel() {
                         ))}
                         <button
                           type="button"
-                          className="btn-secondary btn-small"
+                          className="btn-secondary btn-small clickable"
                           onClick={dismissClarify}
                           data-tip="Dismiss the question"
                         >
@@ -251,19 +504,20 @@ export default function AssistantPanel() {
                       </div>
                     </div>
                   )}
+
                   <form className="assistant-composer" onSubmit={handleSend}>
                     <div className="inline-form" style={{ flex: 1, marginBottom: 0 }}>
                       <input
                         type="text"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder="Ask about your tasks, schedule, resources..."
+                        placeholder="Ask, plan, or command actions..."
                         disabled={composing}
                         aria-label="Your message"
                       />
                       <MicButton onResult={setText} />
                     </div>
-                    <button type="submit" className="btn-primary" disabled={composing || !text.trim()}>
+                    <button type="submit" className="btn-primary clickable" disabled={composing || !text.trim()}>
                       {composing ? "Thinking..." : "Send"}
                     </button>
                   </form>
@@ -273,7 +527,7 @@ export default function AssistantPanel() {
 
             {approvals.length > 0 && (
               <div className="approval-box" role="alertdialog" aria-label="Waiting for approval">
-                <h3>Waiting for your approval</h3>
+                <h3>Agent Action Approval ({approvals.length})</h3>
                 <div className="approval-list">
                   {approvals.map((a) => (
                     <div key={a.id} className="approval-item">
@@ -281,15 +535,15 @@ export default function AssistantPanel() {
                       <div className="btn-row">
                         <button
                           type="button"
-                          className="btn-primary btn-small"
+                          className="btn-primary btn-small clickable"
                           onClick={() => approve(a.id)}
-                          data-tip="Run this action"
+                          data-tip="Approve and execute this action"
                         >
                           Approve
                         </button>
                         <button
                           type="button"
-                          className="btn-secondary btn-small"
+                          className="btn-secondary btn-small clickable"
                           onClick={() => dismissApproval(a.id)}
                           data-tip="Discard this action"
                         >
@@ -330,17 +584,20 @@ function ConversationList({
         <li key={c.id} className="activity-item" style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <button
             type="button"
-            className="editable-view"
-            style={{ flex: 1, textAlign: "left", padding: 4 }}
+            className="editable-view clickable"
+            style={{ flex: 1, textAlign: "left", padding: 6, background: "none", border: "none" }}
             onClick={() => onSelect(c.id)}
           >
-            <div className="activity-title">{c.title}</div>
-            <div className="activity-time">{new Date(c.updatedAt).toLocaleString()}</div>
+            <div className="activity-title" style={{ fontWeight: 600 }}>{c.title}</div>
+            <div className="activity-time text-tiny">{new Date(c.updatedAt).toLocaleString()}</div>
           </button>
           <button
             type="button"
-            className="btn-icon btn-icon-danger"
-            onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+            className="btn-icon btn-icon-danger clickable"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(c.id);
+            }}
             data-tip="Delete this conversation"
             data-tip-edge="left"
           >

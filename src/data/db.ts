@@ -27,14 +27,14 @@ export interface Contact {
   syncStatus: SyncStatus;
 }
 
-// Fixed resource categories (Supabase-shaped: category column + JSONB meta).
-// No longer user-editable — each category has a known set of meta fields.
+// Fixed and user-added resource categories.
 export type ResourceCategory =
   | "notes"
   | "scripts"
   | "links"
   | "images"
-  | "pdfs";
+  | "pdfs"
+  | (string & {});
 
 export interface ResourceImage {
   link: string;

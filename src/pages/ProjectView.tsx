@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getProject, getProjectTaskStats } from "../data/projects";
 import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile } from "../data/resources";
+import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
@@ -120,6 +120,8 @@ export default function ProjectView() {
 function DocumentationTab({ projectId }: { projectId: string }) {
   const [entries, setEntries] = useState<DocEntry[]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
 
   async function refresh() {
     setEntries(await listDocEntries(projectId));
@@ -129,11 +131,50 @@ function DocumentationTab({ projectId }: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  function fileToText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadNote(null);
+    if (file.name.endsWith(".doc") || file.name.endsWith(".docx")) {
+      setUploadNote("Word documents (.doc/.docx) cannot be parsed directly in the browser. Please save as .txt or .md first, or paste the content.");
+      e.target.value = "";
+      return;
+    }
+    try {
+      const text = await fileToText(file);
+      setNewContent(text);
+      if (!newTitle.trim()) {
+        const inferredTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+        setNewTitle(inferredTitle);
+      }
+      setUploadNote(`Loaded content from "${file.name}" into body.`);
+    } catch {
+      setUploadNote("Failed to read text from file.");
+    }
+    e.target.value = "";
+  }
+
   async function addOutline(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    await createDocEntry({ projectId, type: "outline", title: newTitle.trim() });
+    await createDocEntry({
+      projectId,
+      type: "outline",
+      title: newTitle.trim(),
+      content: newContent.trim(),
+    });
     setNewTitle("");
+    setNewContent("");
+    setUploadNote(null);
     refresh();
   }
 
@@ -155,20 +196,59 @@ function DocumentationTab({ projectId }: { projectId: string }) {
 
   return (
     <div>
-      <form className="inline-form" onSubmit={addOutline}>
-        <input
-          type="text"
-          placeholder="New doc section title (e.g. 'Overview', 'Phase 1')..."
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-        />
-        <MicButton onResult={(text) => setNewTitle(text)} />
-        <button type="submit" className="btn-primary clickable">+ Add section</button>
+      <form className="resource-form" onSubmit={addOutline} style={{ marginBottom: 20 }}>
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Documentation Title</label>
+          <div className="inline-form" style={{ marginBottom: 0 }}>
+            <input
+              type="text"
+              placeholder="Section title (e.g. 'Overview', 'Phase 1 Specs', 'Architecture')..."
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              required
+            />
+            <MicButton onResult={(text) => setNewTitle(text)} />
+          </div>
+        </div>
+
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Body / Content</label>
+          <textarea
+            placeholder="Write section body, documentation notes, technical specs, or outline details..."
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            rows={4}
+          />
+          <div style={{ marginTop: 4 }}>
+            <MicButton onResult={(text) => setNewContent((prev) => (prev ? prev + " " + text : text))} />
+          </div>
+        </div>
+
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+            Or upload a file instead of typing the body (.txt, .md):
+          </label>
+          <input
+            type="file"
+            accept=".txt,.md,.doc,.docx"
+            onChange={handleFileUpload}
+            data-tip="Upload .txt or .md file to automatically populate title and body"
+          />
+          {uploadNote && (
+            <p className={uploadNote.includes("cannot be parsed") || uploadNote.includes("Failed") ? "otp-error" : "progress-label"} style={{ margin: "4px 0" }}>
+              {uploadNote}
+            </p>
+          )}
+        </div>
+
+        <button type="submit" className="btn-primary clickable">
+          + Add documentation section
+        </button>
       </form>
 
       {entries.length === 0 ? (
         <p className="empty-state">
-          No documentation yet. Add a section above — this is your project outline &
+          No documentation yet. Add a section above — this is your project outline &amp;
           phased plan, filled in as you go (or by the assistant, once connected).
         </p>
       ) : (
@@ -324,13 +404,80 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [imgLink, setImgLink] = useState("");
   const [pdfLink, setPdfLink] = useState("");
 
-  const CATEGORY_LABELS: Record<ResourceCategory, string> = {
-    notes: "Notes",
-    scripts: "Scripts",
-    links: "Links",
-    images: "Images",
-    pdfs: "PDFs",
-  };
+  const DEFAULT_CATEGORIES: { id: string; label: string }[] = [
+    { id: "notes", label: "Notes" },
+    { id: "scripts", label: "Scripts" },
+    { id: "links", label: "Links" },
+    { id: "images", label: "Images" },
+    { id: "pdfs", label: "PDFs" },
+  ];
+
+  // Custom categories state (global addition, accessible across all projects)
+  const [customCategories, setCustomCategories] = useState<{ id: string; label: string }[]>([]);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+
+  // Load custom categories from global storage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("panga-categories-global");
+      if (stored) {
+        setCustomCategories(JSON.parse(stored));
+      }
+    } catch {}
+  }, []);
+
+  function saveCustomCategories(cats: { id: string; label: string }[]) {
+    setCustomCategories(cats);
+    try {
+      localStorage.setItem("panga-categories-global", JSON.stringify(cats));
+    } catch {}
+  }
+
+  function handleAddCategory(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    const name = newCatName.trim();
+    if (!name) return;
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!id) return;
+    const exists = DEFAULT_CATEGORIES.some((c) => c.id === id) || customCategories.some((c) => c.id === id);
+    if (!exists) {
+      const updated = [...customCategories, { id, label: name }];
+      saveCustomCategories(updated);
+    }
+    setFilter(id);
+    setSubfilter("all");
+    setNewCatName("");
+    setShowAddCategory(false);
+  }
+
+  function handleRemoveCategory(catId: string) {
+    if (!confirm(`Delete custom category "${CATEGORY_LABELS[catId] || catId}"? Existing items will remain.`)) return;
+    const updated = customCategories.filter((c) => c.id !== catId);
+    saveCustomCategories(updated);
+    if (filter === catId) {
+      setFilter("all");
+      setSubfilter("all");
+    }
+  }
+
+  const allCategories: { id: string; label: string }[] = useMemo(() => {
+    return [...DEFAULT_CATEGORIES, ...customCategories];
+  }, [customCategories]);
+
+  const CATEGORY_LABELS: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {
+      notes: "Notes",
+      scripts: "Scripts",
+      links: "Links",
+      images: "Images",
+      pdfs: "PDFs",
+    };
+    for (const c of customCategories) {
+      map[c.id] = c.label;
+    }
+    return map;
+  }, [customCategories]);
 
   const SUBCATEGORY_LABELS: Record<string, Record<string, string>> = {
     notes: {
@@ -353,29 +500,43 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     pdfs: { all: "All" },
   };
 
-  // Custom subcategories state (loaded from localStorage per project)
+  // Custom subcategories state (shared across all projects)
   const [customSubcategories, setCustomSubcategories] = useState<Record<string, string[]>>({});
   const [newSubcategory, setNewSubcategory] = useState("");
+  const [showSubcategoryManager, setShowSubcategoryManager] = useState(false);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
 
-  // Load custom subcategories from localStorage on mount
+  // Load custom subcategories from global storage on mount (migrating any legacy per-project ones)
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(`panga-subcategories-${projectId}`);
-      if (stored) setCustomSubcategories(JSON.parse(stored));
+      const globalStored = localStorage.getItem("panga-subcategories-global");
+      if (globalStored) {
+        setCustomSubcategories(JSON.parse(globalStored));
+      } else {
+        const legacyStored = localStorage.getItem(`panga-subcategories-${projectId}`);
+        if (legacyStored) {
+          const parsed = JSON.parse(legacyStored);
+          setCustomSubcategories(parsed);
+          localStorage.setItem("panga-subcategories-global", JSON.stringify(parsed));
+        }
+      }
     } catch {}
   }, [projectId]);
 
-  // Save custom subcategories to localStorage
+  // Save custom subcategories to global storage
   useEffect(() => {
-    localStorage.setItem(`panga-subcategories-${projectId}`, JSON.stringify(customSubcategories));
-  }, [customSubcategories, projectId]);
+    if (Object.keys(customSubcategories).length > 0) {
+      localStorage.setItem("panga-subcategories-global", JSON.stringify(customSubcategories));
+    }
+  }, [customSubcategories]);
 
   function addSubcategory() {
     if (!newSubcategory.trim()) return;
     const key = newSubcategory.trim().toLowerCase().replace(/\s+/g, "_");
+    const activeCat = filter === "all" ? "notes" : filter;
     setCustomSubcategories((prev) => ({
       ...prev,
-      [filter]: [...(prev[filter] || []), key].filter((v, i, a) => a.indexOf(v) === i),
+      [activeCat]: [...(prev[activeCat] || []), key].filter((v, i, a) => a.indexOf(v) === i),
     }));
     setNewSubcategory("");
   }
@@ -389,7 +550,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
 
   // Merge default and custom subcategories for display
   const getAllSubcategories = (cat: string) => ({
-    ...SUBCATEGORY_LABELS[cat],
+    ...(SUBCATEGORY_LABELS[cat] || { all: "All" }),
     ...Object.fromEntries((customSubcategories[cat] || []).map((s) => [s, s.replace(/_/g, " ")])),
   });
 
@@ -425,36 +586,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   async function addResource(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    const cat = editing?.category ?? "notes";
+    const cat = editing?.category ?? (filter === "all" ? "notes" : filter);
     const subcat = subfilter === "all" ? "" : subfilter;
     const input: any = {
       projectId,
       category: cat,
       title: title.trim(),
       tags: subcat ? [subcat] : [],
+      body: body.trim() || null,
+      files,
+      images,
+      url: url.trim() || null,
+      provider: cat === "links" && subcat === "ai_chats" ? provider : null,
     };
-    if (cat === "links") {
-      input.url = url.trim() || null;
-      input.provider = subcat === "ai_chats" ? provider : null;
-      input.body = body.trim() || null;
-    } else if (cat === "images") {
-      // Store links to the resources (e.g. Google Drive share links), never the files
-      input.images = images;
-    } else if (cat === "pdfs") {
-      // Store links to the PDFs (e.g. Google Drive share links), never the files
-      input.files = files;
-      input.body = body.trim() || null;
-    } else if (cat === "notes") {
-      // Parse uploaded text files into the body — we store text, not files
-      input.body = body.trim() || null;
-      input.files = files;
-    } else if (cat === "scripts") {
-      // Parse uploaded text files into the body — we store text, not files
-      input.body = body.trim() || null;
-      input.files = files;
-    } else {
-      input.body = body.trim() || null;
-    }
     if (editing) {
       await updateResource(editing.id, input);
     } else {
@@ -472,7 +616,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
-    // Set subfilter based on first tag
     if (r.tags.length > 0 && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]]) {
       setSubfilter(r.tags[0]);
     } else {
@@ -480,187 +623,284 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     }
   }
 
+  const activeCategory = editing ? editing.category : (filter === "all" ? "notes" : filter);
   const filtered = filter === "all" ? resources : resources.filter((r) => r.category === filter);
   const subFiltered = subfilter === "all" ? filtered : filtered.filter((r) => r.tags.includes(subfilter));
 
   return (
     <div>
       <form className="resource-form" onSubmit={addResource}>
-{editing ? (
+        {/* Category Selector + Add Category Button */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%", marginBottom: 6 }}>
+          {editing ? (
             <span className="resource-category-badge">{CATEGORY_LABELS[editing.category] || editing.category}</span>
           ) : (
             <select
-              value={filter === "all" ? "notes" : (filter as ResourceCategory)}
+              value={filter}
               onChange={(e) => {
-                if (!editing) {
+                if (e.target.value === "__add_new__") {
+                  setShowAddCategory(true);
+                } else if (!editing) {
                   setFilter(e.target.value);
                   setSubfilter("all");
                 }
               }}
-              data-tip="Filter resources by category"
+              data-tip="Select resource category"
             >
-            <option value="all">All categories</option>
-            {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
-              <option key={id} value={id}>{label}</option>
-            ))}
-          </select>
-        )}
+              <option value="all">All categories</option>
+              {allCategories.map((c: { id: string; label: string }) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+              <option value="__add_new__">+ Add new category...</option>
+            </select>
+          )}
 
-        {/* Subcategory filter for links and notes */}
-        {!editing && (filter === "links" || filter === "notes") && getAllSubcategories(filter) && Object.keys(getAllSubcategories(filter)).length > 1 && (
-          <select
-            value={subfilter}
-            onChange={(e) => setSubfilter(e.target.value)}
-            data-tip="Filter by subcategory"
-          >
-            {Object.entries(getAllSubcategories(filter)).map(([id, label]) => (
-              <option key={id} value={id}>{label}</option>
-            ))}
-          </select>
-        )}
+          {!editing && (
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => setShowAddCategory((s) => !s)}
+              data-tip="Add a custom category globally accessible across all projects"
+            >
+              {showAddCategory ? "Close" : "+ Add category"}
+            </button>
+          )}
 
-        {/* Subcategory manager */}
-        {!editing && (filter === "links" || filter === "notes") && (
-          <details className="subcategory-manager" style={{ marginTop: 8 }}>
-            <summary data-tip="Manage custom subcategories for this category">Manage subcategories</summary>
-            <div className="subcategory-manager-content">
-              <div className="field">
-                <label>Add subcategory for {CATEGORY_LABELS[filter]}</label>
-                <div className="inline-form" style={{ marginBottom: 0 }}>
-                  <input
-                    type="text"
-                    placeholder="e.g. research, meeting-notes, reference"
-                    value={newSubcategory}
-                    onChange={(e) => setNewSubcategory(e.target.value)}
-                    data-tip="Enter a name for the new subcategory (used as a tag)"
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={addSubcategory}
-                    data-tip="Add this subcategory"
-                  >
-                    + Add
-                  </button>
-                </div>
-              </div>
-              {customSubcategories[filter] && customSubcategories[filter].length > 0 && (
+          {/* Subcategory filter for current category */}
+          {!editing && filter !== "all" && getAllSubcategories(filter) && Object.keys(getAllSubcategories(filter)).length > 1 && (
+            <select
+              value={subfilter}
+              onChange={(e) => setSubfilter(e.target.value)}
+              data-tip="Filter by subcategory / tag"
+            >
+              {Object.entries(getAllSubcategories(filter)).map(([id, label]) => (
+                <option key={id} value={id}>{label}</option>
+              ))}
+            </select>
+          )}
+
+          {/* Subcategory manager toggle button */}
+          {!editing && filter !== "all" && (
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => setShowSubcategoryManager((s) => !s)}
+              data-tip="Manage shared custom subcategories and tags across all projects"
+            >
+              {showSubcategoryManager ? "Close tags" : "+ Manage tags"}
+            </button>
+          )}
+        </div>
+
+        {/* Global Category Manager Panel */}
+        {showAddCategory && (
+          <div className="subcategory-manager" style={{ marginTop: 4, marginBottom: 10, width: "100%" }}>
+            <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
+              Add Category (Global addition, accessible from any project)
+            </label>
+            <div className="inline-form" style={{ marginBottom: 6 }}>
+              <input
+                type="text"
+                placeholder="Category name (e.g. Credentials, Design, Templates, Research)..."
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddCategory();
+                  }
+                }}
+              />
+              <button type="button" className="btn-primary clickable" onClick={() => handleAddCategory()}>
+                + Add Category
+              </button>
+              <button type="button" className="btn-secondary clickable" onClick={() => setShowAddCategory(false)}>
+                Cancel
+              </button>
+            </div>
+            {customCategories.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>Custom categories:</span>
                 <div className="subcategory-list">
-                  {customSubcategories[filter].map((sc) => (
-                    <span key={sc} className="subcategory-tag">
-                      {sc.replace(/_/g, " ")}
+                  {customCategories.map((c) => (
+                    <span key={c.id} className="subcategory-tag">
+                      {c.label}
                       <button
                         type="button"
-                        className="subcategory-remove"
-                        onClick={() => removeSubcategory(filter, sc)}
-                        data-tip="Remove this subcategory"
+                        className="subcategory-remove clickable"
+                        onClick={() => handleRemoveCategory(c.id)}
+                        data-tip={`Delete ${c.label} category`}
                       >
                         ×
                       </button>
                     </span>
                   ))}
                 </div>
-              )}
-            </div>
-          </details>
+              </div>
+            )}
+          </div>
         )}
 
-        {editing && (editing.category === "links" || editing.category === "notes") && getAllSubcategories(editing.category) && Object.keys(getAllSubcategories(editing.category)).length > 1 && (
+        {/* Subcategory manager panel */}
+        {!editing && filter !== "all" && showSubcategoryManager && (
+          <div className="subcategory-manager" style={{ marginTop: 4, marginBottom: 10, width: "100%" }}>
+            <div className="field">
+              <label>Add shared tag / subcategory for {CATEGORY_LABELS[filter] || filter}</label>
+              <div className="inline-form" style={{ marginBottom: 0 }}>
+                <input
+                  type="text"
+                  placeholder="e.g. research, meeting-notes, reference, sprint-1"
+                  value={newSubcategory}
+                  onChange={(e) => setNewSubcategory(e.target.value)}
+                  data-tip="Enter tag / subcategory name (shared across projects)"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary clickable"
+                  onClick={addSubcategory}
+                  data-tip="Add this subcategory"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+            {customSubcategories[filter] && customSubcategories[filter].length > 0 && (
+              <div className="subcategory-list">
+                {customSubcategories[filter].map((sc) => (
+                  <span key={sc} className="subcategory-tag">
+                    {sc.replace(/_/g, " ")}
+                    <button
+                      type="button"
+                      className="subcategory-remove clickable"
+                      onClick={() => removeSubcategory(filter, sc)}
+                      data-tip="Remove this subcategory"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {editing && getAllSubcategories(editing.category) && Object.keys(getAllSubcategories(editing.category)).length > 1 && (
           <select
             value={subfilter}
             onChange={(e) => setSubfilter(e.target.value)}
-            data-tip="Subcategory"
+            data-tip="Subcategory / tag"
+            style={{ width: "100%", marginBottom: 8 }}
           >
-            {Object.entries(SUBCATEGORY_LABELS[editing.category]).map(([id, label]) => (
+            {Object.entries(getAllSubcategories(editing.category)).map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
         )}
 
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          data-tip="Resource title"
-        />
-        <MicButton onResult={(text) => setTitle(text)} />
+        {/* Title Field (Clearly marked) */}
+        <div className="field" style={{ flexBasis: "100%" }}>
+          <label>Title</label>
+          <div className="inline-form" style={{ marginBottom: 0 }}>
+            <input
+              type="text"
+              placeholder={activeCategory === "notes" ? "Note title..." : "Resource title..."}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              data-tip="Title"
+            />
+            <MicButton onResult={(text) => setTitle(text)} />
+          </div>
+        </div>
 
         {/* Category-specific fields */}
-        {!editing && filter === "links" && (
-          <>
-            <input
-              type="url"
-              placeholder="https://..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              data-tip="URL to open"
-            />
-            {subfilter === "ai_chats" && (
-              <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
-                <option value="gemini">Gemini</option>
-                <option value="claude">Claude</option>
-                <option value="gpt">GPT</option>
-                <option value="other">Other</option>
-              </select>
-            )}
-          </>
-        )}
-        {editing && editing.category === "links" && (
-          <>
-            <input
-              type="url"
-              placeholder="https://..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              data-tip="URL to open"
-            />
-            {subfilter === "ai_chats" && (
-              <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
-                <option value="gemini">Gemini</option>
-                <option value="claude">Claude</option>
-                <option value="gpt">GPT</option>
-                <option value="other">Other</option>
-              </select>
-            )}
-          </>
+        {activeCategory === "links" && (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>URL</label>
+            <div className="inline-form" style={{ marginBottom: 0 }}>
+              <input
+                type="url"
+                placeholder="https://..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                data-tip="URL to open"
+              />
+              {subfilter === "ai_chats" && (
+                <select value={provider} onChange={(e) => setProvider(e.target.value as any)} data-tip="AI provider for this chat link">
+                  <option value="gemini">Gemini</option>
+                  <option value="claude">Claude</option>
+                  <option value="gpt">GPT</option>
+                  <option value="other">Other</option>
+                </select>
+              )}
+            </div>
+          </div>
         )}
 
-        {/* Body / text for notes, scripts, links, pdfs */}
-        {(!editing || ["notes", "scripts", "links", "pdfs"].includes(editing.category)) &&
-         ["notes", "scripts", "links", "pdfs"].includes(editing?.category ?? filter === "all" ? "" : filter) && (
-          <textarea
-            placeholder="Notes, description, details..."
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={2}
-            data-tip="Optional description or notes"
-          />
+        {/* Explicit Note Body / Content Area */}
+        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory)) && (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>
+              {activeCategory === "notes" ? "Note Body" : "Body / Description / Content"}
+            </label>
+            <textarea
+              placeholder={activeCategory === "notes" ? "Note body, details, notes, thoughts, reference text..." : "Description or details..."}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={4}
+              data-tip="Resource body and notes"
+            />
+            <div style={{ marginTop: 4 }}>
+              <MicButton onResult={(text) => setBody((prev) => (prev ? prev + " " + text : text))} />
+            </div>
+          </div>
         )}
 
-        {/* Text file upload for notes/scripts — parse to body, store text not files */}
-        {(!editing && (filter === "notes" || filter === "scripts")) && (
-          <input
-            type="file"
-            accept=".txt,.md,.doc,.docx"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (file.name.endsWith(".doc") || file.name.endsWith(".docx")) {
-                alert("Word documents (.doc/.docx) cannot be parsed directly in the browser. Please save as .txt or .md first, or copy/paste the content.");
+        {uploadNote && (
+          <p className="otp-error" style={{ flexBasis: "100%", margin: "4px 0" }}>
+            {uploadNote}
+          </p>
+        )}
+
+        {/* Text file upload for notes/scripts/custom categories — parse to body, store text not files */}
+        {(!editing && (activeCategory === "notes" || activeCategory === "scripts" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory))) && (
+          <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+            <span className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
+              Upload rule: Text documents only (.txt, .md). Contents are parsed into body — no files are stored.
+            </span>
+            <input
+              type="file"
+              accept=".txt,.md,.doc,.docx"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadNote(null);
+                if (file.name.endsWith(".doc") || file.name.endsWith(".docx")) {
+                  setUploadNote("Word documents (.doc/.docx) cannot be parsed directly in the browser. Please save as .txt or .md first, or copy/paste the content.");
+                  e.target.value = "";
+                  return;
+                }
+                try {
+                  const text = await fileToText(file);
+                  setBody((prev) => (prev ? prev + "\n\n" + text : text));
+                  if (!title.trim()) {
+                    setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "));
+                  }
+                } catch {
+                  setUploadNote("Failed to read text from file.");
+                }
                 e.target.value = "";
-                return;
-              }
-              const text = await fileToText(file);
-              setBody((prev) => (prev ? prev + "\n\n" + text : text));
-              e.target.value = "";
-            }}
-            data-tip="Upload .txt or .md files — contents parsed into the text above. Word docs must be saved as .txt/.md first."
-          />
+              }}
+              data-tip="Upload .txt or .md files — contents parsed into the note body above. Word docs must be saved as .txt/.md first."
+            />
+          </div>
         )}
 
         {/* Image link input — paste a Drive/share link, never store the file */}
-        {(!editing && filter === "images") || (editing && editing.category === "images") ? (
+        {activeCategory === "images" && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>Image link</label>
             <input
@@ -683,10 +923,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               + Add link
             </button>
           </div>
-        ) : null}
+        )}
 
         {/* PDF link input — paste a Drive/share link + PDF-to-text helper */}
-        {(!editing && filter === "pdfs") || (editing && editing.category === "pdfs") ? (
+        {activeCategory === "pdfs" && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>PDF link</label>
             <input
@@ -718,7 +958,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               </span>
             </p>
           </div>
-        ) : null}
+        )}
 
         {/* Image link previews */}
         {images.length > 0 && (
@@ -772,21 +1012,24 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        <button type="submit" className="btn-primary clickable">
-          {editing ? "Save" : "+ Add resource"}
-        </button>
-        {editing && (
-          <button
-            type="button"
-            className="btn-secondary clickable"
-            data-tip="Cancel edit"
-            onClick={() => resetForm()}
-          >
-            Cancel
+        <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 8 }}>
+          <button type="submit" className="btn-primary clickable">
+            {editing ? "Save changes" : "+ Add resource"}
           </button>
-        )}
+          {editing && (
+            <button
+              type="button"
+              className="btn-secondary clickable"
+              data-tip="Cancel edit"
+              onClick={() => resetForm()}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
+      {/* Filter Chips (Default + Custom Categories) */}
       <div className="chip-row">
         <button
           className={`chip ${filter === "all" ? "chip-active" : ""}`}
@@ -795,14 +1038,14 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         >
           All
         </button>
-        {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
+        {allCategories.map((c: { id: string; label: string }) => (
           <button
-            key={id}
-            className={`chip ${filter === id ? "chip-active" : ""}`}
-            data-tip={`Show only ${label.toLowerCase()}`}
-            onClick={() => { setFilter(id); setSubfilter("all"); }}
+            key={c.id}
+            className={`chip ${filter === c.id ? "chip-active" : ""}`}
+            data-tip={`Show only ${c.label.toLowerCase()}`}
+            onClick={() => { setFilter(c.id); setSubfilter("all"); }}
           >
-            {label}
+            {c.label}
           </button>
         ))}
       </div>
@@ -812,13 +1055,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       ) : (
         <ul className="resource-list">
           {subFiltered.map((r) => {
-            let label = r.category === "links" ? "Link" :
-                r.category === "scripts" ? "Script" :
-                r.category === "images" ? "Image" :
-                r.category === "pdfs" ? "PDF" : "Note";
-
-            // Show subcategory tag
-            const subTag = r.tags[0] && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]] ? SUBCATEGORY_LABELS[r.category][r.tags[0]] : "";
+            const label = CATEGORY_LABELS[r.category] || r.category;
+            const subTag = r.tags[0] && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]] ? SUBCATEGORY_LABELS[r.category][r.tags[0]] : r.tags[0] || "";
 
             return (
               <li key={r.id} className="resource-item">
@@ -830,8 +1068,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                       {r.url}
                     </a>
                   ) : null}
-{r.body && <p className="resource-notes">{r.body}</p>}
-                   {r.images.length > 0 && (
+                  {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
+                  {r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) => (
                         img.link ? (
@@ -886,15 +1124,21 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   );
 }
 
-function getCategoryColor(cat: ResourceCategory): string {
-  const colors: Record<ResourceCategory, string> = {
+function getCategoryColor(cat: string): string {
+  const colors: Record<string, string> = {
     notes: "#3b82f6",
     scripts: "#8b5cf6",
     links: "#22c55e",
     images: "#a855f7",
     pdfs: "#f59e0b",
   };
-  return colors[cat] ?? "#6b7280";
+  if (colors[cat]) return colors[cat];
+  let hash = 0;
+  for (let i = 0; i < cat.length; i++) {
+    hash = cat.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 45%)`;
 }
 
 // ---------- Milestones ----------
@@ -1453,6 +1697,9 @@ function CalendarTab({ projectId }: { projectId: string }) {
   const [hangoutLink, setHangoutLink] = useState("");
   const [icsFile, setIcsFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewDate, setViewDate] = useState(() => new Date());
 
   async function refresh() {
     setEvents(await listCalendarEvents(projectId));
@@ -1485,39 +1732,43 @@ function CalendarTab({ projectId }: { projectId: string }) {
     e.preventDefault();
     if (!icsFile) return;
     setImporting(true);
+    setImportStatus(null);
     try {
       const text = await icsFile.text();
-      const events = parseIcs(text);
-      if (events.length === 0) {
-        alert("No events found in the .ics file.");
+      const parsedEvents = parseIcs(text);
+      if (parsedEvents.length === 0) {
+        setImportStatus({ message: "No events found in the .ics file.", type: "error" });
         return;
       }
-      const toImport = events.map((e) => ({
+      const toImport = parsedEvents.map((ev) => ({
         id: `google_${newId()}`,
         projectId,
-        title: e.title ?? "(no title)",
-        description: e.description ?? null,
-        startAt: e.startAt,
-        endAt: e.endAt,
+        title: ev.title ?? "(no title)",
+        description: ev.description ?? null,
+        startAt: ev.startAt,
+        endAt: ev.endAt,
         source: "google" as CalendarEventSource,
-        hangoutLink: e.hangoutLink ?? null,
+        hangoutLink: ev.hangoutLink ?? null,
         syncedAt: Date.now(),
         createdAt: now(),
         updatedAt: now(),
       }));
       await db.calendarEvents.bulkPut(toImport);
-      alert(`Imported ${toImport.length} event(s) from .ics file.`);
+      setImportStatus({ message: `Imported ${toImport.length} event(s) from .ics file.`, type: "success" });
       setIcsFile(null);
       refresh();
     } catch (err) {
-      alert("Failed to parse .ics file: " + (err instanceof Error ? err.message : String(err)));
+      setImportStatus({
+        message: "Failed to parse .ics file: " + (err instanceof Error ? err.message : String(err)),
+        type: "error",
+      });
     } finally {
       setImporting(false);
     }
   }
 
   function parseIcs(text: string) {
-    const events: Array<{ title?: string; description?: string; startAt: number; endAt: number; hangoutLink?: string }> = [];
+    const parsed: Array<{ title?: string; description?: string; startAt: number; endAt: number; hangoutLink?: string }> = [];
     const lines = text.split(/\r?\n/);
     let current: Partial<{ title?: string; description?: string; startAt: number; endAt: number; hangoutLink?: string }> | null = null;
 
@@ -1525,11 +1776,11 @@ function CalendarTab({ projectId }: { projectId: string }) {
       if (line.startsWith("BEGIN:VEVENT")) {
         current = {};
       } else if (line.startsWith("END:VEVENT") && current) {
-        if (current.startAt && current.endAt) events.push(current as any);
+        if (current.startAt && current.endAt) parsed.push(current as any);
         current = null;
       } else if (current) {
-        if (line.startsWith("SUMMARY:")) current.title = line.slice(8);
-        else if (line.startsWith("DESCRIPTION:")) current.description = line.slice(12);
+        if (line.startsWith("SUMMARY:")) current.title = line.slice(8).trim();
+        else if (line.startsWith("DESCRIPTION:")) current.description = line.slice(12).trim();
         else if (line.startsWith("DTSTART:") || line.startsWith("DTSTART;")) {
           const val = line.split(":")[1];
           current.startAt = parseIcsDate(val);
@@ -1541,14 +1792,50 @@ function CalendarTab({ projectId }: { projectId: string }) {
         }
       }
     }
-    return events;
+    return parsed;
   }
 
   function parseIcsDate(val: string): number {
-    const clean = val.replace(/[^0-9TZ]/g, "").replace("T", "T");
-    const date = new Date(clean);
+    if (!val) return Date.now();
+    const trimmed = val.trim();
+    const m = trimmed.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?/);
+    if (m) {
+      const [, yr, mo, da, hr, mi, se, z] = m;
+      if (z) {
+        return Date.UTC(+yr, +mo - 1, +da, +(hr || 0), +(mi || 0), +(se || 0));
+      } else {
+        return new Date(+yr, +mo - 1, +da, +(hr || 0), +(mi || 0), +(se || 0)).getTime();
+      }
+    }
+    const date = new Date(trimmed);
     return isNaN(date.getTime()) ? Date.now() : date.getTime();
   }
+
+  // Month grid calculations
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const monthName = viewDate.toLocaleString("default", { month: "long", year: "numeric" });
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+
+  function prevMonth() {
+    setViewDate(new Date(year, month - 1, 1));
+  }
+  function nextMonth() {
+    setViewDate(new Date(year, month + 1, 1));
+  }
+  function gotoToday() {
+    setViewDate(new Date());
+  }
+  function selectDay(day: number) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dateStr = `${year}-${pad(month + 1)}-${pad(day)}`;
+    setStartAt(`${dateStr}T09:00`);
+    setEndAt(`${dateStr}T10:00`);
+  }
+
+  const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   return (
     <div>
@@ -1556,9 +1843,14 @@ function CalendarTab({ projectId }: { projectId: string }) {
       <section className="dashboard-section">
         <h3 className="section-heading">Import from Google Calendar</h3>
         <p className="form-note">
-          Export your Google Calendar as an .ics file (Google Calendar → Settings → Import & export → Export),
+          Export your Google Calendar as an .ics file (Google Calendar → Settings → Import &amp; export → Export),
           then upload it here. The app will parse events and add them as local calendar events.
         </p>
+        {importStatus && (
+          <p className={importStatus.type === "error" ? "otp-error" : "progress-label"} style={{ margin: "6px 0" }}>
+            {importStatus.message}
+          </p>
+        )}
         <form className="resource-form" onSubmit={handleIcsImport}>
           <input type="file" accept=".ics" onChange={(e) => setIcsFile(e.target.files?.[0] ?? null)} data-tip="Select an .ics file" />
           <button type="submit" className="btn-primary clickable" disabled={importing || !icsFile}>
@@ -1566,6 +1858,88 @@ function CalendarTab({ projectId }: { projectId: string }) {
           </button>
         </form>
       </section>
+
+      {/* Calendar Controls & View Toggle */}
+      <div className="calendar-view-header">
+        <div className="calendar-nav">
+          <button type="button" className="btn-secondary btn-small clickable" onClick={prevMonth} data-tip="Previous month">
+            &larr; Prev
+          </button>
+          <strong style={{ fontSize: "15px", minWidth: 140, textAlign: "center" }}>{monthName}</strong>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={nextMonth} data-tip="Next month">
+            Next &rarr;
+          </button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={gotoToday} data-tip="Go to today">
+            Today
+          </button>
+        </div>
+        <div className="btn-row">
+          <button
+            type="button"
+            className={`chip ${viewMode === "grid" ? "chip-active" : ""}`}
+            onClick={() => setViewMode("grid")}
+            data-tip="Month grid calendar view"
+          >
+            Grid view
+          </button>
+          <button
+            type="button"
+            className={`chip ${viewMode === "list" ? "chip-active" : ""}`}
+            onClick={() => setViewMode("list")}
+            data-tip="Chronological list view"
+          >
+            List view
+          </button>
+        </div>
+      </div>
+
+      {/* Month Grid View */}
+      {viewMode === "grid" && (
+        <div className="calendar-grid">
+          {DAY_NAMES.map((name) => (
+            <div key={name} className="calendar-day-name">
+              {name}
+            </div>
+          ))}
+          {/* Blank cells before 1st of month */}
+          {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+            <div key={`empty-${i}`} className="calendar-day-cell empty" />
+          ))}
+          {/* Day cells */}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const dayNum = i + 1;
+            const isToday =
+              today.getFullYear() === year &&
+              today.getMonth() === month &&
+              today.getDate() === dayNum;
+
+            const dayEvents = events.filter((e) => {
+              const d = new Date(e.startAt);
+              return d.getFullYear() === year && d.getMonth() === month && d.getDate() === dayNum;
+            });
+
+            return (
+              <div
+                key={`day-${dayNum}`}
+                className={`calendar-day-cell ${isToday ? "today" : ""}`}
+                onClick={() => selectDay(dayNum)}
+                data-tip={`Click day ${dayNum} to schedule an event`}
+              >
+                <span className="calendar-day-num">{dayNum}</span>
+                {dayEvents.map((e) => (
+                  <div
+                    key={e.id}
+                    className={`calendar-event-pill ${e.source === "google" ? "google" : ""}`}
+                    data-tip={`${new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${e.title}`}
+                  >
+                    {new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {e.title}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Local events form */}
       <form className="resource-form" onSubmit={addEvent}>
@@ -1592,32 +1966,35 @@ function CalendarTab({ projectId }: { projectId: string }) {
         <button type="submit" className="btn-primary clickable">+ Add event</button>
       </form>
 
-      {events.length === 0 ? (
-        <p className="empty-state">
-          No events yet. Add a local event above or import from Google Calendar.
-        </p>
-      ) : (
-        <ul className="resource-list">
-          {events
-            .sort((a, b) => a.startAt - b.startAt)
-            .map((e) => (
-              <li key={e.id} className="resource-item">
-                <span className="resource-category-dot" style={{ backgroundColor: e.source === "google" ? "#4285f4" : "#3b82f6" }} />
-                <span className="resource-text">
-                  <span className="resource-title">{e.title}</span>
-                  <p className="resource-notes">
-                    {new Date(e.startAt).toLocaleString()} — {new Date(e.endAt).toLocaleTimeString()}
-                    {e.hangoutLink && <a href={e.hangoutLink} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open Meet link">📹 Meet</a>}
-                    {e.description && <><br />{e.description}</>}
-                  </p>
-                  <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
-                </span>
-                <button className="btn-icon clickable" data-tip="Delete event" onClick={async () => { await deleteCalendarEvent(e.id); refresh(); }}>
-                  ×
-                </button>
-              </li>
-            ))}
-        </ul>
+      {/* List View / Event List */}
+      {viewMode === "list" && (
+        events.length === 0 ? (
+          <p className="empty-state">
+            No events yet. Add a local event above or import from Google Calendar.
+          </p>
+        ) : (
+          <ul className="resource-list">
+            {events
+              .sort((a, b) => a.startAt - b.startAt)
+              .map((e) => (
+                <li key={e.id} className="resource-item">
+                  <span className="resource-category-dot" style={{ backgroundColor: e.source === "google" ? "#4285f4" : "#3b82f6" }} />
+                  <span className="resource-text">
+                    <span className="resource-title">{e.title}</span>
+                    <p className="resource-notes">
+                      {new Date(e.startAt).toLocaleString()} — {new Date(e.endAt).toLocaleTimeString()}
+                      {e.hangoutLink && <a href={e.hangoutLink} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open Meet link">📹 Meet</a>}
+                      {e.description && <><br />{e.description}</>}
+                    </p>
+                    <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
+                  </span>
+                  <button className="btn-icon clickable" data-tip="Delete event" onClick={async () => { await deleteCalendarEvent(e.id); refresh(); }}>
+                    ×
+                  </button>
+                </li>
+              ))}
+          </ul>
+        )
       )}
     </div>
   );

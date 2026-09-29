@@ -25,6 +25,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     body: "",
@@ -39,6 +40,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
   function resetForm() {
     setFormData({ title: "", body: "", type: "note", link: "", tags: "" });
     setEditingId(null);
+    setUploadError(null);
     setShowForm(false);
   }
 
@@ -73,28 +75,50 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== "text/plain") {
-      alert("Only .txt files can be uploaded. Please paste text or convert your file to plain text first.");
+    setUploadError(null);
+
+    const isTextDoc = file.name.endsWith(".txt") || file.name.endsWith(".md") || file.type.startsWith("text/");
+    if (!isTextDoc) {
+      setUploadError("Only text documents (.txt, .md) can be uploaded. For PDFs or Word documents, convert to text first or paste a cloud drive link.");
+      e.target.value = "";
       return;
     }
-    const text = await file.text();
-    setFormData((prev) => ({
-      ...prev,
-      body: prev.body ? prev.body + "\n\n" + text : text,
-      title: prev.title || file.name.replace(/\.txt$/i, ""),
-    }));
+
+    try {
+      const text = await file.text();
+      setFormData((prev) => ({
+        ...prev,
+        body: prev.body ? prev.body + "\n\n" + text : text,
+        title: prev.title || file.name.replace(/\.(txt|md)$/i, ""),
+      }));
+    } catch {
+      setUploadError("Could not read text file.");
+    }
     e.target.value = "";
   }
 
   return (
     <div className="insights-tab">
       <div className="section-header-row">
-        <h2 className="section-heading">Insights</h2>
+        <div>
+          <h2 className="section-heading" style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+            Insights
+            <span
+              className="chip-small"
+              data-tip="Upload rule: We save text, not files. Store links to cloud files, or drop in a .txt/.md document to parse into notes."
+            >
+              ℹ Text &amp; Links Only
+            </span>
+          </h2>
+          <p className="form-note" style={{ margin: "2px 0 0 0" }}>
+            Personal user notes and quick references — not generated analytics.
+          </p>
+        </div>
         <button
           type="button"
           className="btn-primary"
-          onClick={() => { setShowForm(true); setEditingId(null); }}
-          data-tip="Add a new insight (note, link, image, or PDF link)"
+          onClick={() => { setShowForm(true); setEditingId(null); setUploadError(null); }}
+          data-tip="Add a new insight (note, link, image link, or PDF link)"
         >
           + Add insight
         </button>
@@ -102,6 +126,11 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
 
       {showForm && (
         <form className="insight-form" onSubmit={handleSubmit}>
+          {uploadError && (
+            <p className="otp-error" style={{ flexBasis: "100%", marginBottom: 8 }}>
+              {uploadError}
+            </p>
+          )}
           <div className="field" style={{ flexBasis: "100%" }}>
             <div className="field-label">Title</div>
             <div className="inline-form" style={{ marginBottom: 0 }}>
@@ -139,12 +168,12 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
                 placeholder="Write your insight, notes, or paste text here..."
               />
               <div className="field" style={{ marginTop: 8 }}>
-                <div className="field-label">Or upload a text file</div>
+                <div className="field-label">Or upload a text document (.txt, .md)</div>
                 <input
                   type="file"
-                  accept=".txt"
+                  accept=".txt,.md"
                   onChange={handleFileUpload}
-                  data-tip="Upload a .txt file — its contents will be parsed and added to the text above"
+                  data-tip="Upload a .txt or .md file — its text will be parsed and added above"
                 />
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import GlobalSearch from "./GlobalSearch";
-import AIAssistant from "./AIAssistant";
+import AssistantPanel from "./AssistantPanel";
 import { clearSession, getSessionEmail } from "../auth/session";
 
 export default function AppShell() {
@@ -37,7 +37,7 @@ export default function AppShell() {
       <main className="app-main">
         <Outlet />
       </main>
-      <AIAssistant />
+      <AssistantPanel />
     </div>
   );
 }

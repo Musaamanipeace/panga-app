@@ -1,0 +1,8 @@
+{
+  "name": "Panga",
+  "description": "Personal, offline-first project and resource planner.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

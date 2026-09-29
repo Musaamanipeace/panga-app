@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listProjects, createProject } from "../data/projects.ts"
+import { listProjects, createProject, getProjectTaskStats } from "../data/projects.ts"
 import {
   getDashboardAlerts,
   getDashboardSummary,
@@ -14,15 +14,17 @@ import MicButton from "../components/MicButton.tsx"
 import { Drawer, ErrorNote, Loading, Slide, useAsync } from "../components/ui.tsx"
 import HomeTasksTab from "../components/home/HomeTasksTab.tsx"
 import HomeContactsTab from "../components/home/HomeContactsTab.tsx"
+import HomeCalendarTab from "../components/home/HomeCalendarTab.tsx"
 import HomeScheduleTab from "../components/home/HomeScheduleTab.tsx"
 import HomeRemindersTab from "../components/home/HomeRemindersTab.tsx"
 
-const TABS = ["Tasks", "Contacts", "Schedule", "Reminders"] as const;
+const TABS = ["Tasks", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
   Tasks: "Every task across every project, with a status filter",
-  Contacts: "Every contact, with links to reach them",
+  Contacts: "Every contact, with links to reach them and add contacts",
+  Calendar: "Month grid and list view of all events across projects, with Google Calendar .ics import",
   Schedule: "Tasks with a date and time, plus calendar events and Meet links",
   Reminders: "Reminders grouped into overdue, due and upcoming",
 };
@@ -39,12 +41,17 @@ export default function Home() {
       getDashboardAlerts(),
       getDashboardSummary(),
     ]);
-    return { projects, alerts, summary };
+    const statsEntries = await Promise.all(
+      projects.map(async (p) => [p.id, await getProjectTaskStats(p.id)] as const)
+    );
+    const statsMap = Object.fromEntries(statsEntries);
+    return { projects, alerts, summary, statsMap };
   }, []);
 
   const projects: Project[] = data?.projects ?? [];
   const alerts: Alert[] = data?.alerts ?? [];
   const summary: DashboardSummary | null = data?.summary ?? null;
+  const statsMap: Record<string, { percent: number; pending: number }> = data?.statsMap ?? {};
 
   function setTab(tab: Tab) {
     setSearchParams(tab === "Tasks" ? {} : { tab }, { replace: true });
@@ -154,7 +161,13 @@ export default function Home() {
         ) : (
           <div className="project-grid">
              {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} progress={0} onChange={reload} />
+              <ProjectCard
+                key={p.id}
+                project={p}
+                progress={statsMap[p.id]?.percent ?? 0}
+                pending={statsMap[p.id]?.pending ?? 0}
+                onChange={reload}
+              />
             ))}
           </div>
         )}
@@ -184,6 +197,7 @@ export default function Home() {
         >
           {activeTab === "Tasks" && <HomeTasksTab />}
           {activeTab === "Contacts" && <HomeContactsTab />}
+          {activeTab === "Calendar" && <HomeCalendarTab />}
           {activeTab === "Schedule" && <HomeScheduleTab />}
           {activeTab === "Reminders" && <HomeRemindersTab />}
         </Slide>

@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
-import Dashboard from "./pages/Dashboard";
+import Home from "./pages/Home";
 import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
@@ -28,7 +28,8 @@ function App() {
             </RequireAuth>
           }
         >
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/dashboard" element={<Home />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

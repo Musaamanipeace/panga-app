@@ -10,7 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 // The URL and anon key are safe to expose in client code (Supabase
 // access is controlled by Row-Level Security policies, which we set
 // up in a later stage).
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://placeholder-project.supabase.co";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "placeholder-anon-key";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

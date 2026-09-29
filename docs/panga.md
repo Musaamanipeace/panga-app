@@ -118,13 +118,13 @@ Click-by-click steps will go in the README when this phase starts. The OAuth flo
 ## 10. Data model (category + subtype, Supabase-shaped)
 
 - `resources`: one table with `category` (notes, links, scripts, images, pdfs), `subcategory`, `title`, `tags[]`, and category-specific fields: `body` (text, for notes/scripts/links/pdfs), `url` and `provider` (links), `images[]` with a `link` each (Drive share link text), `files[]` with a `link` each and a `text` field (parsed text from uploaded text docs). We never store file bytes — images and PDFs are links; uploaded text documents (.txt, .md) are parsed into `text`. Word documents (.doc/.docx) must be saved as .txt/.md first.
-- `resourceSubcategories`: editable tags per category with an `isDefault` flag so defaults can be renamed and restored. Custom subcategories are stored per-project in localStorage and merged with defaults at runtime.
-- `insights`: notes for the Insights tab — `projectId`, `title`, `body`, `type` (note|link|image|pdf), `link` (text link for link/image/pdf types), `tags[]`, `createdAt`, `updatedAt`, `syncStatus`.
+- `resourceSubcategories`: editable tags per category with an `isDefault` flag so defaults can be renamed and restored. Custom subcategories are shared across all projects (stored globally in storage) and merged with defaults at runtime. Tags and subcategories can cross resource types.
+- `insights`: user notes for the Insights tab — `projectId`, `title`, `body`, `type` (note|link|image|pdf), `link` (text link for link/image/pdf types), `tags[]`, `createdAt`, `updatedAt`, `syncStatus`. Not generated analytics.
 - `contacts`: `type` (email, phone, link), `value`, `tags[]`, `linkedProjectIds[]`.
 - `tasks`: adds `executor` (ai or manual) and optional `scheduledAt`.
 - `issues`: adds labels, comments, milestone link.
-- `milestones`: adds `description` (body) on top of the existing `blockingTaskIds[]`.
-- `calendarEvents`: `source`, `startsAt`, `endsAt`, `meetLink`, `description` (links to tasks, milestones, resources, insights).
+- `milestones`: adds `description` (body context) on top of the existing `blockingTaskIds[]` to give AI agent context for suggested actions, reminders, and scheduling.
+- `calendarEvents`: `source`, `startsAt`, `endsAt`, `meetLink`, `description` (links to tasks, milestones, resources, insights). Supported in both monthly Grid view and List view.
 - `conversations` and `messages`: assistant history with an expiry.
 - `settings`: key and value (API keys, verification hash).
 - Every record keeps `id`, `createdAt`, `updatedAt`, `syncStatus`, and (where applicable) `projectId`.
@@ -174,5 +174,6 @@ Please confirm or correct:
 7. Assistant history is kept 7 days.
 8. Rename and restore defaults apply to both Resources and Links subcategories.
 9. Drive folder selection: pick once per project, or each upload?
-10. Calendar import: per your guidance, Google Calendar will be an internal calendar with a guided .ics import flow (you paste the steps: Google Calendar → Settings → Import & export → Export → .zip with .ics files). The app will parse the .ics and add local events. Confirm you want this instead of OAuth sync.
-11. Insights link/image/pdf notes: do they link out to the resource (open in browser), or should the assistant also index the linked text? (Currently links out only.)
+10. Calendar import & view: Internal calendar with guided .ics import flow and both Grid view and List view.
+11. Custom subcategories are shared across all projects.
+12. AI Assistant acts as a full personal agent: read, write, edit, add subcategory, add project, add/delete tasks, check off tasks, web research, suggest actions, search within the app, and guide on PDF plain-text conversion using free tools, with user approval before modifying data.
