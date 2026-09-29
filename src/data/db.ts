@@ -4,6 +4,7 @@
 // from this /data folder — never imports Dexie itself.
 
 import Dexie, { type Table } from "dexie";
+import { getSessionEmail } from "../auth/session";
 
 export type TaskStatus = "active" | "inactive" | "completed";
 export type ProjectStatus = "active" | "archived";
@@ -187,6 +188,7 @@ export interface CalendarEvent {
   syncedAt: number | null;
   createdAt: number;
   updatedAt: number;
+  syncStatus: SyncStatus;
 }
 
 export interface ScheduleItem {
@@ -228,6 +230,19 @@ export const SETTINGS_KEYS = {
   driveFolderPrefix: "driveFolder:",
 } as const;
 
+// Derive a stable, per-user database name from the logged-in email.
+// This ensures each user gets their own isolated IndexedDB database.
+export function getUserDbName(): string {
+  const email = getSessionEmail();
+  if (!email) return "panga-db";
+  // Deterministic hash so the same email always maps to the same db name
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = ((hash << 5) - hash + email.toLowerCase().charCodeAt(i)) | 0;
+  }
+  return `panga-db-${hash >>> 0}`;
+}
+
 class PangaDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
@@ -245,7 +260,7 @@ class PangaDB extends Dexie {
   settings!: Table<{ key: string; value: any }, string>;
 
   constructor() {
-    super("panga-db");
+    super(getUserDbName());
     this.version(2).stores({
       projects: "id, status, updatedAt, syncStatus",
       tasks: "id, projectId, status, dueDate, updatedAt, syncStatus, *tags",
@@ -422,6 +437,28 @@ class PangaDB extends Dexie {
       tasks: "id, projectId, status, dueDate, scheduledAt, executor, createdAt, updatedAt, syncStatus, *tags",
       issues: "id, projectId, status, severity, createdAt, updatedAt, syncStatus",
     });
+
+    // v7: syncStatus on calendarEvents for multi-device sync
+    this.version(7)
+      .stores({
+        calendarEvents: "id, projectId, source, startAt, endAt, updatedAt, syncStatus",
+      })
+      .upgrade(async (tx) => {
+        try {
+          const events = await tx.table("calendarEvents").toArray();
+          for (const e of events) {
+            if ((e as any).syncStatus === undefined) {
+              await tx
+                .table("calendarEvents")
+                .where("id")
+                .equals(e.id)
+                .modify({ syncStatus: "pending" });
+            }
+          }
+        } catch (err) {
+          console.warn("calendarEvents upgrade error:", err);
+        }
+      });
   }
 }
 

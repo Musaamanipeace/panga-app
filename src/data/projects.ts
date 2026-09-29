@@ -63,10 +63,34 @@ export async function archiveProject(id: string): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
-  // Cascade: a project's tasks/resources/etc. go with it.
+
+  // Collect child ids before local cascade so we can delete them remotely.
+  const [taskIds, resourceIds, docIds, milestoneIds, issueIds, reminderIds, eventIds, insightIds] =
+    await Promise.all([
+      db.tasks.where("projectId").equals(id).primaryKeys(),
+      db.resources.where("projectId").equals(id).primaryKeys(),
+      db.docEntries.where("projectId").equals(id).primaryKeys(),
+      db.milestones.where("projectId").equals(id).primaryKeys(),
+      db.issues.where("projectId").equals(id).primaryKeys(),
+      db.reminders.where("projectId").equals(id).primaryKeys(),
+      db.calendarEvents.where("projectId").equals(id).primaryKeys(),
+      db.insights.where("projectId").equals(id).primaryKeys(),
+    ]);
+
   await db.transaction(
     "rw",
-    [db.projects, db.tasks, db.resources, db.docEntries, db.milestones, db.issues, db.reminders, db.calendarEvents, db.scheduleItems],
+    [
+      db.projects,
+      db.tasks,
+      db.resources,
+      db.docEntries,
+      db.milestones,
+      db.issues,
+      db.reminders,
+      db.calendarEvents,
+      db.scheduleItems,
+      db.insights,
+    ],
     async () => {
       await db.tasks.where("projectId").equals(id).delete();
       await db.resources.where("projectId").equals(id).delete();
@@ -76,10 +100,21 @@ export async function deleteProject(id: string): Promise<void> {
       await db.reminders.where("projectId").equals(id).delete();
       await db.calendarEvents.where("projectId").equals(id).delete();
       await db.scheduleItems.where("projectId").equals(id).delete();
+      await db.insights.where("projectId").equals(id).delete();
       await db.projects.delete(id);
     }
   );
+
+  // Remote cascade deletes
   void syncDeleteRecord("projects", id);
+  for (const tid of taskIds) void syncDeleteRecord("tasks", String(tid));
+  for (const rid of resourceIds) void syncDeleteRecord("resources", String(rid));
+  for (const did of docIds) void syncDeleteRecord("doc_entries", String(did));
+  for (const mid of milestoneIds) void syncDeleteRecord("milestones", String(mid));
+  for (const iid of issueIds) void syncDeleteRecord("issues", String(iid));
+  for (const rid of reminderIds) void syncDeleteRecord("reminders", String(rid));
+  for (const eid of eventIds) void syncDeleteRecord("calendar_events", String(eid));
+  for (const iid of insightIds) void syncDeleteRecord("insights", String(iid));
 }
 
 /** Derived progress (§7 of the plan): completed / total non-archived tasks. */

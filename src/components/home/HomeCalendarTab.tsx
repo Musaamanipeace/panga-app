@@ -138,8 +138,11 @@ export default function HomeCalendarTab() {
         syncedAt: Date.now(),
         createdAt: now(),
         updatedAt: now(),
+        syncStatus: "pending" as const,
       }));
       await db.calendarEvents.bulkPut(toImport);
+      const { syncPushRecord } = await import("../../sync/supabaseSync");
+      for (const ev of toImport) void syncPushRecord("calendar_events", ev);
       setImportStatus({ message: `Successfully imported ${toImport.length} event(s) from .ics file.`, type: "success" });
       setIcsFile(null);
       refresh();

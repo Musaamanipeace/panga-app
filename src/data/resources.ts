@@ -54,7 +54,7 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
   const t = now();
   const resource: Resource = {
     id: newId(),
-    projectId: input.projectId ?? null,
+    projectId: input.projectId || "global",
     category: input.category,
     title: input.title,
     tags: input.tags ?? [],
@@ -96,5 +96,9 @@ export async function deleteResource(id: string): Promise<void> {
 
 export async function deleteResourcesForProject(projectId: string): Promise<void> {
   if (!db.isOpen()) await db.open();
+  const rows = await db.resources.where("projectId").equals(projectId).toArray();
   await db.resources.where("projectId").equals(projectId).delete();
+  for (const row of rows) {
+    void syncDeleteRecord("resources", row.id);
+  }
 }

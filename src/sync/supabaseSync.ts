@@ -2,10 +2,16 @@
 // Handles cloud persistence and multi-device sync with Supabase.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { db } from "../data/db";
+import { getSessionEmail } from "../auth/session";
 
 const SUPABASE_URL_KEY = "panga_supabase_url";
 const SUPABASE_KEY_KEY = "panga_supabase_anon_key";
 const LAST_SYNC_KEY = "panga_last_sync_time";
+
+/** Returns the current user's email to use as user_id in Supabase. */
+function getCurrentUserId(): string {
+  return getSessionEmail() || "anonymous";
+}
 
 function safeGetStorage(key: string): string | null {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
@@ -136,11 +142,21 @@ export async function testSupabaseConnection(): Promise<{ ok: boolean; message: 
   }
 }
 
+export function toSnakeCase(obj: Record<string, any>): Record<string, any> {
+  const snakeObj: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    snakeObj[snakeKey] = val;
+  }
+  return snakeObj;
+}
+
 // Data Mappers: Dexie CamelCase <-> Supabase snake_case
 
 function projectToRemote(p: any) {
   return {
     id: p.id,
+    user_id: getCurrentUserId(),
     name: p.name,
     description: p.description ?? "",
     status: p.status ?? "active",
@@ -165,6 +181,7 @@ function projectFromRemote(r: any) {
 function taskToRemote(t: any) {
   return {
     id: t.id,
+    user_id: getCurrentUserId(),
     project_id: t.projectId ?? null,
     title: t.title,
     notes: t.notes ?? "",
@@ -201,6 +218,7 @@ function taskFromRemote(r: any) {
 function resourceToRemote(r: any) {
   return {
     id: r.id,
+    user_id: getCurrentUserId(),
     project_id: r.projectId ?? null,
     category: r.category,
     title: r.title,
@@ -237,6 +255,7 @@ function resourceFromRemote(r: any) {
 function milestoneToRemote(m: any) {
   return {
     id: m.id,
+    user_id: getCurrentUserId(),
     project_id: m.projectId ?? null,
     title: m.title,
     description: m.description ?? "",
@@ -267,6 +286,7 @@ function milestoneFromRemote(r: any) {
 function issueToRemote(i: any) {
   return {
     id: i.id,
+    user_id: getCurrentUserId(),
     project_id: i.projectId ?? null,
     title: i.title,
     description: i.description ?? "",
@@ -301,6 +321,7 @@ function issueFromRemote(r: any) {
 function contactToRemote(c: any) {
   return {
     id: c.id,
+    user_id: getCurrentUserId(),
     name: c.name,
     type: c.type ?? "email",
     value: c.value ?? "",
@@ -331,6 +352,7 @@ function contactFromRemote(r: any) {
 function reminderToRemote(rem: any) {
   return {
     id: rem.id,
+    user_id: getCurrentUserId(),
     project_id: rem.projectId ?? null,
     message: rem.message,
     trigger_at: rem.triggerAt,
@@ -359,13 +381,14 @@ function reminderFromRemote(r: any) {
 function calendarEventToRemote(e: any) {
   return {
     id: e.id,
+    user_id: getCurrentUserId(),
     project_id: e.projectId ?? null,
     title: e.title,
     description: e.description ?? "",
     source: e.source ?? "local",
     start_at: e.startAt,
     end_at: e.endAt,
-    meet_link: e.meetLink ?? null,
+    meet_link: e.hangoutLink ?? e.meetLink ?? null,
     created_at: e.createdAt,
     updated_at: e.updatedAt,
     sync_status: "synced",
@@ -381,8 +404,7 @@ function calendarEventFromRemote(r: any) {
     source: r.source ?? "local",
     startAt: Number(r.start_at || r.startAt),
     endAt: Number(r.end_at || r.endAt),
-    meetLink: r.meet_link ?? r.meetLink ?? null,
-    hangoutLink: r.hangout_link ?? r.hangoutLink ?? null,
+    hangoutLink: r.meet_link ?? r.hangout_link ?? r.hangoutLink ?? r.meetLink ?? null,
     syncedAt: r.synced_at ?? r.syncedAt ?? null,
     createdAt: Number(r.created_at || r.createdAt || Date.now()),
     updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
@@ -393,6 +415,7 @@ function calendarEventFromRemote(r: any) {
 function insightToRemote(ins: any) {
   return {
     id: ins.id,
+    user_id: getCurrentUserId(),
     project_id: ins.projectId ?? null,
     title: ins.title,
     body: ins.body ?? null,
@@ -420,9 +443,48 @@ function insightFromRemote(r: any) {
   };
 }
 
+function docEntryToRemote(d: any) {
+  return {
+    id: d.id,
+    user_id: getCurrentUserId(),
+    project_id: d.projectId ?? null,
+    title: d.title,
+    content: d.content ?? "",
+    type: d.type ?? "outline",
+    order: d.order ?? 0,
+    created_at: d.createdAt,
+    updated_at: d.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function docEntryFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    content: r.content ?? "",
+    type: r.type ?? "outline",
+    order: Number(r.order ?? 0),
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
 /** Immediate push of a single record when changed in UI */
 export async function syncPushRecord(
-  tableName: "projects" | "tasks" | "resources" | "milestones" | "issues" | "contacts" | "reminders" | "calendar_events" | "insights",
+  tableName:
+    | "projects"
+    | "tasks"
+    | "resources"
+    | "milestones"
+    | "issues"
+    | "contacts"
+    | "reminders"
+    | "calendar_events"
+    | "insights"
+    | "doc_entries",
   record: any
 ) {
   const client = getSupabaseClient();
@@ -440,20 +502,33 @@ export async function syncPushRecord(
       case "reminders": payload = reminderToRemote(record); break;
       case "calendar_events": payload = calendarEventToRemote(record); break;
       case "insights": payload = insightToRemote(record); break;
+      case "doc_entries": payload = docEntryToRemote(record); break;
     }
 
     if (payload) {
-      const { error } = await client.from(tableName).upsert(payload, { onConflict: "id" });
+      let result = await client.from(tableName).upsert(payload, { onConflict: "id,user_id" });
+      // Fallback for databases without user_id column
+      if (result.error?.message?.includes("user_id")) {
+        const { user_id, ...fallback } = payload;
+        result = await client.from(tableName).upsert(fallback, { onConflict: "id" });
+      }
+      const { error } = result;
       if (!error) {
-        // Mark as synced locally
-        const dexieTable = tableName === "calendar_events" ? "calendarEvents" : tableName;
+        const dexieTable =
+          tableName === "calendar_events"
+            ? "calendarEvents"
+            : tableName === "doc_entries"
+              ? "docEntries"
+              : tableName;
         await (db as any)[dexieTable]?.update(record.id, { syncStatus: "synced" });
       } else {
         console.warn(`Supabase upsert warning for ${tableName}:`, error.message);
+        updateStatus("error", `${tableName}: ${error.message}`);
       }
     }
   } catch (err) {
     console.warn(`Sync push error (${tableName}):`, err);
+    updateStatus("error", `Push failed (${tableName})`);
   }
 }
 
@@ -475,14 +550,25 @@ export async function syncPushSetting(key: string, value: any) {
   if (!client) return;
 
   try {
-    await client.from("settings").upsert(
+    let result = await client.from("settings").upsert(
       {
+        user_id: getCurrentUserId(),
         key,
         value,
         updated_at: Date.now(),
       },
-      { onConflict: "key" }
+      { onConflict: "user_id,key" }
     );
+    // Fallback for databases without user_id column
+    if (result.error?.message?.includes("user_id")) {
+      result = await client.from("settings").upsert(
+        { key, value, updated_at: Date.now() },
+        { onConflict: "key" }
+      );
+    }
+    if (result.error) {
+      console.warn("Sync push setting error:", result.error.message);
+    }
   } catch (err) {
     console.warn("Sync push setting error:", err);
   }
@@ -508,7 +594,22 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
   updateStatus("syncing", "Syncing with Supabase database...");
 
   try {
-    // 1. PULL REMOTE DATA FROM SUPABASE INTO DEXIE
+    // 1. PULL REMOTE DATA FROM SUPABASE INTO DEXIE (filtered by user_id)
+    //    Uses a fallback strategy: try with user_id filter first, then without
+    //    for databases that haven't been migrated yet.
+    const userId = getCurrentUserId();
+
+    /** Fetch a table, preferring user_id filter; falls back if column missing. */
+    async function fetchTable(table: string) {
+      const q = client!.from(table).select("*").eq("user_id", userId);
+      const res = await q;
+      if (res.error?.message?.includes("user_id")) {
+        // Column doesn't exist yet — fall back to unfiltered query
+        return await client!.from(table).select("*");
+      }
+      return res;
+    }
+
     const [
       projRes,
       tasksRes,
@@ -519,18 +620,20 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       remindersRes,
       calendarRes,
       insightsRes,
+      docsRes,
       settingsRes,
     ] = await Promise.all([
-      client.from("projects").select("*"),
-      client.from("tasks").select("*"),
-      client.from("resources").select("*"),
-      client.from("milestones").select("*"),
-      client.from("issues").select("*"),
-      client.from("contacts").select("*"),
-      client.from("reminders").select("*"),
-      client.from("calendar_events").select("*"),
-      client.from("insights").select("*"),
-      client.from("settings").select("*"),
+      fetchTable("projects"),
+      fetchTable("tasks"),
+      fetchTable("resources"),
+      fetchTable("milestones"),
+      fetchTable("issues"),
+      fetchTable("contacts"),
+      fetchTable("reminders"),
+      fetchTable("calendar_events"),
+      fetchTable("insights"),
+      fetchTable("doc_entries"),
+      fetchTable("settings"),
     ]);
 
     // Check if table error occurred
@@ -575,12 +678,15 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       await db.insights.bulkPut(insightsRes.data.map(insightFromRemote));
     }
 
+    if (docsRes.data && docsRes.data.length > 0) {
+      await db.docEntries.bulkPut(docsRes.data.map(docEntryFromRemote));
+    }
+
     // Settings (including Gemini API Key and Global Subcategories)
     if (settingsRes.data && settingsRes.data.length > 0) {
       for (const row of settingsRes.data) {
         if (row.key && row.value !== undefined) {
           await db.settings.put({ key: row.key, value: row.value });
-          // If geminiApiKey was received from Supabase, also update localStorage / sessionStorage if needed
           if (row.key === "panga-subcategories-global" && typeof row.value === "object") {
             try {
               localStorage.setItem("panga-subcategories-global", JSON.stringify(row.value));
@@ -596,55 +702,56 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
     }
 
     // 2. PUSH ANY LOCAL PENDING RECORDS TO SUPABASE
-    const pendingProjects = await db.projects.where("syncStatus").equals("pending").toArray();
-    if (pendingProjects.length > 0) {
-      await client.from("projects").upsert(pendingProjects.map(projectToRemote), { onConflict: "id" });
-      await db.projects.bulkPut(pendingProjects.map((p) => ({ ...p, syncStatus: "synced" as const })));
+    async function pushPending(
+      dexieTable: string,
+      remoteTable: string,
+      mapper: (r: any) => any
+    ) {
+      const pending = await (db as any)[dexieTable].where("syncStatus").equals("pending").toArray();
+      if (pending.length === 0) return;
+      const mapped = pending.map(mapper);
+      let result = await client!.from(remoteTable).upsert(mapped, { onConflict: "id,user_id" });
+      // Fallback for databases without user_id column
+      if (result.error?.message?.includes("user_id")) {
+        const fallback = mapped.map((({ user_id: _uid, ...rest }: Record<string, any>) => rest));
+        result = await client!.from(remoteTable).upsert(fallback, { onConflict: "id" });
+      }
+      const { error } = result;
+      if (error) {
+        console.warn(`Pending push warning (${remoteTable}):`, error.message);
+        updateStatus("error", `${remoteTable}: ${error.message}`);
+        return;
+      }
+      await (db as any)[dexieTable].bulkPut(
+        pending.map((r: any) => ({ ...r, syncStatus: "synced" as const }))
+      );
     }
 
-    const pendingTasks = await db.tasks.where("syncStatus").equals("pending").toArray();
-    if (pendingTasks.length > 0) {
-      await client.from("tasks").upsert(pendingTasks.map(taskToRemote), { onConflict: "id" });
-      await db.tasks.bulkPut(pendingTasks.map((t) => ({ ...t, syncStatus: "synced" as const })));
-    }
-
-    const pendingResources = await db.resources.where("syncStatus").equals("pending").toArray();
-    if (pendingResources.length > 0) {
-      await client.from("resources").upsert(pendingResources.map(resourceToRemote), { onConflict: "id" });
-      await db.resources.bulkPut(pendingResources.map((r) => ({ ...r, syncStatus: "synced" as const })));
-    }
-
-    const pendingMilestones = await db.milestones.where("syncStatus").equals("pending").toArray();
-    if (pendingMilestones.length > 0) {
-      await client.from("milestones").upsert(pendingMilestones.map(milestoneToRemote), { onConflict: "id" });
-      await db.milestones.bulkPut(pendingMilestones.map((m) => ({ ...m, syncStatus: "synced" as const })));
-    }
-
-    const pendingIssues = await db.issues.where("syncStatus").equals("pending").toArray();
-    if (pendingIssues.length > 0) {
-      await client.from("issues").upsert(pendingIssues.map(issueToRemote), { onConflict: "id" });
-      await db.issues.bulkPut(pendingIssues.map((i) => ({ ...i, syncStatus: "synced" as const })));
-    }
-
-    const pendingContacts = await db.contacts.where("syncStatus").equals("pending").toArray();
-    if (pendingContacts.length > 0) {
-      await client.from("contacts").upsert(pendingContacts.map(contactToRemote), { onConflict: "id" });
-      await db.contacts.bulkPut(pendingContacts.map((c) => ({ ...c, syncStatus: "synced" as const })));
-    }
-
-    const pendingReminders = await db.reminders.where("syncStatus").equals("pending").toArray();
-    if (pendingReminders.length > 0) {
-      await client.from("reminders").upsert(pendingReminders.map(reminderToRemote), { onConflict: "id" });
-      await db.reminders.bulkPut(pendingReminders.map((r) => ({ ...r, syncStatus: "synced" as const })));
-    }
+    await pushPending("projects", "projects", projectToRemote);
+    await pushPending("tasks", "tasks", taskToRemote);
+    await pushPending("resources", "resources", resourceToRemote);
+    await pushPending("milestones", "milestones", milestoneToRemote);
+    await pushPending("issues", "issues", issueToRemote);
+    await pushPending("contacts", "contacts", contactToRemote);
+    await pushPending("reminders", "reminders", reminderToRemote);
+    await pushPending("insights", "insights", insightToRemote);
+    await pushPending("calendarEvents", "calendar_events", calendarEventToRemote);
+    await pushPending("docEntries", "doc_entries", docEntryToRemote);
 
     // Push local Gemini API key to Supabase settings if present locally
     const localGeminiKey = (await db.settings.get("geminiApiKey"))?.value;
     if (localGeminiKey) {
-      await client.from("settings").upsert(
-        { key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
-        { onConflict: "key" }
+      let result = await client!.from("settings").upsert(
+        { user_id: getCurrentUserId(), key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
+        { onConflict: "user_id,key" }
       );
+      // Fallback for databases without user_id column
+      if (result.error?.message?.includes("user_id")) {
+        result = await client!.from("settings").upsert(
+          { key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
+          { onConflict: "key" }
+        );
+      }
     }
 
     lastSyncTimestamp = Date.now();

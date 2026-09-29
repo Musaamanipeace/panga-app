@@ -18,8 +18,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function App() {
   useEffect(() => {
     void ensureSeedData().then(() => {
-      if (isSupabaseConfigured()) {
-        void syncAll();
+      if (isLoggedIn() && isSupabaseConfigured()) {
+        void syncAll().then((result) => {
+          if (!result.ok) console.warn("Supabase Sync warning:", result.message);
+        });
       }
     });
 

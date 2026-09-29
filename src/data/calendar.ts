@@ -1,6 +1,7 @@
 // src/data/calendar.ts
 import { db, type CalendarEvent, type CalendarEventSource } from "./db";
 import { newId, now } from "./utils";
+import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
 
 export type { CalendarEvent, CalendarEventSource };
 
@@ -50,16 +51,26 @@ export async function createLocalEvent(input: {
     syncedAt: null,
     createdAt: t,
     updatedAt: t,
+    syncStatus: "pending",
   };
   await db.calendarEvents.add(event);
+  void syncPushRecord("calendar_events", event);
   return event;
 }
 
 export async function importGoogleEvents(events: GoogleCalendarEventLike[]): Promise<number> {
   const local: CalendarEvent[] = [];
   for (const e of events) {
-    const startAt = e.start?.dateTime ? new Date(e.start.dateTime).getTime() : (e.start?.date ? new Date(e.start.date).getTime() : 0);
-    const endAt = e.end?.dateTime ? new Date(e.end.dateTime).getTime() : (e.end?.date ? new Date(e.end.date).getTime() : 0);
+    const startAt = e.start?.dateTime
+      ? new Date(e.start.dateTime).getTime()
+      : e.start?.date
+        ? new Date(e.start.date).getTime()
+        : 0;
+    const endAt = e.end?.dateTime
+      ? new Date(e.end.dateTime).getTime()
+      : e.end?.date
+        ? new Date(e.end.date).getTime()
+        : 0;
     local.push({
       id: `google_${e.id}`,
       projectId: null,
@@ -72,28 +83,47 @@ export async function importGoogleEvents(events: GoogleCalendarEventLike[]): Pro
       syncedAt: Date.now(),
       createdAt: now(),
       updatedAt: now(),
+      syncStatus: "pending",
     });
   }
   await db.calendarEvents.bulkPut(local);
+  for (const ev of local) {
+    void syncPushRecord("calendar_events", ev);
+  }
   return local.length;
 }
 
-export async function updateCalendarEvent(id: string, changes: Partial<Pick<CalendarEvent, "title" | "description" | "startAt" | "endAt" | "hangoutLink">>): Promise<void> {
-  await db.calendarEvents.update(id, { ...changes, updatedAt: now() });
+export async function updateCalendarEvent(
+  id: string,
+  changes: Partial<Pick<CalendarEvent, "title" | "description" | "startAt" | "endAt" | "hangoutLink">>
+): Promise<void> {
+  await db.calendarEvents.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const updated = await db.calendarEvents.get(id);
+  if (updated) void syncPushRecord("calendar_events", updated);
 }
 
 export async function deleteCalendarEvent(id: string): Promise<void> {
   await db.calendarEvents.delete(id);
+  void syncDeleteRecord("calendar_events", id);
 }
 
 export async function deleteEventsForProject(projectId: string): Promise<void> {
+  const rows = await db.calendarEvents.where("projectId").equals(projectId).toArray();
   await db.calendarEvents.where("projectId").equals(projectId).delete();
+  for (const row of rows) {
+    void syncDeleteRecord("calendar_events", row.id);
+  }
 }
 
 export async function pruneMissingGoogleEvents(seenIds: Set<string>): Promise<void> {
   const allGoogle = await db.calendarEvents.where("source").equals("google").toArray();
   const toDelete = allGoogle.filter((e) => !seenIds.has(e.id)).map((e) => e.id);
-  if (toDelete.length) await db.calendarEvents.bulkDelete(toDelete);
+  if (toDelete.length) {
+    await db.calendarEvents.bulkDelete(toDelete);
+    for (const id of toDelete) {
+      void syncDeleteRecord("calendar_events", id);
+    }
+  }
 }
 
 export interface GoogleCalendarEventLike {
@@ -107,11 +137,19 @@ export interface GoogleCalendarEventLike {
 }
 
 export async function getCalendarAlertEvents(): Promise<CalendarEvent[]> {
-  const now = Date.now();
-  return db.calendarEvents.where("startAt").below(now).and((e) => e.source === "local").sortBy("startAt");
+  const nowMs = Date.now();
+  return db.calendarEvents
+    .where("startAt")
+    .below(nowMs)
+    .and((e) => e.source === "local")
+    .sortBy("startAt");
 }
 
-export async function getEventsBetween(start: number, end: number, projectId?: string | null): Promise<CalendarEvent[]> {
+export async function getEventsBetween(
+  start: number,
+  end: number,
+  projectId?: string | null
+): Promise<CalendarEvent[]> {
   let query = db.calendarEvents.where("startAt").between(start, end);
   if (projectId) query = query.and((e) => e.projectId === projectId);
   return query.sortBy("startAt");

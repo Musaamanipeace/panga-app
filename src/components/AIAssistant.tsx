@@ -1,5 +1,6 @@
 import { useState } from "react";
 import MicButton from "./MicButton";
+import { newId } from "../data/utils";
 
 interface Message {
   id: string;
@@ -21,8 +22,8 @@ export default function AIAssistant() {
     e.preventDefault();
     const text = input.trim();
     if (!text) return;
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", text };
-    const replyMsg: Message = { id: crypto.randomUUID(), role: "assistant", text: PLACEHOLDER_REPLY };
+    const userMsg: Message = { id: newId(), role: "user", text };
+    const replyMsg: Message = { id: newId(), role: "assistant", text: PLACEHOLDER_REPLY };
     setMessages((m) => [...m, userMsg, replyMsg]);
     setInput("");
   }

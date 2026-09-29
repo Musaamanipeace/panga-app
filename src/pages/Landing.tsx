@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { sendOtp, verifyOtp, getStoredEmailJsConfig, saveStoredEmailJsConfig, type EmailJsConfig } from "../auth/otp";
 import { setSession } from "../auth/session";
 
@@ -21,8 +20,6 @@ export default function Landing() {
 
   const [emailJsConfig, setEmailJsConfig] = useState<EmailJsConfig>(() => getStoredEmailJsConfig());
   const [showConfig, setShowConfig] = useState(false);
-
-  const navigate = useNavigate();
 
   function handleModeChange(mode: "dev" | "real") {
     setAuthMode(mode);
@@ -76,7 +73,8 @@ export default function Landing() {
       return;
     }
     setSession(email.trim());
-    navigate("/dashboard");
+    // Reload so the IndexedDB database is recreated for the new user
+    window.location.assign("/dashboard");
   }
 
   return (

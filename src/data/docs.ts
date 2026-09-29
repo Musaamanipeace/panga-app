@@ -1,6 +1,7 @@
 // src/data/docs.ts
 import { db, type DocEntry } from "./db";
 import { newId, now } from "./utils";
+import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
 
 export type { DocEntry };
 
@@ -28,6 +29,7 @@ export async function createDocEntry(input: {
     syncStatus: "pending",
   };
   await db.docEntries.add(entry);
+  void syncPushRecord("doc_entries", entry);
   return entry;
 }
 
@@ -36,8 +38,11 @@ export async function updateDocEntry(
   changes: Partial<Pick<DocEntry, "title" | "content">>
 ): Promise<void> {
   await db.docEntries.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const updated = await db.docEntries.get(id);
+  if (updated) void syncPushRecord("doc_entries", updated);
 }
 
 export async function deleteDocEntry(id: string): Promise<void> {
   await db.docEntries.delete(id);
+  void syncDeleteRecord("doc_entries", id);
 }

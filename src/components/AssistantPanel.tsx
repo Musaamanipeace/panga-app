@@ -16,6 +16,7 @@ import { createReminder } from "../data/reminders";
 import { createInsight } from "../data/insights";
 import { createResource } from "../data/resources";
 import { db } from "../data/db";
+import { newId } from "../data/utils";
 import MicButton from "../components/MicButton";
 import { useAsync } from "../components/ui";
 
@@ -234,7 +235,7 @@ ${milestoneList || "None"}
       // Convert parsed actions to approval items
       if (actionProposals.length > 0) {
         const newApprovals = actionProposals.map((act) => ({
-          id: crypto.randomUUID(),
+          id: newId(),
           description: act.description || `Execute ${act.type}`,
           action: async () => {
             await executeAction(act);
