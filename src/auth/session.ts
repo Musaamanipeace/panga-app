@@ -93,6 +93,33 @@ export async function signIn(email: string, password: string): Promise<AuthResul
   }
 }
 
+/**
+ * Restore a session from a snapshot import.
+ * Creates/looks up a user ID for the email and sets the session
+ * without password verification. Used when importing a snapshot
+ * via the Quick Upload dropzone.
+ */
+export async function restoreSessionFromSnapshot(email: string): Promise<AuthResult> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) return { error: "Email is required." };
+
+  try {
+    const raw = localStorage.getItem(USERS_STORE_KEY);
+    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
+
+    let id = users[cleanEmail]?.id;
+    if (!id) {
+      id = generateUserId(cleanEmail);
+      users[cleanEmail] = { id, passwordHash: "" }; // no password for snapshot restore
+      localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
+    }
+    setSession(cleanEmail, id);
+    return { user: { id, email: cleanEmail } };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to restore session." };
+  }
+}
+
 export async function signUp(email: string, password: string): Promise<AuthResult> {
   const cleanEmail = email.trim().toLowerCase();
   if (!cleanEmail) return { error: "Email is required." };

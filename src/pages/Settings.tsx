@@ -1,60 +1,32 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getGeminiApiKey, setGeminiApiKey } from "../data/settings";
 import {
-  syncAll,
-  getLastSyncTime,
-} from "../sync/sync";
-import { getSessionEmail, getSessionUserId } from "../auth/session";
-import {
-  syncGoogleCalendarEvents,
-  connectGoogleCalendar,
-  disconnectGoogleCalendar,
-  isGoogleCalendarConnected,
-} from "../sync/googleCalendar";
+  downloadSnapshot,
+  readSnapshotFile,
+  importSnapshot,
+} from "../sync/snapshot";
 
 export default function Settings() {
-  const email = getSessionEmail();
-  const userId = getSessionUserId();
-
   // Gemini settings
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiStatus, setGeminiStatus] = useState<"idle" | "saving" | "saved">("idle");
 
-  // Cloud Sync status
-  const [cloudConnected, setCloudConnected] = useState<boolean | null>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [syncingNow, setSyncingNow] = useState(false);
-  const [lastSync, setLastSync] = useState<number>(0);
+  // Local storage / backup status
+  const [backupStatus, setBackupStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
 
-  // Google Calendar settings
-  const [googleClientId, setGoogleClientId] = useState("");
-  const [googleConnected, setGoogleConnected] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
-  const [googleImported, setGoogleImported] = useState<number | null>(null);
+  // File input ref for snapshot upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSettings = useCallback(async () => {
     const key = await getGeminiApiKey();
     setGeminiKey(key ?? "");
-    setLastSync(getLastSyncTime());
-
-    // Check cloud server connectivity
-    try {
-      const res = await fetch("/health");
-      setCloudConnected(res.ok);
-    } catch {
-      setCloudConnected(false);
-    }
-  }, []);
-
-  const checkGoogle = useCallback(async () => {
-    setGoogleConnected(await isGoogleCalendarConnected());
   }, []);
 
   useEffect(() => {
     void loadSettings();
-    void checkGoogle();
-  }, [loadSettings, checkGoogle]);
+  }, [loadSettings]);
 
   async function saveGeminiKey(e: React.FormEvent) {
     e.preventDefault();
@@ -64,49 +36,65 @@ export default function Settings() {
     setTimeout(() => setGeminiStatus("idle"), 2500);
   }
 
-  async function handleSyncNow(forceFull = false) {
-    setSyncingNow(true);
-    setSyncStatus(null);
-    const res = await syncAll(forceFull);
-    setSyncingNow(false);
-    setSyncStatus(res.message);
-    setLastSync(getLastSyncTime());
-  }
-
-  function handleExportCloudBackup() {
-    if (!userId) return;
-    window.open(`/api/sync/export?userId=${encodeURIComponent(userId)}`, "_blank");
-  }
-
-  async function handleGoogleConnect(e: React.FormEvent) {
-    e.preventDefault();
-    if (!googleClientId.trim()) {
-      setGoogleError("Client ID is required.");
-      return;
-    }
-    setGoogleLoading(true);
-    setGoogleError(null);
+  async function handleDownloadBackup() {
+    setBackupLoading(true);
+    setBackupStatus("saving");
+    setBackupMessage("Preparing backup...");
     try {
-      await connectGoogleCalendar(googleClientId.trim());
-      const connected = await isGoogleCalendarConnected();
-      setGoogleConnected(connected);
-      if (connected) {
-        const result = await syncGoogleCalendarEvents();
-        setGoogleImported(result.imported);
-        if (result.error) setGoogleError(result.error);
-      }
+      await downloadSnapshot();
+      setBackupStatus("saved");
+      setBackupMessage("Backup downloaded successfully.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setGoogleError(message);
+      setBackupStatus("error");
+      setBackupMessage(`Download failed: ${message}`);
+    } finally {
+      setBackupLoading(false);
     }
-    setGoogleLoading(false);
   }
 
-  async function handleGoogleDisconnect() {
-    await disconnectGoogleCalendar();
-    setGoogleConnected(false);
-    setGoogleImported(null);
+  async function handleUploadSnapshot(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBackupLoading(true);
+    setBackupStatus("saving");
+    setBackupMessage("Restoring snapshot...");
+    try {
+      const snapshot = await readSnapshotFile(file);
+      await importSnapshot(snapshot);
+      setBackupStatus("saved");
+      setBackupMessage("Snapshot restored from local file.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setBackupStatus("error");
+      setBackupMessage(`Restore failed: ${message}`);
+    } finally {
+      setBackupLoading(false);
+      e.target.value = "";
+    }
   }
+
+  const getStatusBadge = () => {
+    const statusStyles: Record<string, { bg: string; color: string; label: string }> = {
+      idle: { bg: "#f3f4f6", color: "#6b7280", label: "Ready" },
+      saving: { bg: "#fef3c7", color: "#92400e", label: "Working..." },
+      saved: { bg: "#ecfdf5", color: "#065f46", label: "Success" },
+      error: { bg: "#fef2f2", color: "#991b1b", label: "Error" },
+    };
+    const s = statusStyles[backupStatus];
+    return (
+      <span
+        className="chip-small"
+        style={{
+          background: s.bg,
+          color: s.color,
+          fontWeight: 600,
+        }}
+      >
+        {s.label}
+      </span>
+    );
+  };
 
   return (
     <div className="page settings-page">
@@ -114,90 +102,69 @@ export default function Settings() {
         <h1>Settings</h1>
       </header>
 
-      {/* §1 — Cloud Database Sync & Persistence */}
+      {/* §1 — Local Storage & Backup */}
       <section className="settings-section" style={{ borderLeft: "4px solid var(--color-accent-primary)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <h2 style={{ margin: 0 }}>Cloud Database &amp; Multi-Device Sync</h2>
-          <span
-            className="chip-small"
-            style={{
-              background: cloudConnected ? "#ecfdf5" : "#fef3c7",
-              color: cloudConnected ? "#065f46" : "#92400e",
-              fontWeight: 600,
-            }}
-          >
-            {cloudConnected ? "✓ Cloud Server Connected" : "⚠️ Cloud Server Unreachable"}
-          </span>
+          <h2 style={{ margin: 0 }}>Data Persistence & Storage</h2>
+          {getStatusBadge()}
         </div>
 
         <p className="settings-help">
-          Your projects, tasks, resources, notes, milestones, reminders, and settings are backed up and synchronized to your private cloud storage on Fly.io, with full offline browser caching via IndexedDB.
+          All your projects, tasks, resources, notes, milestones, reminders, and settings are stored safely in
+          fast, offline-first IndexedDB storage in your browser. Use the buttons below to create manual backups
+          or restore from a snapshot file.
         </p>
 
-        {email && (
-          <div style={{ margin: "8px 0 14px 0", fontSize: "13px", color: "var(--color-text-muted)" }}>
-            Signed in as: <strong style={{ color: "var(--color-text-normal)" }}>{email}</strong>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
-          <button
-            type="button"
-            className="btn-primary clickable"
-            onClick={() => handleSyncNow(false)}
-            disabled={syncingNow}
-            data-tip="Synchronize changes bi-directionally with the cloud"
-          >
-            {syncingNow ? "Syncing..." : "☁️ Sync with Cloud Now"}
-          </button>
-
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
           <button
             type="button"
             className="btn-secondary clickable"
-            onClick={() => handleSyncNow(true)}
-            disabled={syncingNow}
-            data-tip="Upload all local records into cloud database"
+            onClick={handleDownloadBackup}
+            disabled={backupLoading}
+            data-tip="Download a complete JSON backup of your local database"
           >
-            ⬆️ Force Full Upload
+            📥 Download Backup (.json)
           </button>
-
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleUploadSnapshot}
+            style={{ display: "none" }}
+            id="snapshot-upload"
+          />
           <button
             type="button"
-            className="btn-secondary btn-small clickable"
-            onClick={handleExportCloudBackup}
-            disabled={!userId}
-            data-tip="Download a complete JSON export of your cloud database"
+            className="btn-secondary clickable"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={backupLoading}
+            data-tip="Restore from a local .json snapshot file"
           >
-            📥 Download Cloud Backup
+            📤 Upload Snapshot (.json)
           </button>
-
-          {lastSync > 0 && (
-            <span style={{ fontSize: "12px", color: "var(--color-text-muted)", marginLeft: "auto" }}>
-              Last synced: {new Date(lastSync).toLocaleTimeString()}
-            </span>
-          )}
         </div>
 
-        {syncStatus && (
+        {backupMessage && (
           <p
             className="progress-label"
             style={{
-              marginTop: 12,
+              marginTop: 10,
               padding: "8px 12px",
               borderRadius: "var(--radius-sm)",
-              background: syncStatus.includes("failed") || syncStatus.includes("error") ? "#fef2f2" : "#f0fdf4",
-              color: syncStatus.includes("failed") || syncStatus.includes("error") ? "#991b1b" : "#166534",
+              background:
+                backupStatus === "error" ? "#fef2f2" : backupStatus === "saving" ? "#fef3c7" : "#f0fdf4",
+              color: backupStatus === "error" ? "#991b1b" : backupStatus === "saving" ? "#92400e" : "#166534",
               border: "1px solid var(--color-border)",
             }}
           >
-            {syncStatus}
+            {backupMessage}
           </p>
         )}
       </section>
 
       {/* §2 — Gemini API key */}
       <section className="settings-section">
-        <h2>Gemini API Key (AI Assistant &amp; Scheduler)</h2>
+        <h2>Gemini API Key (AI Assistant & Scheduler)</h2>
         <p className="settings-help">
           Used by the AI Assistant chat and natural language planning. Get a free key from{" "}
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
@@ -221,55 +188,6 @@ export default function Settings() {
           <p style={{ fontSize: "12px", color: "green", marginTop: 6 }}>
             ✓ Gemini API key saved!
           </p>
-        )}
-      </section>
-
-      {/* §3 — Google Calendar OAuth */}
-      <section className="settings-section">
-        <h2>Google Calendar</h2>
-        <p className="settings-help">
-          Connect your Google Calendar to import events (including Meet links) into the
-          Calendar tab. Requires a Google Cloud OAuth 2.0 Client ID with the Calendar API
-          enabled. See{" "}
-          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">
-            Google Cloud Console
-          </a>
-          .
-        </p>
-
-        {!googleConnected ? (
-          <form className="settings-form" onSubmit={handleGoogleConnect}>
-            <input
-              type="text"
-              placeholder="OAuth 2.0 Client ID (Web application)"
-              value={googleClientId}
-              onChange={(e) => setGoogleClientId(e.target.value)}
-              data-tip="Paste your Google OAuth Client ID here"
-            />
-            <button
-              type="submit"
-              className="btn-primary clickable"
-              disabled={googleLoading}
-              data-tip="Connect Google Calendar"
-            >
-              {googleLoading ? "Connecting..." : "Connect"}
-            </button>
-            {googleError && <p className="otp-error">{googleError}</p>}
-          </form>
-        ) : (
-          <div>
-            <p className="progress-label">Connected to Google Calendar.</p>
-            {googleImported !== null && (
-              <p className="progress-label">{googleImported} event(s) imported.</p>
-            )}
-            <button
-              className="btn-secondary clickable"
-              data-tip="Disconnect Google Calendar"
-              onClick={handleGoogleDisconnect}
-            >
-              Disconnect
-            </button>
-          </div>
         )}
       </section>
     </div>

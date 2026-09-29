@@ -34,7 +34,6 @@ export default function AppShell() {
     syncing: "#f59e0b",
     synced: "#10b981",
     error: "#ef4444",
-    unconfigured: "var(--color-text-muted)",
   };
 
   return (
@@ -47,7 +46,7 @@ export default function AppShell() {
         <Link
           to="/settings"
           className="btn-secondary btn-small clickable"
-          data-tip="Settings: API keys, calendar connection, secrets vault"
+          data-tip="Settings: API keys, backup & restore"
         >
           Settings
         </Link>
@@ -71,9 +70,9 @@ export default function AppShell() {
           onClick={handleManualSync}
           disabled={syncState.status === "syncing"}
           style={{ marginRight: "8px" }}
-          data-tip={syncState.message || "Sync with cloud database"}
+          data-tip={syncState.message || "Save changes locally"}
         >
-          {syncState.status === "syncing" ? "⟳ Syncing..." : "☁️ Sync"}
+          {syncState.status === "syncing" ? "⟳ Saving..." : "💾 Save"}
         </button>
         <span
           className="sync-status"
@@ -83,7 +82,7 @@ export default function AppShell() {
             marginRight: "8px",
             fontFamily: "monospace",
           }}
-          title={syncState.message || "No sync yet"}
+          title={syncState.message || "Local storage"}
         >
           {syncState.status === "idle" 
             ? "⏸" 
@@ -92,6 +91,18 @@ export default function AppShell() {
               : syncState.status === "synced" 
                 ? "✓" 
                 : "✗"}
+        </span>
+        <span
+          className="offline-badge"
+          style={{
+            fontSize: "11px",
+            color: "var(--color-text-muted)",
+            marginRight: "8px",
+            fontFamily: "monospace",
+          }}
+          title="Offline-first mode"
+        >
+          📱 Offline
         </span>
         <button
           className="btn-secondary btn-small clickable logout-btn"

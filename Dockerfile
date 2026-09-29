@@ -36,4 +36,4 @@ USER node
 
 EXPOSE 8080
 
-CMD ["node", "server.ts"]
+CMD ["npx", "tsx", "server.ts"]

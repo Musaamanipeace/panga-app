@@ -471,3 +471,93 @@ export async function ensureSeedData() {
     console.error("ensureSeedData error:", e);
   }
 }
+
+/**
+ * Export the entire local database state as a plain serializable object.
+ * Used by the snapshot/backup system. Excludes no credentials — this is
+ * pure app data only.
+ */
+export async function exportDbState(): Promise<Record<string, any[]>> {
+  if (!db.isOpen()) await db.open();
+
+  const tables = [
+    "projects",
+    "tasks",
+    "resources",
+    "docEntries",
+    "milestones",
+    "issues",
+    "contacts",
+    "reminders",
+    "calendarEvents",
+    "scheduleItems",
+    "conversations",
+    "messages",
+    "insights",
+    "settings",
+  ];
+
+  const data: Record<string, any[]> = {};
+  for (const name of tables) {
+    try {
+      data[name] = await (db as any)[name].toArray();
+    } catch {
+      data[name] = [];
+    }
+  }
+  return data;
+}
+
+/**
+ * Replace all user-table contents with the provided data.
+ * Clears each table first, then bulk-loads. Call within a write transaction
+ * for atomicity.
+ */
+export async function importDbState(data: Record<string, any[]>): Promise<void> {
+  if (!db.isOpen()) await db.open();
+
+  const tables = [
+    "projects",
+    "tasks",
+    "resources",
+    "docEntries",
+    "milestones",
+    "issues",
+    "contacts",
+    "reminders",
+    "calendarEvents",
+    "scheduleItems",
+    "conversations",
+    "messages",
+    "insights",
+    "settings",
+  ];
+
+  // Use the array form of transaction to avoid argument limit
+  await db.transaction("rw", tables, async () => {
+    for (const name of tables) {
+      const tableData = data[name] ?? [];
+      const table = (db as any)[name];
+      if (table) {
+        await table.clear();
+        if (tableData.length > 0) {
+          await table.bulkAdd(tableData);
+        }
+      }
+    }
+  });
+}
+
+/** Quick check: does any user data exist in the local database? */
+export async function hasLocalData(): Promise<boolean> {
+  if (!db.isOpen()) await db.open();
+  const tables = [
+    "projects", "tasks", "resources", "docEntries", "milestones",
+    "issues", "contacts", "reminders", "calendarEvents",
+    "scheduleItems", "conversations", "messages", "insights",
+  ];
+  const counts = await Promise.all(
+    tables.map((t) => (db as any)[t]?.count().catch(() => 0))
+  );
+  return counts.some((c: number) => c > 0);
+}
