@@ -343,8 +343,9 @@ body {
 }
 
 .task-status-btn {
-  min-width: 56px;
+  min-width: 64px;
   height: 26px;
+  padding: 0 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: white;
@@ -354,6 +355,35 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.task-status-btn.is-active {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+.task-status-btn.is-active:hover {
+  background: #dbeafe;
+}
+
+.task-status-btn.is-completed {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+.task-status-btn.is-completed:hover {
+  background: #d1fae5;
+}
+
+.task-status-btn.is-inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+.task-status-btn.is-inactive:hover {
+  background: #e5e7eb;
 }
 
 .task-title {

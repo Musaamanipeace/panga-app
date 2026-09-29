@@ -298,98 +298,103 @@ class PangaDB extends Dexie {
         settings: "key",
       })
       .upgrade(async (tx) => {
-        // --- Migrate resources from freeform categories to fixed categories ---
-        const oldResources = await tx.table("resources").toArray();
-        const migrated: Record<string, unknown>[] = oldResources.map((r: any) => {
-          const cat = r.category as string;
-          let newCategory: ResourceCategory = "notes";
-          let url: string | null = null;
-          let body: string | null = null;
-          let provider: ResourceProvider | null = null;
+        try {
+          // --- Migrate resources from freeform categories to fixed categories ---
+          const oldResources = await tx.table("resources").toArray();
+          const migrated: Record<string, unknown>[] = oldResources.map((r: any) => {
+            const cat = r.category as string;
+            let newCategory: ResourceCategory = "notes";
+            let url: string | null = null;
+            let body: string | null = null;
+            let provider: ResourceProvider | null = null;
 
-          switch (cat) {
-            case "link":
-              newCategory = "links";
-              url = r.value || null;
-              body = r.textBody || r.notes || null;
-              break;
-            case "script":
-              newCategory = "scripts";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "prompts":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "ai_chat_links":
-              newCategory = "links";
-              url = r.value || null;
-              provider = r.provider || null;
-              body = r.textBody || r.notes || null;
-              break;
-            case "reports_memos":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "location":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "name":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "reminder":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "schedule":
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "bookmark_group":
-              newCategory = "links";
-              body = r.textBody || r.value || r.notes || null;
-              break;
-            case "file":
-              newCategory = "notes";
-              body = r.textBody || r.notes || null;
-              break;
-            case "images":
-              newCategory = "images";
-              break;
-            case "pdfs":
-              newCategory = "pdfs";
-              break;
-            default:
-              newCategory = "notes";
-              body = r.textBody || r.value || r.notes || null;
+            switch (cat) {
+              case "link":
+                newCategory = "links";
+                url = r.value || null;
+                body = r.textBody || r.notes || null;
+                break;
+              case "script":
+                newCategory = "scripts";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "prompts":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "ai_chat_links":
+                newCategory = "links";
+                url = r.value || null;
+                provider = r.provider || null;
+                body = r.textBody || r.notes || null;
+                break;
+              case "reports_memos":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "location":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "name":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "reminder":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "schedule":
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "bookmark_group":
+                newCategory = "links";
+                body = r.textBody || r.value || r.notes || null;
+                break;
+              case "file":
+                newCategory = "notes";
+                body = r.textBody || r.notes || null;
+                break;
+              case "images":
+                newCategory = "images";
+                break;
+              case "pdfs":
+                newCategory = "pdfs";
+                break;
+              default:
+                newCategory = "notes";
+                body = r.textBody || r.value || r.notes || null;
+            }
+
+            return {
+              id: r.id,
+              projectId: r.projectId,
+              category: newCategory,
+              title: r.title,
+              tags: r.tags || [],
+              url,
+              provider,
+              body,
+              images: r.images || [],
+              files: [],
+              createdAt: r.createdAt,
+              updatedAt: r.updatedAt,
+              syncStatus: r.syncStatus,
+            };
+          });
+
+          if (migrated.length) {
+            await tx.table("resources").bulkPut(migrated);
           }
-
-          return {
-            id: r.id,
-            projectId: r.projectId,
-            category: newCategory,
-            title: r.title,
-            tags: r.tags || [],
-            url,
-            provider,
-            body,
-            images: r.images || [],
-            files: [],
-            createdAt: r.createdAt,
-            updatedAt: r.updatedAt,
-            syncStatus: r.syncStatus,
-          };
-        });
-
-        if (migrated.length) {
-          await tx.table("resources").bulkPut(migrated);
+        } catch (e) {
+          console.warn("Resources upgrade error:", e);
         }
 
-        // --- Clean up old tables and settings ---
-        await tx.table("goals").clear();
-        await db.settings.where("key").equals("resourceCategories").delete();
+        // Clean up old settings without accessing db directly
+        try {
+          await tx.table("settings").delete("resourceCategories");
+        } catch {}
       });
 
     // v5: add insights table + milestone description
@@ -399,12 +404,16 @@ class PangaDB extends Dexie {
         insights: "id, projectId, type, updatedAt, syncStatus, *tags",
       })
       .upgrade(async (tx) => {
-        // Backfill description for existing milestones
-        const ms = await tx.table("milestones").toArray();
-        for (const m of ms) {
-          if ((m as any).description === undefined || (m as any).description === null) {
-            await tx.table("milestones").where("id").equals(m.id).modify({ description: "" });
+        try {
+          // Backfill description for existing milestones
+          const ms = await tx.table("milestones").toArray();
+          for (const m of ms) {
+            if ((m as any).description === undefined || (m as any).description === null) {
+              await tx.table("milestones").where("id").equals(m.id).modify({ description: "" });
+            }
           }
+        } catch (e) {
+          console.warn("Milestones upgrade error:", e);
         }
       });
 
@@ -419,8 +428,15 @@ class PangaDB extends Dexie {
 export const db = new PangaDB();
 
 export async function ensureSeedData() {
-  const initialized = await db.settings.get(SETTINGS_KEYS.appInitialized);
-  if (!initialized) {
-    await db.settings.put({ key: SETTINGS_KEYS.appInitialized, value: true });
+  try {
+    if (!db.isOpen()) {
+      await db.open();
+    }
+    const initialized = await db.settings.get(SETTINGS_KEYS.appInitialized);
+    if (!initialized) {
+      await db.settings.put({ key: SETTINGS_KEYS.appInitialized, value: true });
+    }
+  } catch (e) {
+    console.error("ensureSeedData error:", e);
   }
 }

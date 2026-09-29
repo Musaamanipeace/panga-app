@@ -351,8 +351,14 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
         <ul className="task-list">
           {tasks.map((task) => (
             <li key={task.id} className={`task-item task-${task.status}`}>
-              <button className="task-status-btn" onClick={() => cycleStatus(task)} data-tip="Cycle status">
-                {task.status === "completed" ? "Done" : task.status === "inactive" ? "—" : "o"}
+              <button
+                type="button"
+                className={`task-status-btn is-${task.status} clickable`}
+                onClick={() => cycleStatus(task)}
+                data-tip="Click to cycle status (active → completed → inactive)"
+                aria-label={`Cycle status: currently ${task.status}`}
+              >
+                {task.status === "completed" ? "✓ Done" : task.status === "inactive" ? "— Parked" : "○ Active"}
               </button>
               {editingId === task.id ? (
                 <input

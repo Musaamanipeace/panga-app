@@ -13,42 +13,101 @@ function readEnv(name: string): string | undefined {
   return (import.meta as unknown as { env: Record<string, string | undefined> }).env[name];
 }
 
+export interface EmailJsConfig {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+}
+
+export function getStoredEmailJsConfig(): EmailJsConfig {
+  try {
+    const raw = localStorage.getItem("panga_emailjs_config");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        serviceId: parsed.serviceId || readEnv("VITE_EMAILJS_SERVICE_ID") || "",
+        templateId: parsed.templateId || readEnv("VITE_EMAILJS_TEMPLATE_ID") || "",
+        publicKey: parsed.publicKey || readEnv("VITE_EMAILJS_PUBLIC_KEY") || "",
+      };
+    }
+  } catch {}
+  return {
+    serviceId: readEnv("VITE_EMAILJS_SERVICE_ID") || "",
+    templateId: readEnv("VITE_EMAILJS_TEMPLATE_ID") || "",
+    publicKey: readEnv("VITE_EMAILJS_PUBLIC_KEY") || "",
+  };
+}
+
+export function saveStoredEmailJsConfig(config: EmailJsConfig) {
+  try {
+    localStorage.setItem("panga_emailjs_config", JSON.stringify(config));
+  } catch {}
+}
+
+export interface SendOtpOptions {
+  mode?: "dev" | "real";
+  customConfig?: EmailJsConfig;
+}
+
 /**
  * Sends a 6-digit one-time code to `email`.
  *
- * Uses EmailJS (https://www.emailjs.com — free tier, 200 emails/month, no
- * backend required) when `VITE_EMAILJS_SERVICE_ID` / `VITE_EMAILJS_TEMPLATE_ID`
- * / `VITE_EMAILJS_PUBLIC_KEY` are set in `.env.local` (see `.env.example`).
- *
- * If EmailJS isn't configured yet, falls back to a "dev mode" that never
- * fails: the code is returned to the caller so it can be shown inline,
- * meaning the login flow is fully testable before you wire up email.
+ * Supports both:
+ * - "dev" mode: returns code directly for instant test login
+ * - "real" mode: sends real email via EmailJS (surfacing errors or success)
  */
-export async function sendOtp(email: string): Promise<{ devCode?: string }> {
+export async function sendOtp(
+  email: string,
+  options?: SendOtpOptions
+): Promise<{ devCode?: string; error?: string; successMessage?: string }> {
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const pending: PendingOtp = { email, code, expiresAt: Date.now() + OTP_TTL_MS };
   sessionStorage.setItem(OTP_KEY, JSON.stringify(pending));
 
-  const serviceId = readEnv("VITE_EMAILJS_SERVICE_ID");
-  const templateId = readEnv("VITE_EMAILJS_TEMPLATE_ID");
-  const publicKey = readEnv("VITE_EMAILJS_PUBLIC_KEY");
+  const isRealMode = options?.mode === "real";
 
-  if (!serviceId || !templateId || !publicKey) {
-    // Dev mode — no email service configured yet.
+  if (!isRealMode) {
+    // Pure Dev Mode: instant code return
     return { devCode: code };
   }
 
+  // Real Auth Mode with EmailJS
+  const config = options?.customConfig || getStoredEmailJsConfig();
+  const serviceId = config.serviceId?.trim();
+  const templateId = config.templateId?.trim();
+  const publicKey = config.publicKey?.trim();
+
+  if (!serviceId || !templateId || !publicKey) {
+    return {
+      error:
+        "EmailJS configuration missing. Please enter your Service ID, Template ID, and Public Key, or configure them in .env.",
+    };
+  }
+
   try {
-    await emailjs.send(
-      serviceId,
-      templateId,
-      { to_email: email, passcode: code, app_name: "Panga" },
-      { publicKey }
-    );
-    return {};
-  } catch (err) {
-    console.error("EmailJS send failed, falling back to dev mode:", err);
-    return { devCode: code };
+    const templateParams = {
+      to_email: email,
+      email: email,
+      user_email: email,
+      passcode: code,
+      otp: code,
+      code: code,
+      app_name: "Panga",
+    };
+
+    await emailjs.send(serviceId, templateId, templateParams, {
+      publicKey,
+    });
+
+    return {
+      successMessage: `Real OTP email sent to ${email}. Please check your inbox or spam folder.`,
+    };
+  } catch (err: any) {
+    console.error("EmailJS send failed:", err);
+    const errText = err?.text || err?.message || (typeof err === "string" ? err : JSON.stringify(err));
+    return {
+      error: `EmailJS error: ${errText}. Please check your EmailJS Service ID, Template ID, Public Key, and template parameters.`,
+    };
   }
 }
 

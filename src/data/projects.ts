@@ -7,6 +7,7 @@ export type { Project, ProjectStatus };
 export async function listProjects(
   status: ProjectStatus = "active"
 ): Promise<Project[]> {
+  if (!db.isOpen()) await db.open();
   return db.projects
     .where("status")
     .equals(status)
@@ -15,10 +16,12 @@ export async function listProjects(
 }
 
 export async function listAllProjects(): Promise<Project[]> {
+  if (!db.isOpen()) await db.open();
   return db.projects.orderBy("updatedAt").reverse().toArray();
 }
 
 export async function getProject(id: string): Promise<Project | undefined> {
+  if (!db.isOpen()) await db.open();
   return db.projects.get(id);
 }
 
@@ -26,6 +29,7 @@ export async function createProject(input: {
   name: string;
   description?: string;
 }): Promise<Project> {
+  if (!db.isOpen()) await db.open();
   const t = now();
   const project: Project = {
     id: newId(),
@@ -44,6 +48,7 @@ export async function updateProject(
   id: string,
   changes: Partial<Pick<Project, "name" | "description" | "status">>
 ): Promise<void> {
+  if (!db.isOpen()) await db.open();
   await db.projects.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
 
@@ -52,6 +57,7 @@ export async function archiveProject(id: string): Promise<void> {
 }
 
 export async function deleteProject(id: string): Promise<void> {
+  if (!db.isOpen()) await db.open();
   // Cascade: a project's tasks/resources/etc. go with it.
   await db.transaction(
     "rw",

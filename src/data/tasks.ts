@@ -5,20 +5,24 @@ import { newId, now } from "./utils";
 export type { Task, TaskStatus };
 
 export async function listTasksForProject(projectId: string): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
   const list = await db.tasks.where("projectId").equals(projectId).toArray();
   return list.sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function listAllTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
   const all = await db.tasks.toArray();
   return all.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function listScheduledTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
   return db.tasks.where("scheduledAt").above(0).sortBy("scheduledAt");
 }
 
 export async function listAllActiveTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
   // Used by the AI planner (Stage 9) across all projects.
   return db.tasks.where("status").equals("active").toArray();
 }
@@ -37,6 +41,7 @@ export async function createTask(input: {
   estimatedMinutes?: number | null;
   tags?: string[];
 }): Promise<Task> {
+  if (!db.isOpen()) await db.open();
   const t = now();
   const task: Task = {
     id: newId(),
@@ -63,13 +68,16 @@ export async function updateTask(
     Pick<Task, "title" | "notes" | "status" | "executor" | "dueDate" | "scheduledAt" | "estimatedMinutes" | "tags">
   >
 ): Promise<void> {
+  if (!db.isOpen()) await db.open();
   await db.tasks.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
 
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<void> {
+  if (!db.isOpen()) await db.open();
   await updateTask(id, { status });
 }
 
 export async function deleteTask(id: string): Promise<void> {
+  if (!db.isOpen()) await db.open();
   await db.tasks.delete(id);
 }

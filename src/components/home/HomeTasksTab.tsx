@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { listAllTasks, isOverdue, type Task } from "../../data/tasks";
+import { listAllTasks, isOverdue, setTaskStatus, type Task, type TaskStatus } from "../../data/tasks";
 import { listAllProjects } from "../../data/projects";
+import { reconcileMilestoneStatuses } from "../../data/milestones";
 import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 type Filter = "all" | "active" | "inactive" | "completed" | "overdue" | "ai" | "scheduled";
@@ -22,6 +23,19 @@ export default function HomeTasksTab() {
     const [tasks, projects] = await Promise.all([listAllTasks(), listAllProjects()]);
     return { tasks, projects };
   }, []);
+
+  async function handleToggleStatus(task: Task) {
+    const next: Record<TaskStatus, TaskStatus> = {
+      active: "completed",
+      completed: "inactive",
+      inactive: "active",
+    };
+    await setTaskStatus(task.id, next[task.status]);
+    if (task.projectId) {
+      await reconcileMilestoneStatuses(task.projectId);
+    }
+    reload();
+  }
 
   const projectName = useMemo(
     () => new Map<string, string>((data?.projects ?? []).map((p: any) => [p.id, p.name])),
@@ -96,7 +110,12 @@ export default function HomeTasksTab() {
       ) : (
         <ul className="item-list">
           {filtered.map((task) => (
-            <TaskRow key={task.id} task={task} projectName={projectName.get(task.projectId) ?? ""} />
+            <TaskRow
+              key={task.id}
+              task={task}
+              projectName={projectName.get(task.projectId) ?? ""}
+              onToggle={handleToggleStatus}
+            />
           ))}
         </ul>
       )}
@@ -104,14 +123,26 @@ export default function HomeTasksTab() {
   );
 }
 
-function TaskRow({ task, projectName }: { task: Task; projectName: string }) {
+function TaskRow({
+  task,
+  projectName,
+  onToggle,
+}: {
+  task: Task;
+  projectName: string;
+  onToggle: (task: Task) => void;
+}) {
   return (
     <li className="item">
-      <span
-        className={`task-status-btn is-${task.status}`}
-        aria-label={task.status}
-        data-tip={`Status: ${task.status}. Edit it in the project.`}
-      />
+      <button
+        type="button"
+        className={`task-status-btn is-${task.status} clickable`}
+        aria-label={`Cycle status: currently ${task.status}`}
+        data-tip={`Status: ${task.status}. Click to cycle (active → completed → inactive).`}
+        onClick={() => onToggle(task)}
+      >
+        {task.status === "completed" ? "✓ Done" : task.status === "inactive" ? "— Parked" : "○ Active"}
+      </button>
       <span className="item-body">
         <span className="item-title">{task.title}</span>
         <span className="item-meta">

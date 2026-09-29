@@ -14,17 +14,19 @@ import MicButton from "../components/MicButton.tsx"
 import { Drawer, ErrorNote, Loading, Slide, useAsync } from "../components/ui.tsx"
 import HomeTasksTab from "../components/home/HomeTasksTab.tsx"
 import HomeResourcesTab from "../components/home/HomeResourcesTab.tsx"
+import HomeLinksTab from "../components/home/HomeLinksTab.tsx"
 import HomeContactsTab from "../components/home/HomeContactsTab.tsx"
 import HomeCalendarTab from "../components/home/HomeCalendarTab.tsx"
 import HomeScheduleTab from "../components/home/HomeScheduleTab.tsx"
 import HomeRemindersTab from "../components/home/HomeRemindersTab.tsx"
 
-const TABS = ["Tasks", "Resources", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
+const TABS = ["Tasks", "Resources", "Links", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
   Tasks: "Every task across every project, with a status filter",
   Resources: "Quick notes, links, scripts, images and documents — standalone or tied to projects",
+  Links: "Add and organize web links and bookmarks with titles and descriptions — standalone at Home or tied to projects",
   Contacts: "Every contact, with links to reach them and add contacts",
   Calendar: "Month grid and list view of all events across projects, with Google Calendar .ics import",
   Schedule: "Tasks with a date and time, plus calendar events and Meet links",
@@ -199,6 +201,7 @@ export default function Home() {
         >
           {activeTab === "Tasks" && <HomeTasksTab />}
           {activeTab === "Resources" && <HomeResourcesTab />}
+          {activeTab === "Links" && <HomeLinksTab />}
           {activeTab === "Contacts" && <HomeContactsTab />}
           {activeTab === "Calendar" && <HomeCalendarTab />}
           {activeTab === "Schedule" && <HomeScheduleTab />}
@@ -225,8 +228,8 @@ function AddProjectDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCreate(e?: React.FormEvent | React.MouseEvent) {
+    if (e) e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
       setError("Give the project a name.");
@@ -241,6 +244,7 @@ function AddProjectDrawer({
       onCreated();
       onClose();
     } catch (err) {
+      console.error("Failed to create project:", err);
       setError(err instanceof Error ? err.message : "Could not create the project.");
     } finally {
       setSaving(false);
@@ -255,15 +259,26 @@ function AddProjectDrawer({
       edge="right"
       closeTip="Discard this project"
       footer={
-        <button
-          type="submit"
-          form="add-project-form"
-          className="btn-primary"
-          disabled={saving}
-          data-tip="Create the project and open it"
-        >
-          {saving ? "Creating..." : "Create project"}
-        </button>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", width: "100%" }}>
+          <button
+            type="button"
+            className="btn-secondary clickable"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="add-project-form"
+            className="btn-primary clickable"
+            disabled={saving}
+            onClick={handleCreate}
+            data-tip="Create the project and open it"
+          >
+            {saving ? "Creating..." : "Create project"}
+          </button>
+        </div>
       }
     >
       <form id="add-project-form" onSubmit={handleCreate} className="stack">
@@ -277,6 +292,12 @@ function AddProjectDrawer({
               placeholder="e.g. Album release"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreate();
+                }
+              }}
             />
             <MicButton onResult={setName} />
           </div>
@@ -291,6 +312,12 @@ function AddProjectDrawer({
             placeholder="One line on what this is for"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreate();
+              }
+            }}
           />
         </div>
         {error && <p className="form-error">{error}</p>}

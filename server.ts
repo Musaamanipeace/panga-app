@@ -63,13 +63,13 @@ async function start() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: HOST, port: PORT },
+      server: { middlewareMode: true, host: HOST, port: PORT, allowedHosts: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve(__dirname, "dist")));
-    app.get("*", (_req, res) => {
+    app.get("{*path}", (_req, res) => {
       res.sendFile(path.resolve(__dirname, "dist", "index.html"));
     });
   }

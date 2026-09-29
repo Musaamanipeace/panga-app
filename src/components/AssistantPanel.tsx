@@ -14,6 +14,7 @@ import { listAllTasks, createTask, updateTask, deleteTask } from "../data/tasks"
 import { createMilestone } from "../data/milestones";
 import { createReminder } from "../data/reminders";
 import { createInsight } from "../data/insights";
+import { createResource } from "../data/resources";
 import { db } from "../data/db";
 import MicButton from "../components/MicButton";
 import { useAsync } from "../components/ui";
@@ -27,6 +28,7 @@ interface ActionProposal {
     | "create_milestone"
     | "create_reminder"
     | "create_insight"
+    | "create_link"
     | "add_subcategory";
   description: string;
   data: any;
@@ -99,6 +101,7 @@ ACTION:{"type":"create_project","description":"Create project '...'","data":{"na
 ACTION:{"type":"create_milestone","description":"Create milestone '...'","data":{"projectId":"...","title":"...","description":"..."}}
 ACTION:{"type":"create_reminder","description":"Set reminder '...'","data":{"message":"...","triggerAt":1234567890,"projectId":"..."}}
 ACTION:{"type":"create_insight","description":"Save insight '...'","data":{"projectId":"...","title":"...","body":"...","type":"note"}}
+ACTION:{"type":"create_link","description":"Save link '...'","data":{"url":"https://...","title":"...","description":"...","projectId":null}}
 ACTION:{"type":"add_subcategory","description":"Add shared subcategory '...'","data":{"category":"notes","name":"..."}}
 
 If the user's request is ambiguous or missing a critical choice, you can instead ask a clarifying question by starting your response with:
@@ -316,6 +319,18 @@ ${milestoneList || "None"}
           type: data.type ?? "note",
           link: data.link ?? null,
           tags: data.tags ?? [],
+        });
+        break;
+      }
+      case "create_link": {
+        await createResource({
+          category: "links",
+          title: data.title || data.url,
+          url: data.url,
+          body: data.description || data.body || null,
+          projectId: data.projectId || null,
+          tags: data.tags || [],
+          provider: data.provider || "other",
         });
         break;
       }

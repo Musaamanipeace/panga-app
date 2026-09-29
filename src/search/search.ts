@@ -89,9 +89,13 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
         projectId: r.projectId,
         projectName: projectName(r.projectId),
         title: r.title,
-        subtitle: `Resource · ${r.category}`,
+        subtitle: r.category === "links" ? `Link · ${r.url || ""}` : `Resource · ${r.category}`,
         action: "navigate",
-        target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
+        target: r.projectId
+          ? `/project/${r.projectId}?tab=Resources`
+          : r.category === "links"
+          ? `/home?tab=Links`
+          : `/home?tab=Resources`,
       });
     }
   }
