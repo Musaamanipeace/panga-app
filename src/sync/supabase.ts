@@ -1,16 +1,29 @@
 // src/sync/supabase.ts
-// This is the ONLY file that initializes the Supabase client.
-// The rest of the sync module (built in a later stage) will import
-// `supabase` from here — never call `createClient()` anywhere else.
+// Supabase client and sync exports.
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseConfig, getSupabaseClient } from "./supabaseSync";
 
-import { createClient } from "@supabase/supabase-js";
+export {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  isSupabaseConfigured,
+  getSupabaseClient,
+  testSupabaseConnection,
+  syncAll,
+  syncPushRecord,
+  syncDeleteRecord,
+  syncPushSetting,
+  subscribeSyncStatus,
+  getLastSyncTime,
+} from "./supabaseSync";
 
-// These values come from your Supabase project settings.
-// See README.md -> "Supabase project setup" for exact steps.
-// The URL and anon key are safe to expose in client code (Supabase
-// access is controlled by Row-Level Security policies, which we set
-// up in a later stage).
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://placeholder-project.supabase.co";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "placeholder-anon-key";
+// Default client instance for backward compatibility
+const config = getSupabaseConfig();
+export const supabase: SupabaseClient =
+  getSupabaseClient() ||
+  createClient(
+    config.url || "https://placeholder-project.supabase.co",
+    config.anonKey || "placeholder-anon-key",
+    { auth: { persistSession: false } }
+  );
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);

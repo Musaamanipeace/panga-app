@@ -1,0 +1,659 @@
+// src/sync/supabaseSync.ts
+// Handles cloud persistence and multi-device sync with Supabase.
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { db } from "../data/db";
+
+const SUPABASE_URL_KEY = "panga_supabase_url";
+const SUPABASE_KEY_KEY = "panga_supabase_anon_key";
+const LAST_SYNC_KEY = "panga_last_sync_time";
+
+function safeGetStorage(key: string): string | null {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStorage(key: string, value: string | null) {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {}
+}
+
+export type SyncStatusState = "idle" | "syncing" | "synced" | "error" | "unconfigured";
+
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+}
+
+let cachedClient: SupabaseClient | null = null;
+let cachedConfigKey = "";
+let currentStatus: SyncStatusState = "idle";
+let lastSyncTimestamp: number = Number(safeGetStorage(LAST_SYNC_KEY) || 0);
+let statusListeners: Array<(status: SyncStatusState, message?: string) => void> = [];
+
+export function getSupabaseConfig(): SupabaseConfig {
+  const localUrl = safeGetStorage(SUPABASE_URL_KEY);
+  const localKey = safeGetStorage(SUPABASE_KEY_KEY);
+  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || "";
+  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
+
+  return {
+    url: (localUrl || envUrl || "").trim(),
+    anonKey: (localKey || envKey || "").trim(),
+  };
+}
+
+export function saveSupabaseConfig(config: SupabaseConfig) {
+  safeSetStorage(SUPABASE_URL_KEY, config.url ? config.url.trim() : null);
+  safeSetStorage(SUPABASE_KEY_KEY, config.anonKey ? config.anonKey.trim() : null);
+
+  cachedClient = null;
+  cachedConfigKey = "";
+}
+
+export function isSupabaseConfigured(): boolean {
+  const { url, anonKey } = getSupabaseConfig();
+  return Boolean(
+    url &&
+    anonKey &&
+    !url.includes("placeholder-project") &&
+    !anonKey.includes("placeholder")
+  );
+}
+
+export function getSupabaseClient(): SupabaseClient | null {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const { url, anonKey } = getSupabaseConfig();
+  const configKey = `${url}:${anonKey}`;
+
+  if (cachedClient && cachedConfigKey === configKey) {
+    return cachedClient;
+  }
+
+  try {
+    cachedClient = createClient(url, anonKey, {
+      auth: { persistSession: false },
+    });
+    cachedConfigKey = configKey;
+    return cachedClient;
+  } catch (err) {
+    console.error("Failed to initialize Supabase client:", err);
+    return null;
+  }
+}
+
+export function subscribeSyncStatus(fn: (status: SyncStatusState, message?: string) => void) {
+  statusListeners.push(fn);
+  fn(currentStatus);
+  return () => {
+    statusListeners = statusListeners.filter((l) => l !== fn);
+  };
+}
+
+function updateStatus(status: SyncStatusState, message?: string) {
+  currentStatus = status;
+  for (const listener of statusListeners) {
+    try {
+      listener(status, message);
+    } catch {}
+  }
+}
+
+export function getLastSyncTime(): number {
+  return lastSyncTimestamp;
+}
+
+/** Test if the credentials can reach Supabase and query tables */
+export async function testSupabaseConnection(): Promise<{ ok: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { ok: false, message: "Supabase URL and Anon Key are not configured." };
+  }
+
+  try {
+    const { error } = await client.from("projects").select("id").limit(1);
+    if (error) {
+      if (error.code === "PGRST205" || error.message.includes("does not exist") || error.code === "42P01") {
+        return {
+          ok: false,
+          message: "Connected to Supabase, but tables are missing. Please run 'supabase_schema.sql' in your Supabase SQL Editor.",
+        };
+      }
+      return { ok: false, message: `Supabase error: ${error.message}` };
+    }
+    return { ok: true, message: "Connected to Supabase successfully! Tables are ready." };
+  } catch (err: any) {
+    return { ok: false, message: `Connection failed: ${err.message || String(err)}` };
+  }
+}
+
+// Data Mappers: Dexie CamelCase <-> Supabase snake_case
+
+function projectToRemote(p: any) {
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description ?? "",
+    status: p.status ?? "active",
+    created_at: p.createdAt,
+    updated_at: p.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function projectFromRemote(r: any) {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? "",
+    status: r.status ?? "active",
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function taskToRemote(t: any) {
+  return {
+    id: t.id,
+    project_id: t.projectId ?? null,
+    title: t.title,
+    notes: t.notes ?? "",
+    status: t.status ?? "active",
+    executor: t.executor ?? "manual",
+    due_date: t.dueDate ?? null,
+    scheduled_at: t.scheduledAt ?? null,
+    estimated_minutes: t.estimatedMinutes ?? null,
+    tags: t.tags ?? [],
+    created_at: t.createdAt,
+    updated_at: t.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function taskFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    notes: r.notes ?? "",
+    status: r.status ?? "active",
+    executor: r.executor ?? "manual",
+    dueDate: r.due_date ? Number(r.due_date) : null,
+    scheduledAt: r.scheduled_at ? Number(r.scheduled_at) : null,
+    estimatedMinutes: r.estimated_minutes ? Number(r.estimated_minutes) : null,
+    tags: r.tags ?? [],
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function resourceToRemote(r: any) {
+  return {
+    id: r.id,
+    project_id: r.projectId ?? null,
+    category: r.category,
+    title: r.title,
+    tags: r.tags ?? [],
+    url: r.url ?? null,
+    provider: r.provider ?? null,
+    body: r.body ?? null,
+    images: r.images ?? [],
+    files: r.files ?? [],
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function resourceFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    category: r.category,
+    title: r.title,
+    tags: r.tags ?? [],
+    url: r.url ?? null,
+    provider: r.provider ?? null,
+    body: r.body ?? null,
+    images: r.images ?? [],
+    files: r.files ?? [],
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function milestoneToRemote(m: any) {
+  return {
+    id: m.id,
+    project_id: m.projectId ?? null,
+    title: m.title,
+    description: m.description ?? "",
+    status: m.status ?? "pending",
+    target_date: m.targetDate ?? null,
+    blocking_task_ids: m.blockingTaskIds ?? [],
+    created_at: m.createdAt,
+    updated_at: m.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function milestoneFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    description: r.description ?? "",
+    status: r.status ?? "pending",
+    targetDate: r.target_date ? Number(r.target_date) : null,
+    blockingTaskIds: r.blocking_task_ids ?? [],
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function issueToRemote(i: any) {
+  return {
+    id: i.id,
+    project_id: i.projectId ?? null,
+    title: i.title,
+    description: i.description ?? "",
+    status: i.status ?? "open",
+    severity: i.severity ?? "medium",
+    labels: i.labels ?? [],
+    milestone_id: i.milestoneId ?? null,
+    comments: i.comments ?? [],
+    created_at: i.createdAt,
+    updated_at: i.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function issueFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    description: r.description ?? "",
+    status: r.status ?? "open",
+    severity: r.severity ?? "medium",
+    labels: r.labels ?? [],
+    milestoneId: r.milestone_id ?? r.milestoneId ?? null,
+    comments: r.comments ?? [],
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function contactToRemote(c: any) {
+  return {
+    id: c.id,
+    name: c.name,
+    type: c.type ?? "email",
+    value: c.value ?? "",
+    tags: c.tags ?? [],
+    linked_project_ids: c.linkedProjectIds ?? [],
+    notes: c.notes ?? "",
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function contactFromRemote(r: any) {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type ?? "email",
+    value: r.value ?? "",
+    tags: r.tags ?? [],
+    linkedProjectIds: r.linked_project_ids ?? [],
+    notes: r.notes ?? "",
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function reminderToRemote(rem: any) {
+  return {
+    id: rem.id,
+    project_id: rem.projectId ?? null,
+    message: rem.message,
+    trigger_at: rem.triggerAt,
+    status: rem.status ?? "pending",
+    created_at: rem.createdAt,
+    updated_at: rem.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function reminderFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    message: r.message,
+    triggerAt: Number(r.trigger_at || r.triggerAt),
+    status: r.status ?? "pending",
+    linkedEntityType: r.linked_entity_type ?? r.linkedEntityType ?? null,
+    linkedEntityId: r.linked_entity_id ?? r.linkedEntityId ?? null,
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function calendarEventToRemote(e: any) {
+  return {
+    id: e.id,
+    project_id: e.projectId ?? null,
+    title: e.title,
+    description: e.description ?? "",
+    source: e.source ?? "local",
+    start_at: e.startAt,
+    end_at: e.endAt,
+    meet_link: e.meetLink ?? null,
+    created_at: e.createdAt,
+    updated_at: e.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function calendarEventFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    description: r.description ?? "",
+    source: r.source ?? "local",
+    startAt: Number(r.start_at || r.startAt),
+    endAt: Number(r.end_at || r.endAt),
+    meetLink: r.meet_link ?? r.meetLink ?? null,
+    hangoutLink: r.hangout_link ?? r.hangoutLink ?? null,
+    syncedAt: r.synced_at ?? r.syncedAt ?? null,
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+function insightToRemote(ins: any) {
+  return {
+    id: ins.id,
+    project_id: ins.projectId ?? null,
+    title: ins.title,
+    body: ins.body ?? null,
+    type: ins.type ?? "note",
+    link: ins.link ?? null,
+    tags: ins.tags ?? [],
+    created_at: ins.createdAt,
+    updated_at: ins.updatedAt,
+    sync_status: "synced",
+  };
+}
+
+function insightFromRemote(r: any) {
+  return {
+    id: r.id,
+    projectId: r.project_id ?? r.projectId ?? null,
+    title: r.title,
+    body: r.body ?? null,
+    type: r.type ?? "note",
+    link: r.link ?? null,
+    tags: r.tags ?? [],
+    createdAt: Number(r.created_at || r.createdAt || Date.now()),
+    updatedAt: Number(r.updated_at || r.updatedAt || Date.now()),
+    syncStatus: "synced" as const,
+  };
+}
+
+/** Immediate push of a single record when changed in UI */
+export async function syncPushRecord(
+  tableName: "projects" | "tasks" | "resources" | "milestones" | "issues" | "contacts" | "reminders" | "calendar_events" | "insights",
+  record: any
+) {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    let payload: any = null;
+    switch (tableName) {
+      case "projects": payload = projectToRemote(record); break;
+      case "tasks": payload = taskToRemote(record); break;
+      case "resources": payload = resourceToRemote(record); break;
+      case "milestones": payload = milestoneToRemote(record); break;
+      case "issues": payload = issueToRemote(record); break;
+      case "contacts": payload = contactToRemote(record); break;
+      case "reminders": payload = reminderToRemote(record); break;
+      case "calendar_events": payload = calendarEventToRemote(record); break;
+      case "insights": payload = insightToRemote(record); break;
+    }
+
+    if (payload) {
+      const { error } = await client.from(tableName).upsert(payload, { onConflict: "id" });
+      if (!error) {
+        // Mark as synced locally
+        const dexieTable = tableName === "calendar_events" ? "calendarEvents" : tableName;
+        await (db as any)[dexieTable]?.update(record.id, { syncStatus: "synced" });
+      } else {
+        console.warn(`Supabase upsert warning for ${tableName}:`, error.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`Sync push error (${tableName}):`, err);
+  }
+}
+
+/** Immediate push of a deletion to Supabase */
+export async function syncDeleteRecord(tableName: string, id: string) {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from(tableName).delete().eq("id", id);
+  } catch (err) {
+    console.warn(`Sync delete error (${tableName}):`, err);
+  }
+}
+
+/** Immediate push of a setting (e.g. Gemini API Key) to Supabase */
+export async function syncPushSetting(key: string, value: any) {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from("settings").upsert(
+      {
+        key,
+        value,
+        updated_at: Date.now(),
+      },
+      { onConflict: "key" }
+    );
+  } catch (err) {
+    console.warn("Sync push setting error:", err);
+  }
+}
+
+/** Full 2-way sync: pulls cloud data into Dexie, pushes pending local data */
+export async function syncAll(): Promise<{ ok: boolean; message: string }> {
+  if (!isSupabaseConfigured()) {
+    updateStatus("unconfigured", "Supabase is not configured.");
+    return { ok: false, message: "Supabase is not configured." };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    updateStatus("error", "Supabase client not initialized.");
+    return { ok: false, message: "Supabase client not initialized." };
+  }
+
+  if (!db.isOpen()) {
+    await db.open();
+  }
+
+  updateStatus("syncing", "Syncing with Supabase database...");
+
+  try {
+    // 1. PULL REMOTE DATA FROM SUPABASE INTO DEXIE
+    const [
+      projRes,
+      tasksRes,
+      resourcesRes,
+      milestonesRes,
+      issuesRes,
+      contactsRes,
+      remindersRes,
+      calendarRes,
+      insightsRes,
+      settingsRes,
+    ] = await Promise.all([
+      client.from("projects").select("*"),
+      client.from("tasks").select("*"),
+      client.from("resources").select("*"),
+      client.from("milestones").select("*"),
+      client.from("issues").select("*"),
+      client.from("contacts").select("*"),
+      client.from("reminders").select("*"),
+      client.from("calendar_events").select("*"),
+      client.from("insights").select("*"),
+      client.from("settings").select("*"),
+    ]);
+
+    // Check if table error occurred
+    if (projRes.error) {
+      throw new Error(`Failed to query Supabase: ${projRes.error.message}`);
+    }
+
+    // Merge into local Dexie
+    if (projRes.data && projRes.data.length > 0) {
+      await db.projects.bulkPut(projRes.data.map(projectFromRemote));
+    }
+
+    if (tasksRes.data && tasksRes.data.length > 0) {
+      await db.tasks.bulkPut(tasksRes.data.map(taskFromRemote));
+    }
+
+    if (resourcesRes.data && resourcesRes.data.length > 0) {
+      await db.resources.bulkPut(resourcesRes.data.map(resourceFromRemote));
+    }
+
+    if (milestonesRes.data && milestonesRes.data.length > 0) {
+      await db.milestones.bulkPut(milestonesRes.data.map(milestoneFromRemote));
+    }
+
+    if (issuesRes.data && issuesRes.data.length > 0) {
+      await db.issues.bulkPut(issuesRes.data.map(issueFromRemote));
+    }
+
+    if (contactsRes.data && contactsRes.data.length > 0) {
+      await db.contacts.bulkPut(contactsRes.data.map(contactFromRemote));
+    }
+
+    if (remindersRes.data && remindersRes.data.length > 0) {
+      await db.reminders.bulkPut(remindersRes.data.map(reminderFromRemote));
+    }
+
+    if (calendarRes.data && calendarRes.data.length > 0) {
+      await db.calendarEvents.bulkPut(calendarRes.data.map(calendarEventFromRemote));
+    }
+
+    if (insightsRes.data && insightsRes.data.length > 0) {
+      await db.insights.bulkPut(insightsRes.data.map(insightFromRemote));
+    }
+
+    // Settings (including Gemini API Key and Global Subcategories)
+    if (settingsRes.data && settingsRes.data.length > 0) {
+      for (const row of settingsRes.data) {
+        if (row.key && row.value !== undefined) {
+          await db.settings.put({ key: row.key, value: row.value });
+          // If geminiApiKey was received from Supabase, also update localStorage / sessionStorage if needed
+          if (row.key === "panga-subcategories-global" && typeof row.value === "object") {
+            try {
+              localStorage.setItem("panga-subcategories-global", JSON.stringify(row.value));
+            } catch {}
+          }
+          if (row.key === "panga-categories-global" && Array.isArray(row.value)) {
+            try {
+              localStorage.setItem("panga-categories-global", JSON.stringify(row.value));
+            } catch {}
+          }
+        }
+      }
+    }
+
+    // 2. PUSH ANY LOCAL PENDING RECORDS TO SUPABASE
+    const pendingProjects = await db.projects.where("syncStatus").equals("pending").toArray();
+    if (pendingProjects.length > 0) {
+      await client.from("projects").upsert(pendingProjects.map(projectToRemote), { onConflict: "id" });
+      await db.projects.bulkPut(pendingProjects.map((p) => ({ ...p, syncStatus: "synced" as const })));
+    }
+
+    const pendingTasks = await db.tasks.where("syncStatus").equals("pending").toArray();
+    if (pendingTasks.length > 0) {
+      await client.from("tasks").upsert(pendingTasks.map(taskToRemote), { onConflict: "id" });
+      await db.tasks.bulkPut(pendingTasks.map((t) => ({ ...t, syncStatus: "synced" as const })));
+    }
+
+    const pendingResources = await db.resources.where("syncStatus").equals("pending").toArray();
+    if (pendingResources.length > 0) {
+      await client.from("resources").upsert(pendingResources.map(resourceToRemote), { onConflict: "id" });
+      await db.resources.bulkPut(pendingResources.map((r) => ({ ...r, syncStatus: "synced" as const })));
+    }
+
+    const pendingMilestones = await db.milestones.where("syncStatus").equals("pending").toArray();
+    if (pendingMilestones.length > 0) {
+      await client.from("milestones").upsert(pendingMilestones.map(milestoneToRemote), { onConflict: "id" });
+      await db.milestones.bulkPut(pendingMilestones.map((m) => ({ ...m, syncStatus: "synced" as const })));
+    }
+
+    const pendingIssues = await db.issues.where("syncStatus").equals("pending").toArray();
+    if (pendingIssues.length > 0) {
+      await client.from("issues").upsert(pendingIssues.map(issueToRemote), { onConflict: "id" });
+      await db.issues.bulkPut(pendingIssues.map((i) => ({ ...i, syncStatus: "synced" as const })));
+    }
+
+    const pendingContacts = await db.contacts.where("syncStatus").equals("pending").toArray();
+    if (pendingContacts.length > 0) {
+      await client.from("contacts").upsert(pendingContacts.map(contactToRemote), { onConflict: "id" });
+      await db.contacts.bulkPut(pendingContacts.map((c) => ({ ...c, syncStatus: "synced" as const })));
+    }
+
+    const pendingReminders = await db.reminders.where("syncStatus").equals("pending").toArray();
+    if (pendingReminders.length > 0) {
+      await client.from("reminders").upsert(pendingReminders.map(reminderToRemote), { onConflict: "id" });
+      await db.reminders.bulkPut(pendingReminders.map((r) => ({ ...r, syncStatus: "synced" as const })));
+    }
+
+    // Push local Gemini API key to Supabase settings if present locally
+    const localGeminiKey = (await db.settings.get("geminiApiKey"))?.value;
+    if (localGeminiKey) {
+      await client.from("settings").upsert(
+        { key: "geminiApiKey", value: localGeminiKey, updated_at: Date.now() },
+        { onConflict: "key" }
+      );
+    }
+
+    lastSyncTimestamp = Date.now();
+    safeSetStorage(LAST_SYNC_KEY, String(lastSyncTimestamp));
+    updateStatus("synced", "All changes synced with Supabase.");
+    return { ok: true, message: "Sync complete! All changes saved to Supabase." };
+  } catch (err: any) {
+    console.error("Supabase sync error:", err);
+    updateStatus("error", err?.message || "Sync failed");
+    return { ok: false, message: `Sync error: ${err?.message || String(err)}` };
+  }
+}

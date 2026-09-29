@@ -1,6 +1,7 @@
 // src/data/tasks.ts
 import { db, type Task, type TaskStatus } from "./db";
 import { newId, now } from "./utils";
+import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
 
 export type { Task, TaskStatus };
 
@@ -59,6 +60,7 @@ export async function createTask(input: {
     syncStatus: "pending",
   };
   await db.tasks.add(task);
+  void syncPushRecord("tasks", task);
   return task;
 }
 
@@ -69,7 +71,10 @@ export async function updateTask(
   >
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
-  await db.tasks.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const updatedAt = now();
+  await db.tasks.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  const updated = await db.tasks.get(id);
+  if (updated) void syncPushRecord("tasks", updated);
 }
 
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<void> {
@@ -80,4 +85,5 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<voi
 export async function deleteTask(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.tasks.delete(id);
+  void syncDeleteRecord("tasks", id);
 }

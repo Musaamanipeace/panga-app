@@ -1,6 +1,7 @@
 // src/data/projects.ts
 import { db, type Project, type ProjectStatus } from "./db";
 import { newId, now } from "./utils";
+import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
 
 export type { Project, ProjectStatus };
 
@@ -41,6 +42,7 @@ export async function createProject(input: {
     syncStatus: "pending",
   };
   await db.projects.add(project);
+  void syncPushRecord("projects", project);
   return project;
 }
 
@@ -49,7 +51,10 @@ export async function updateProject(
   changes: Partial<Pick<Project, "name" | "description" | "status">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
-  await db.projects.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const updatedAt = now();
+  await db.projects.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  const updated = await db.projects.get(id);
+  if (updated) void syncPushRecord("projects", updated);
 }
 
 export async function archiveProject(id: string): Promise<void> {
@@ -74,6 +79,7 @@ export async function deleteProject(id: string): Promise<void> {
       await db.projects.delete(id);
     }
   );
+  void syncDeleteRecord("projects", id);
 }
 
 /** Derived progress (§7 of the plan): completed / total non-archived tasks. */

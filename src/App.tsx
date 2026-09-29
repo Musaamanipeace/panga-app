@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Home from "./pages/Home";
@@ -5,6 +6,7 @@ import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
+import { syncAll, isSupabaseConfigured } from "./sync/supabaseSync";
 import { isLoggedIn } from "./auth/session";
 import "./index.css";
 
@@ -14,9 +16,33 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  if (typeof window !== "undefined") {
-    void ensureSeedData();
-  }
+  useEffect(() => {
+    void ensureSeedData().then(() => {
+      if (isSupabaseConfigured()) {
+        void syncAll();
+      }
+    });
+
+    const handleFocus = () => {
+      if (isSupabaseConfigured() && isLoggedIn()) {
+        void syncAll();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    // Periodically sync every 2 minutes if active
+    const interval = setInterval(() => {
+      if (isSupabaseConfigured() && isLoggedIn()) {
+        void syncAll();
+      }
+    }, 120_000);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      clearInterval(interval);
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>

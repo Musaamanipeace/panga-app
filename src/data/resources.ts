@@ -1,6 +1,7 @@
 // src/data/resources.ts
 import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider } from "./db";
 import { newId, now } from "./utils";
+import { syncPushRecord, syncDeleteRecord } from "../sync/supabaseSync";
 
 export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider };
 
@@ -67,6 +68,7 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
     syncStatus: "pending",
   };
   await db.resources.add(resource);
+  void syncPushRecord("resources", resource);
   return resource;
 }
 
@@ -80,12 +82,16 @@ export async function updateResource(
   >
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
-  await db.resources.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const updatedAt = now();
+  await db.resources.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  const updated = await db.resources.get(id);
+  if (updated) void syncPushRecord("resources", updated);
 }
 
 export async function deleteResource(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.resources.delete(id);
+  void syncDeleteRecord("resources", id);
 }
 
 export async function deleteResourcesForProject(projectId: string): Promise<void> {
