@@ -83,7 +83,7 @@ export interface Task {
 // a given category are populated; the rest are null / empty arrays.
 export interface Resource {
   id: string;
-  projectId: string;
+  projectId: string | null;
   category: ResourceCategory;
   title: string;
   tags: string[];

@@ -20,7 +20,7 @@ export type SearchResultType =
 export interface SearchResult {
   type: SearchResultType;
   id: string;
-  projectId: string;
+  projectId?: string | null;
   projectName: string;
   title: string;
   subtitle?: string;
@@ -43,7 +43,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
     db.insights.toArray(),
   ]);
 
-  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
+  const projectName = (id?: string | null) => (id ? projects.find((p) => p.id === id)?.name ?? "" : "Quick item");
   const matches = (...fields: (string | string[] | undefined | null)[]) =>
     fields.some((f) =>
       Array.isArray(f) ? f.some((x) => x.toLowerCase().includes(q)) : f?.toLowerCase().includes(q)
@@ -91,7 +91,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
         title: r.title,
         subtitle: `Resource · ${r.category}`,
         action: "navigate",
-        target: `/project/${r.projectId}?tab=Resources`,
+        target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
       });
     }
   }
@@ -188,7 +188,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
           title: f.name,
           subtitle: "File attachment",
           action: "navigate",
-          target: `/project/${r.projectId}?tab=Resources`,
+          target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
         });
       }
     }
@@ -202,7 +202,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
           title: img.name,
           subtitle: "Image attachment",
           action: "navigate",
-          target: `/project/${r.projectId}?tab=Resources`,
+          target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
         });
       }
     }

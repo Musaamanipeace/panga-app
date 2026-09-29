@@ -13,16 +13,18 @@ import ProjectCard from "../components/ProjectCard.tsx"
 import MicButton from "../components/MicButton.tsx"
 import { Drawer, ErrorNote, Loading, Slide, useAsync } from "../components/ui.tsx"
 import HomeTasksTab from "../components/home/HomeTasksTab.tsx"
+import HomeResourcesTab from "../components/home/HomeResourcesTab.tsx"
 import HomeContactsTab from "../components/home/HomeContactsTab.tsx"
 import HomeCalendarTab from "../components/home/HomeCalendarTab.tsx"
 import HomeScheduleTab from "../components/home/HomeScheduleTab.tsx"
 import HomeRemindersTab from "../components/home/HomeRemindersTab.tsx"
 
-const TABS = ["Tasks", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
+const TABS = ["Tasks", "Resources", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
   Tasks: "Every task across every project, with a status filter",
+  Resources: "Quick notes, links, scripts, images and documents — standalone or tied to projects",
   Contacts: "Every contact, with links to reach them and add contacts",
   Calendar: "Month grid and list view of all events across projects, with Google Calendar .ics import",
   Schedule: "Tasks with a date and time, plus calendar events and Meet links",
@@ -196,6 +198,7 @@ export default function Home() {
           previousOrder={0}
         >
           {activeTab === "Tasks" && <HomeTasksTab />}
+          {activeTab === "Resources" && <HomeResourcesTab />}
           {activeTab === "Contacts" && <HomeContactsTab />}
           {activeTab === "Calendar" && <HomeCalendarTab />}
           {activeTab === "Schedule" && <HomeScheduleTab />}

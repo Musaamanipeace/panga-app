@@ -5,7 +5,13 @@ import { newId, now } from "./utils";
 export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider };
 
 export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
-  return db.resources.where("projectId").equals(projectId).sortBy("updatedAt");
+  const list = await db.resources.where("projectId").equals(projectId).toArray();
+  return list.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function listAllResources(): Promise<Resource[]> {
+  const all = await db.resources.toArray();
+  return all.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function listResourcesByCategory(projectId: string, category: ResourceCategory): Promise<Resource[]> {
@@ -21,7 +27,7 @@ export async function getResource(id: string): Promise<Resource | undefined> {
 }
 
 export interface CreateResourceInput {
-  projectId: string;
+  projectId?: string | null;
   category: ResourceCategory;
   title: string;
   tags?: string[];
@@ -36,7 +42,7 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
   const t = now();
   const resource: Resource = {
     id: newId(),
-    projectId: input.projectId,
+    projectId: input.projectId ?? null,
     category: input.category,
     title: input.title,
     tags: input.tags ?? [],
@@ -58,7 +64,7 @@ export async function updateResource(
   changes: Partial<
     Pick<
       Resource,
-      "title" | "tags" | "url" | "provider" | "body" | "images" | "files" | "category"
+      "title" | "tags" | "url" | "provider" | "body" | "images" | "files" | "category" | "projectId"
     >
   >
 ): Promise<void> {
