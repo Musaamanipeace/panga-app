@@ -2,6 +2,7 @@
 import { db, type DocEntry } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { logActivity } from "./activity";
 
 export type { DocEntry };
 
@@ -30,6 +31,7 @@ export async function createDocEntry(input: {
   };
   await db.docEntries.add(entry);
   void syncPushRecord("doc_entries", entry);
+  void logActivity({ entityType: "docEntry", entityId: entry.id, projectId: entry.projectId, action: "created", description: `Created documentation "${entry.title}"` });
   return entry;
 }
 
@@ -45,4 +47,6 @@ export async function updateDocEntry(
 export async function deleteDocEntry(id: string): Promise<void> {
   await db.docEntries.delete(id);
   void syncDeleteRecord("doc_entries", id);
+  const projectId = await db.docEntries.where("id").equals(id).first().then(() => null) || null;
+  void logActivity({ entityType: "docEntry", entityId: id, action: "deleted", description: "Documentation deleted" });
 }

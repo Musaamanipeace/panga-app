@@ -19,8 +19,9 @@ import HomeContactsTab from "../components/home/HomeContactsTab.tsx"
 import HomeCalendarTab from "../components/home/HomeCalendarTab.tsx"
 import HomeScheduleTab from "../components/home/HomeScheduleTab.tsx"
 import HomeRemindersTab from "../components/home/HomeRemindersTab.tsx"
+import HomeActivityTab from "../components/home/HomeActivityTab.tsx"
 
-const TABS = ["Tasks", "Resources", "Links", "Contacts", "Calendar", "Schedule", "Reminders"] as const;
+const TABS = ["Tasks", "Resources", "Links", "Contacts", "Calendar", "Schedule", "Reminders", "Activity"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_HINTS: Record<Tab, string> = {
@@ -31,6 +32,7 @@ const TAB_HINTS: Record<Tab, string> = {
   Calendar: "Month grid and list view of all events across projects, with Google Calendar .ics import",
   Schedule: "Tasks with a date and time, plus calendar events and Meet links",
   Reminders: "Reminders grouped into overdue, due and upcoming",
+  Activity: "Recent activity log across all projects and entity types",
 };
 
 export default function Home() {
@@ -188,7 +190,7 @@ export default function Home() {
       {/* Cross-project tabs. */}
       <section className="dashboard-section">
         <h2 className="section-heading">Everything</h2>
-        <nav className="tab-bar" aria-label="Cross-project views">
+        <nav className="tab-bar tab-bar-scrollable" aria-label="Cross-project views">
           {TABS.map((tab) => (
             <button
               key={tab}
@@ -214,6 +216,7 @@ export default function Home() {
           {activeTab === "Calendar" && <HomeCalendarTab />}
           {activeTab === "Schedule" && <HomeScheduleTab />}
           {activeTab === "Reminders" && <HomeRemindersTab />}
+          {activeTab === "Activity" && <HomeActivityTab />}
         </Slide>
       </section>
 

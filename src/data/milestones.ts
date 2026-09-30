@@ -2,6 +2,7 @@
 import { db, type Milestone, type MilestoneStatus } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { logActivity } from "./activity";
 
 export type { Milestone, MilestoneStatus };
 
@@ -31,6 +32,7 @@ export async function createMilestone(input: {
   };
   await db.milestones.add(milestone);
   void syncPushRecord("milestones", milestone);
+  void logActivity({ entityType: "milestone", entityId: milestone.id, projectId: milestone.projectId, action: "created", description: `Created milestone "${milestone.title}"` });
   return milestone;
 }
 
@@ -47,6 +49,7 @@ export async function setMilestoneStatus(id: string, status: MilestoneStatus): P
   await db.milestones.update(id, { status, updatedAt: now(), syncStatus: "pending" });
   const updated = await db.milestones.get(id);
   if (updated) void syncPushRecord("milestones", updated);
+  void logActivity({ entityType: "milestone", entityId: id, projectId: updated?.projectId ?? null, action: "status_changed", description: `Milestone ${status === "achieved" ? "achieved" : status === "missed" ? "missed" : "in progress"}` });
 }
 
 export async function deleteMilestone(id: string): Promise<void> {

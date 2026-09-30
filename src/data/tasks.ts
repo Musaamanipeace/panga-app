@@ -2,6 +2,7 @@
 import { db, type Task, type TaskStatus } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { logActivity } from "./activity";
 
 export type { Task, TaskStatus };
 
@@ -61,6 +62,7 @@ export async function createTask(input: {
   };
   await db.tasks.add(task);
   void syncPushRecord("tasks", task);
+  void logActivity({ entityType: "task", entityId: task.id, projectId: task.projectId, action: "created", description: `Created task "${task.title}"` });
   return task;
 }
 
@@ -86,4 +88,5 @@ export async function deleteTask(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.tasks.delete(id);
   void syncDeleteRecord("tasks", id);
+  void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /* -------------------------------------------------------------------------
    Slide — the single motion primitive.
@@ -306,4 +306,119 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]) {
   }, deps);
 
   return { data, error, loading, reload: run, setData };
+}
+
+/* -------------------------------------------------------------------------
+   Toast — lightweight, self-dismissing notification system
+------------------------------------------------------------------------- */
+
+type ToastType = "info" | "success" | "error";
+
+interface Toast {
+  id: string;
+  message: string;
+  type: ToastType;
+  durationMs?: number;
+}
+
+const toastState: {
+  toasts: Toast[];
+  listeners: Array<() => void>;
+} = {
+  toasts: [],
+  listeners: [],
+};
+
+function emitChange() {
+  toastState.listeners.forEach((l) => l());
+}
+
+export function showToast(message: string, type: ToastType = "info", durationMs = 2800) {
+  const toast: Toast = { id: crypto.randomUUID(), message, type, durationMs };
+  toastState.toasts.push(toast);
+  emitChange();
+
+  setTimeout(() => {
+    const idx = toastState.toasts.findIndex((t) => t.id === toast.id);
+    if (idx >= 0) {
+      toastState.toasts.splice(idx, 1);
+      emitChange();
+    }
+  }, durationMs);
+}
+
+export function useToasts() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const listener = () => setTick((n) => n + 1);
+    toastState.listeners.push(listener);
+    return () => {
+      const idx = toastState.listeners.indexOf(listener);
+      if (idx >= 0) toastState.listeners.splice(idx, 1);
+    };
+  }, []);
+  return toastState.toasts;
+}
+
+export function ToastContainer() {
+  const toasts = useToasts();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.style.cssText = `
+      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    `;
+  }, []);
+
+  if (toasts.length === 0) return null;
+
+  return (
+    <div ref={containerRef}>
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`toast toast-${t.type}`}
+          style={{
+            pointerEvents: "auto",
+            padding: "10px 14px",
+            background: t.type === "error" ? "#fef2f2" : t.type === "success" ? "#f0fdf4" : "#eff6ff",
+            color: t.type === "error" ? "#991b1b" : t.type === "success" ? "#166534" : "#1e40af",
+            border: `1px solid ${t.type === "error" ? "#fecaca" : t.type === "success" ? "#bbf7d0" : "#bfdbfe"}`,
+            borderRadius: "var(--radius-sm)",
+            fontSize: "13px",
+            fontWeight: 500,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            animation: "slideIn 0.2s ease-out",
+          }}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.cssText = "position: fixed; left: -9999px; top: 0;";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    showToast("Copied to clipboard", "success");
+    return true;
+  } catch {
+    showToast("Failed to copy to clipboard", "error");
+    return false;
+  }
 }

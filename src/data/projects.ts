@@ -2,6 +2,7 @@
 import { db, type Project, type ProjectStatus } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { logActivity } from "./activity";
 
 export type { Project, ProjectStatus };
 
@@ -43,6 +44,7 @@ export async function createProject(input: {
   };
   await db.projects.add(project);
   void syncPushRecord("projects", project);
+  void logActivity({ entityType: "project", entityId: project.id, action: "created", description: `Created project "${project.name}"` });
   return project;
 }
 
@@ -54,7 +56,10 @@ export async function updateProject(
   const updatedAt = now();
   await db.projects.update(id, { ...changes, updatedAt, syncStatus: "pending" });
   const updated = await db.projects.get(id);
-  if (updated) void syncPushRecord("projects", updated);
+  if (updated)   void syncPushRecord("projects", updated);
+  if (changes.status === "archived") {
+    void logActivity({ entityType: "project", entityId: id, action: "updated", description: "Project archived" });
+  }
 }
 
 export async function archiveProject(id: string): Promise<void> {

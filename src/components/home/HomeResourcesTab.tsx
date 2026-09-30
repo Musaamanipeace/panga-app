@@ -9,9 +9,12 @@ import {
   type ResourceCategory,
   type ResourceImage,
   type ResourceFile,
+  type ResourceListItem,
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
+import { copyToClipboard } from "../../components/ui";
+import { newId } from "../../data/utils";
 
 export default function HomeResourcesTab() {
   const [resources, setResources] = useState<Resource[]>([]);
@@ -46,10 +49,15 @@ export default function HomeResourcesTab() {
     { id: "links", label: "Links" },
     { id: "images", label: "Images" },
     { id: "pdfs", label: "PDFs" },
+    { id: "preset-list", label: "Preset List" },
   ];
   const [customCategories, setCustomCategories] = useState<{ id: string; label: string }[]>([]);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCatName, setNewCatName] = useState("");
+  const [listItems, setListItems] = useState<ResourceListItem[]>([]);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldValue, setNewFieldValue] = useState("");
 
   useEffect(() => {
     try {
@@ -149,6 +157,10 @@ export default function HomeResourcesTab() {
     setFiles([]);
     setImgLink("");
     setPdfLink("");
+    setListItems([]);
+    setCustomFields({});
+    setNewFieldKey("");
+    setNewFieldValue("");
     setUploadNote(null);
     setShowAddForm(false);
   }
@@ -164,6 +176,8 @@ export default function HomeResourcesTab() {
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
+    setListItems(r.listItems ?? []);
+    setCustomFields(r.customFields ?? {});
     setShowAddForm(true);
   }
 
@@ -182,6 +196,8 @@ export default function HomeResourcesTab() {
       title: title.trim(),
       tags: parsedTags,
       body: body.trim() || null,
+      listItems: listItems,
+      customFields: editing ? (editing.customFields ?? {}) : {},
       files,
       images,
       url: url.trim() || null,
@@ -434,10 +450,195 @@ export default function HomeResourcesTab() {
               <div style={{ marginTop: 4 }}>
                 <MicButton onResult={(text) => setBody((prev) => (prev ? prev + " " + text : text))} />
               </div>
+             </div>
+           )}
+
+           {/* Preset List Items Editor */}
+           {category === "preset-list" && (
+             <div className="field" style={{ flexBasis: "100%" }}>
+               <label>Preset List Items</label>
+               {listItems.length === 0 ? (
+                 <p className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
+                   No items yet. Add items below.
+                 </p>
+               ) : (
+                 <ul style={{ listStyle: "none", padding: 0, margin: "8px 0", maxHeight: 200, overflowY: "auto" }}>
+                   {listItems.map((item, idx) => (
+                     <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                       <input
+                         type="checkbox"
+                         checked={item.checked}
+                         onChange={(e) => {
+                           const updated = [...listItems];
+                           updated[idx] = { ...item, checked: e.target.checked };
+                           setListItems(updated);
+                         }}
+                         data-tip="Check/uncheck this item"
+                       />
+                       <input
+                         type="text"
+                         value={item.text}
+                         onChange={(e) => {
+                           const updated = [...listItems];
+                           updated[idx] = { ...item, text: e.target.value };
+                           setListItems(updated);
+                         }}
+                         placeholder="Item text..."
+                         style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                       />
+                       <input
+                         type="text"
+                         value={item.tags?.join(", ") ?? ""}
+                         onChange={(e) => {
+                           const updated = [...listItems];
+                           updated[idx] = { ...item, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) };
+                           setListItems(updated);
+                         }}
+                         placeholder="tags"
+                         style={{ width: 100, padding: "4px 8px", fontSize: 13 }}
+                         data-tip="Tags for this item"
+                       />
+                       <button
+                         type="button"
+                         className="btn-icon clickable"
+                         data-tip="Move up"
+                         onClick={() => {
+                           if (idx === 0) return;
+                           const updated = [...listItems];
+                           [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
+                           setListItems(updated);
+                         }}
+                       >
+                         ↑
+                       </button>
+                       <button
+                         type="button"
+                         className="btn-icon clickable"
+                         data-tip="Move down"
+                         onClick={() => {
+                           if (idx === listItems.length - 1) return;
+                           const updated = [...listItems];
+                           [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+                           setListItems(updated);
+                         }}
+                       >
+                         ↓
+                       </button>
+                       <button
+                         type="button"
+                         className="task-delete-btn"
+                         data-tip="Delete this item"
+                         onClick={() => setListItems(listItems.filter((_, i) => i !== idx))}
+                       >
+                         ×
+                       </button>
+                     </li>
+                   ))}
+                 </ul>
+               )}
+               <div className="inline-form">
+                 <button
+                   type="button"
+                   className="btn-secondary btn-small clickable"
+                   onClick={() => {
+                     const newItem: ResourceListItem = { id: newId(), text: "", checked: false, tags: [] };
+                     setListItems([...listItems, newItem]);
+                   }}
+                   data-tip="Add a new list item"
+                 >
+                   + Add item
+                 </button>
+                 <button
+                   type="button"
+                   className="btn-secondary btn-small clickable"
+                   onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: true })))}
+                   data-tip="Check all items"
+                 >
+                   Check all
+                 </button>
+<button
+                    type="button"
+                    className="btn-secondary btn-small clickable"
+                    onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: false })))}
+                    data-tip="Clear all checks"
+                  >
+                    Clear all
+                  </button>
+               </div>
             </div>
           )}
 
-          {uploadNote && (
+          {/* Custom Metadata Fields for non-default categories */}
+          {!DEFAULT_CATEGORIES.some((c) => c.id === category) && category !== "preset-list" && (
+            <div className="field" style={{ flexBasis: "100%" }}>
+              <label>Custom Metadata Fields</label>
+              {Object.keys(customFields).length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  {Object.entries(customFields).map(([key, val]) => (
+                    <div key={key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                      <input
+                        type="text"
+                        value={key}
+                        readOnly
+                        style={{ width: 120, padding: "4px 8px", fontSize: 13, background: "var(--color-bg-subtle)" }}
+                      />
+                      <input
+                        type="text"
+                        value={val}
+                        onChange={(e) => setCustomFields({ ...customFields, [key]: e.target.value })}
+                        placeholder="value..."
+                        style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                      />
+                      <button
+                        type="button"
+                        className="task-delete-btn"
+                        data-tip="Remove field"
+                        onClick={() => {
+                          const next = { ...customFields };
+                          delete next[key];
+                          setCustomFields(next);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="inline-form">
+                <input
+                  type="text"
+                  placeholder="Field name (e.g. price, vendor)"
+                  value={newFieldKey}
+                  onChange={(e) => setNewFieldKey(e.target.value)}
+                  style={{ width: 140, padding: "4px 8px", fontSize: 13 }}
+                />
+                <input
+                  type="text"
+                  placeholder="Value"
+                  value={newFieldValue}
+                  onChange={(e) => setNewFieldValue(e.target.value)}
+                  style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary btn-small clickable"
+                  data-tip="Add a custom metadata field"
+                  onClick={() => {
+                    const k = newFieldKey.trim();
+                    if (!k) return;
+                    setCustomFields({ ...customFields, [k]: newFieldValue });
+                    setNewFieldKey("");
+                    setNewFieldValue("");
+                  }}
+                >
+                  + Add field
+                </button>
+              </div>
+            </div>
+          )}
+
+            {uploadNote && (
             <p className="otp-error" style={{ flexBasis: "100%", margin: "4px 0" }}>
               {uploadNote}
             </p>
@@ -640,13 +841,26 @@ export default function HomeResourcesTab() {
                     </a>
                   ) : null}
 
-                  {r.body && (
-                    <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>
-                      {r.body}
-                    </p>
-                  )}
+                   {r.body && (
+                     <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>
+                       {r.body}
+                     </p>
+                   )}
 
-                  {r.images && r.images.length > 0 && (
+                   {r.category === "preset-list" && r.listItems && r.listItems.length > 0 && (
+                     <ul style={{ listStyle: "none", padding: 0, margin: "8px 0", fontSize: 13 }}>
+                       {r.listItems.map((item) => (
+                         <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+                           <input type="checkbox" checked={item.checked} readOnly style={{ pointerEvents: "none" }} />
+                           <span style={{ textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "var(--color-text-muted)" : "inherit" }}>
+                             {item.text}
+                           </span>
+                         </li>
+                       ))}
+                     </ul>
+                   )}
+
+                   {r.images && r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) =>
                         img.link ? (
@@ -682,34 +896,56 @@ export default function HomeResourcesTab() {
                     </div>
                   )}
 
-                  <div style={{ marginTop: 4 }}>
-                    <span className="chip-small">{label}</span>
-                    {r.tags.map((t) => (
-                      <span key={t} className="chip-small">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
+                   <div style={{ marginTop: 4 }}>
+                     <span className="chip-small">{label}</span>
+                     {r.tags.map((t) => (
+                       <span key={t} className="chip-small">
+                         {t}
+                       </span>
+                     ))}
+                     {r.customFields && Object.keys(r.customFields).length > 0 && (
+                       Object.entries(r.customFields).map(([k, v]) => (
+                         <span key={k} className="chip-small" data-tip={`${k}: ${v}`}>{k}: {v}</span>
+                       ))
+                     )}
+                   </div>
                 </span>
 
-                <button
-                  className="btn-icon clickable"
-                  data-tip="Edit resource"
-                  onClick={() => openEdit(r)}
-                >
-                  Edit
-                </button>
-                <button
-                  className="task-delete-btn"
-                  data-tip="Delete resource"
-                  onClick={async () => {
-                    if (!confirm(`Delete resource "${r.title}"?`)) return;
-                    await deleteResource(r.id);
-                    refresh();
-                  }}
-                >
-                  ×
-                </button>
+                 <button
+                   className="btn-icon clickable"
+                   data-tip="Edit resource"
+                   onClick={() => openEdit(r)}
+                 >
+                   Edit
+                 </button>
+                 <button
+                   className="btn-icon clickable"
+                   data-tip="Copy resource title"
+                   onClick={async () => { await copyToClipboard(r.title || ""); }}
+                 >
+                   📋 Title
+                 </button>
+                 <button
+                   className="btn-icon clickable"
+                   data-tip="Copy full resource text"
+                   onClick={async () => {
+                     const full = [r.title, r.body, r.url, ...(r.tags || [])].filter(Boolean).join("\n\n");
+                     await copyToClipboard(full);
+                   }}
+                 >
+                   📋 Full
+                 </button>
+                 <button
+                   className="task-delete-btn"
+                   data-tip="Delete resource"
+                   onClick={async () => {
+                     if (!confirm(`Delete resource "${r.title}"?`)) return;
+                     await deleteResource(r.id);
+                     refresh();
+                   }}
+                 >
+                   ×
+                 </button>
               </li>
             );
           })}
@@ -726,6 +962,7 @@ function getCategoryColor(cat: string): string {
     links: "#22c55e",
     images: "#a855f7",
     pdfs: "#f59e0b",
+    "preset-list": "#f59e0b",
   };
   if (colors[cat]) return colors[cat];
   let hash = 0;

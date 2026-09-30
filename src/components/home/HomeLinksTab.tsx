@@ -10,6 +10,7 @@ import {
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
+import { copyToClipboard } from "../../components/ui";
 
 export default function HomeLinksTab() {
   const [links, setLinks] = useState<Resource[]>([]);
@@ -153,9 +154,16 @@ export default function HomeLinksTab() {
     await refresh();
   }
 
-  function handleCopy(id: string, linkUrl: string) {
-    navigator.clipboard?.writeText(linkUrl);
+  async function handleCopy(id: string, linkUrl: string) {
+    await copyToClipboard(linkUrl);
     setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1800);
+  }
+
+  async function handleCopyFull(link: Resource) {
+    const full = [link.title, link.body, link.url, ...(link.tags || [])].filter(Boolean).join("\n\n");
+    await copyToClipboard(full);
+    setCopiedId(link.id);
     setTimeout(() => setCopiedId(null), 1800);
   }
 
@@ -552,6 +560,14 @@ export default function HomeLinksTab() {
                       data-tip="Copy link URL"
                     >
                       {isCopied ? "✓ Copied!" : "Copy"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small clickable"
+                      onClick={() => handleCopyFull(link)}
+                      data-tip="Copy full link text (title + body + url)"
+                    >
+                      📋 Full
                     </button>
                     <button
                       type="button"

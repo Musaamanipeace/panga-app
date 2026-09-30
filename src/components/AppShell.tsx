@@ -2,6 +2,8 @@ import { Link, Outlet } from "react-router-dom";
 import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
+import { ToastContainer } from "./ui";
+import StashPanel from "./Stash";
 import { getSessionEmail } from "../auth/session";
 import { signOut, subscribeSyncStatus, syncAll } from "../sync/sync";
 
@@ -116,6 +118,8 @@ export default function AppShell() {
         <Outlet />
       </main>
       <AssistantPanel />
+      <ToastContainer />
+      <StashPanel />
     </div>
   );
 }

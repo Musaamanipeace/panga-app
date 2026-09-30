@@ -35,6 +35,7 @@ export type ResourceCategory =
   | "links"
   | "images"
   | "pdfs"
+  | "preset-list"
   | (string & {});
 
 export interface ResourceImage {
@@ -50,6 +51,13 @@ export interface ResourceFile {
   text?: string; // for notes: parsed text content
   dataUrl?: string; // legacy support for existing base64 files
   type?: string; // legacy
+}
+
+export interface ResourceListItem {
+  id: string;
+  text: string;
+  checked: boolean;
+  tags: string[];
 }
 
 export interface Project {
@@ -88,9 +96,11 @@ export interface Resource {
   title: string;
   tags: string[];
   // Category-specific fields:
-  url: string | null; // links
+   url: string | null; // links
   provider: ResourceProvider | null; // links (AI chat links)
   body: string | null; // notes, scripts, links
+  listItems: ResourceListItem[]; // preset-list: structured checklist items
+  customFields: Record<string, string>; // custom resource types: user-defined key-value metadata
   images: ResourceImage[]; // images
   files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (Drive file info)
   createdAt: number;
@@ -237,6 +247,36 @@ export function getUserDbName(): string {
   return `panga-db-${userId}`;
 }
 
+export interface Draft {
+  id: string;
+  entityType: string;
+  entityId: string | null;
+  content: string;
+  title: string | null;
+  updatedAt: number;
+}
+
+export interface ActivityLog {
+  id: string;
+  entityType: string;
+  entityId: string | null;
+  projectId: string | null;
+  action: string;
+  description: string;
+  timestamp: number;
+  userId: string | null;
+}
+
+export interface ThoughtEntry {
+  id: string;
+  text: string;
+  projectContext: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type { ResourceListItem };
+
 class PangaDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
@@ -252,6 +292,9 @@ class PangaDB extends Dexie {
   messages!: Table<Message, string>;
   insights!: Table<Insight, string>;
   settings!: Table<{ key: string; value: any }, string>;
+  drafts!: Table<Draft, string>;
+  activityLog!: Table<ActivityLog, string>;
+  trainOfThought!: Table<ThoughtEntry, string>;
 
   constructor() {
     super(getUserDbName());
@@ -453,6 +496,32 @@ class PangaDB extends Dexie {
           console.warn("calendarEvents upgrade error:", err);
         }
       });
+
+    // v8: add listItems/customFields to resources, add drafts table
+    this.version(8).stores({
+      resources: "id, projectId, category, updatedAt, syncStatus, *tags, provider",
+      drafts: "id, entityType, entityId, updatedAt",
+    }).upgrade(async (tx) => {
+      try {
+        const resources = await tx.table("resources").toArray();
+        for (const r of resources) {
+          if ((r as any).listItems === undefined) {
+            await tx.table("resources").where("id").equals(r.id).modify({ listItems: [] });
+          }
+          if ((r as any).customFields === undefined) {
+            await tx.table("resources").where("id").equals(r.id).modify({ customFields: {} });
+          }
+        }
+      } catch (e) {
+        console.warn("Resources v8 upgrade error:", e);
+      }
+    });
+
+    // v9: add activityLog, trainOfThought tables
+    this.version(9).stores({
+      activityLog: "id, entityType, entityId, projectId, timestamp",
+      trainOfThought: "id, createdAt, projectContext",
+    });
   }
 }
 
@@ -495,6 +564,7 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
     "messages",
     "insights",
     "settings",
+    "drafts",
   ];
 
   const data: Record<string, any[]> = {};
@@ -531,6 +601,7 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
     "messages",
     "insights",
     "settings",
+    "drafts",
   ];
 
   // Use the array form of transaction to avoid argument limit
@@ -555,6 +626,7 @@ export async function hasLocalData(): Promise<boolean> {
     "projects", "tasks", "resources", "docEntries", "milestones",
     "issues", "contacts", "reminders", "calendarEvents",
     "scheduleItems", "conversations", "messages", "insights",
+    "drafts",
   ];
   const counts = await Promise.all(
     tables.map((t) => (db as any)[t]?.count().catch(() => 0))

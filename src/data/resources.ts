@@ -1,9 +1,10 @@
 // src/data/resources.ts
-import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider } from "./db";
+import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider, type ResourceListItem } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { logActivity } from "./activity";
 
-export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider };
+export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider, ResourceListItem };
 
 export async function listResourcesForProject(projectId: string): Promise<Resource[]> {
   if (!db.isOpen()) await db.open();
@@ -45,6 +46,8 @@ export interface CreateResourceInput {
   url?: string | null;
   provider?: ResourceProvider | null;
   body?: string | null;
+  listItems?: ResourceListItem[];
+  customFields?: Record<string, string>;
   images?: ResourceImage[];
   files?: ResourceFile[];
 }
@@ -60,8 +63,10 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
     tags: input.tags ?? [],
     url: input.url ?? null,
     provider: input.provider ?? null,
-    body: input.body ?? null,
-    images: input.images ?? [],
+     body: input.body ?? null,
+     listItems: input.listItems ?? [],
+     customFields: input.customFields ?? {},
+     images: input.images ?? [],
     files: input.files ?? [],
     createdAt: t,
     updatedAt: t,
@@ -69,6 +74,7 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
   };
   await db.resources.add(resource);
   void syncPushRecord("resources", resource);
+  void logActivity({ entityType: "resource", entityId: resource.id, projectId: resource.projectId, action: "created", description: `Created resource "${resource.title}"` });
   return resource;
 }
 
@@ -77,7 +83,7 @@ export async function updateResource(
   changes: Partial<
     Pick<
       Resource,
-      "title" | "tags" | "url" | "provider" | "body" | "images" | "files" | "category" | "projectId"
+      "title" | "tags" | "url" | "provider" | "body" | "images" | "files" | "category" | "projectId" | "listItems" | "customFields"
     >
   >
 ): Promise<void> {
@@ -92,6 +98,7 @@ export async function deleteResource(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.resources.delete(id);
   void syncDeleteRecord("resources", id);
+  void logActivity({ entityType: "resource", entityId: id, action: "deleted", description: "Resource deleted" });
 }
 
 export async function deleteResourcesForProject(projectId: string): Promise<void> {

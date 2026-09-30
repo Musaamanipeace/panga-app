@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getProject, getProjectTaskStats } from "../data/projects";
 import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile } from "../data/resources";
+import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile, type ResourceListItem } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
@@ -10,6 +10,8 @@ import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type Calenda
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
 import { db, type Project } from "../data/db";
 import { newId, now } from "../data/utils";
+import { copyToClipboard } from "../components/ui";
+import { useTabHistory } from "../data/tabHistory";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
 import InsightsTab from "../components/project/InsightsTab";
@@ -51,8 +53,24 @@ export default function ProjectView() {
   const [pending, setPending] = useState(0);
   const activeTab = (TAB_QUERY[searchParams.get("tab") ?? ""] as Tab) ?? "Documentation";
 
+  // Tab navigation history (Prompt 1.3)
+  const tabHistory = useTabHistory(projectId, activeTab);
+  const { backTab, forwardTab, recentTabs } = tabHistory;
+
   function setActiveTab(tab: Tab) {
     setSearchParams({ tab });
+  }
+
+  function goBack() {
+    if (backTab) {
+      setSearchParams({ tab: backTab as Tab });
+    }
+  }
+
+  function goForward() {
+    if (forwardTab) {
+      setSearchParams({ tab: forwardTab as Tab });
+    }
   }
 
   async function refreshProject() {
@@ -88,7 +106,44 @@ export default function ProjectView() {
       <ProgressBar percent={progress} pending={pending} />
       <span className="progress-label">{progress}% complete</span>
 
-      <nav className="tab-bar">
+      <nav className="tab-bar tab-bar-scrollable" ref={(el) => { if (el) el.style.overflowX = "auto"; }}>
+        <div className="tab-nav-controls">
+          <button
+            type="button"
+            className="btn-icon clickable tab-history-btn"
+            onClick={goBack}
+            disabled={!backTab}
+            data-tip={backTab ? `Go back to ${backTab}` : "No previous tab"}
+            aria-label="Back"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            className="btn-icon clickable tab-history-btn"
+            onClick={goForward}
+            disabled={!forwardTab}
+            data-tip={forwardTab ? `Go forward to ${forwardTab}` : "No next tab"}
+            aria-label="Forward"
+          >
+            →
+          </button>
+          {recentTabs.length > 0 && (
+            <select
+              className="tab-history-dropdown"
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as Tab)}
+              data-tip="Switch to recently visited tab"
+              aria-label="Tab history"
+            >
+              {recentTabs.map((entry) => (
+                <option key={`${entry.tab}-${entry.timestamp}`} value={entry.tab}>
+                  {entry.tab} · {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -375,6 +430,13 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
               <span className="task-status-label">{task.status}</span>
               <button
                 className="btn-icon clickable"
+                data-tip="Copy task title"
+                onClick={async () => { await copyToClipboard(task.title); }}
+              >
+                📋
+              </button>
+              <button
+                className="btn-icon clickable"
                 data-tip="Rename task"
                 onClick={() => startEdit(task)}
               >
@@ -407,6 +469,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [provider, setProvider] = useState<"gemini" | "claude" | "gpt" | "other">("other");
   const [images, setImages] = useState<ResourceImage[]>([]);
   const [files, setFiles] = useState<ResourceFile[]>([]);
+  const [listItems, setListItems] = useState<ResourceListItem[]>([]);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldValue, setNewFieldValue] = useState("");
   const [imgLink, setImgLink] = useState("");
   const [pdfLink, setPdfLink] = useState("");
 
@@ -416,6 +482,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     { id: "links", label: "Links" },
     { id: "images", label: "Images" },
     { id: "pdfs", label: "PDFs" },
+    { id: "preset-list", label: "Preset List" },
   ];
 
   // Custom categories state (global addition, accessible across all projects)
@@ -504,6 +571,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     },
     images: { all: "All" },
     pdfs: { all: "All" },
+    "preset-list": { all: "All" },
   };
 
   // Custom subcategories state (shared across all projects)
@@ -586,6 +654,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setFiles([]);
     setImgLink("");
     setPdfLink("");
+    setListItems([]);
+    setCustomFields({});
+    setNewFieldKey("");
+    setNewFieldValue("");
     setEditing(null);
   }
 
@@ -600,6 +672,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       title: title.trim(),
       tags: subcat ? [subcat] : [],
       body: body.trim() || null,
+      listItems: listItems,
+      customFields,
       files,
       images,
       url: url.trim() || null,
@@ -622,6 +696,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
+    setListItems(r.listItems ?? []);
+    setCustomFields(r.customFields ?? {});
     if (r.tags.length > 0 && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]]) {
       setSubfilter(r.tags[0]);
     } else {
@@ -847,7 +923,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         )}
 
         {/* Explicit Note Body / Content Area */}
-        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory)) && (
+        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || (!DEFAULT_CATEGORIES.some((c) => c.id === activeCategory) && activeCategory !== "preset-list")) && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>
               {activeCategory === "notes" ? "Note Body" : "Body / Description / Content"}
@@ -861,6 +937,191 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             />
             <div style={{ marginTop: 4 }}>
               <MicButton onResult={(text) => setBody((prev) => (prev ? prev + " " + text : text))} />
+            </div>
+          </div>
+         )}
+
+        {/* Preset List Items Editor */}
+        {activeCategory === "preset-list" && (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Preset List Items</label>
+            {listItems.length === 0 ? (
+              <p className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
+                No items yet. Add items below.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: "8px 0", maxHeight: 200, overflowY: "auto" }}>
+                {listItems.map((item, idx) => (
+                  <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={item.checked}
+                      onChange={(e) => {
+                        const updated = [...listItems];
+                        updated[idx] = { ...item, checked: e.target.checked };
+                        setListItems(updated);
+                      }}
+                      data-tip="Check/uncheck this item"
+                    />
+                    <input
+                      type="text"
+                      value={item.text}
+                      onChange={(e) => {
+                        const updated = [...listItems];
+                        updated[idx] = { ...item, text: e.target.value };
+                        setListItems(updated);
+                      }}
+                      placeholder="Item text..."
+                      style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                    />
+                    <input
+                      type="text"
+                      value={item.tags?.join(", ") ?? ""}
+                      onChange={(e) => {
+                        const updated = [...listItems];
+                        updated[idx] = { ...item, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) };
+                        setListItems(updated);
+                      }}
+                      placeholder="tags (comma separated)"
+                      style={{ width: 120, padding: "4px 8px", fontSize: 13 }}
+                      data-tip="Tags for this item"
+                    />
+                    <button
+                      type="button"
+                      className="btn-icon clickable"
+                      data-tip="Move item up"
+                      onClick={() => {
+                        if (idx === 0) return;
+                        const updated = [...listItems];
+                        [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
+                        setListItems(updated);
+                      }}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon clickable"
+                      data-tip="Move item down"
+                      onClick={() => {
+                        if (idx === listItems.length - 1) return;
+                        const updated = [...listItems];
+                        [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+                        setListItems(updated);
+                      }}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="task-delete-btn"
+                      data-tip="Delete this item"
+                      onClick={() => setListItems(listItems.filter((_, i) => i !== idx))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="inline-form">
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => {
+                  const newItem: ResourceListItem = { id: newId(), text: "", checked: false, tags: [] };
+                  setListItems([...listItems, newItem]);
+                }}
+                data-tip="Add a new list item"
+              >
+                + Add item
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: true })))}
+                data-tip="Check all items"
+              >
+                Check all
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: false })))}
+                data-tip="Uncheck all items"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Fields for non-default categories */}
+        {!DEFAULT_CATEGORIES.some((c) => c.id === activeCategory) && activeCategory !== "preset-list" && (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>Custom Metadata Fields</label>
+            {Object.keys(customFields).length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {Object.entries(customFields).map(([key, val]) => (
+                  <div key={key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                    <input
+                      type="text"
+                      value={key}
+                      readOnly
+                      style={{ width: 120, padding: "4px 8px", fontSize: 13, background: "var(--color-bg-subtle)" }}
+                    />
+                    <input
+                      type="text"
+                      value={val}
+                      onChange={(e) => setCustomFields({ ...customFields, [key]: e.target.value })}
+                      placeholder="value..."
+                      style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                    />
+                    <button
+                      type="button"
+                      className="task-delete-btn"
+                      data-tip="Remove field"
+                      onClick={() => {
+                        const next = { ...customFields };
+                        delete next[key];
+                        setCustomFields(next);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="inline-form">
+              <input
+                type="text"
+                placeholder="Field name (e.g. price, vendor, status)"
+                value={newFieldKey}
+                onChange={(e) => setNewFieldKey(e.target.value)}
+                style={{ width: 140, padding: "4px 8px", fontSize: 13 }}
+              />
+              <input
+                type="text"
+                placeholder="Value"
+                value={newFieldValue}
+                onChange={(e) => setNewFieldValue(e.target.value)}
+                style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                data-tip="Add a custom metadata field"
+                onClick={() => {
+                  const k = newFieldKey.trim();
+                  if (!k) return;
+                  setCustomFields({ ...customFields, [k]: newFieldValue });
+                  setNewFieldKey("");
+                  setNewFieldValue("");
+                }}
+              >
+                + Add field
+              </button>
             </div>
           </div>
         )}
@@ -1074,8 +1335,30 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                       {r.url}
                     </a>
                   ) : null}
-                  {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
-                  {r.images.length > 0 && (
+                   {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
+                   {r.customFields && Object.keys(r.customFields).length > 0 && (
+                     <div style={{ marginTop: 6, fontSize: 13 }}>
+                       {Object.entries(r.customFields).map(([k, v]) => (
+                         <span key={k} className="chip-small" data-tip={`${k}: ${v}`}>{k}: {v}</span>
+                       ))}
+                     </div>
+                   )}
+                   {r.category === "preset-list" && r.listItems && r.listItems.length > 0 && (
+                     <ul className="preset-list-preview" style={{ listStyle: "none", padding: 0, margin: "8px 0", fontSize: 13 }}>
+                       {r.listItems.map((item) => (
+                         <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+                           <input type="checkbox" checked={item.checked} readOnly style={{ pointerEvents: "none" }} />
+                           <span style={{ textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "var(--color-text-muted)" : "inherit" }}>
+                             {item.text}
+                           </span>
+                           {item.tags && item.tags.length > 0 && (
+                             <span className="chip-small" style={{ fontSize: 10 }}>{item.tags.join(", ")}</span>
+                           )}
+                         </li>
+                       ))}
+                     </ul>
+                   )}
+                   {r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) => (
                         img.link ? (
@@ -1115,6 +1398,23 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                   Edit
                 </button>
                 <button
+                  className="btn-icon clickable"
+                  data-tip="Copy resource title"
+                  onClick={async () => { await copyToClipboard(r.title || ""); }}
+                >
+                  📋 Title
+                </button>
+                <button
+                  className="btn-icon clickable"
+                  data-tip="Copy full resource text"
+                  onClick={async () => {
+                    const full = [r.title, r.body, r.url, ...(r.tags || [])].filter(Boolean).join("\n\n");
+                    await copyToClipboard(full);
+                  }}
+                >
+                  📋 Full
+                </button>
+                <button
                   className="task-delete-btn"
                   data-tip="Delete resource"
                   onClick={async () => { await deleteResource(r.id); refresh(); }}
@@ -1137,6 +1437,7 @@ function getCategoryColor(cat: string): string {
     links: "#22c55e",
     images: "#a855f7",
     pdfs: "#f59e0b",
+    "preset-list": "#f59e0b",
   };
   if (colors[cat]) return colors[cat];
   let hash = 0;

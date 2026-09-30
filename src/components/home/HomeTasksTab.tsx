@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { listAllTasks, isOverdue, setTaskStatus, type Task, type TaskStatus } from "../../data/tasks";
+import { listAllTasks, isOverdue, setTaskStatus, createTask, type Task, type TaskStatus } from "../../data/tasks";
 import { listAllProjects } from "../../data/projects";
 import { reconcileMilestoneStatuses } from "../../data/milestones";
-import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
+import { copyToClipboard, ErrorNote, Loading, StatusLabel, useAsync, useToasts } from "../../components/ui";
 
 type Filter = "all" | "active" | "inactive" | "completed" | "overdue" | "ai" | "scheduled";
 
@@ -19,6 +19,10 @@ const FILTERS: { id: Filter; label: string; hint: string }[] = [
 
 export default function HomeTasksTab() {
   const [filter, setFilter] = useState<Filter>("active");
+  const { showToast } = useToasts();
+  const [quickAdd, setQuickAdd] = useState(false);
+  const [title, setTitle] = useState("");
+  const [projectId, setProjectId] = useState("");
   const { data, error, loading, reload } = useAsync(async () => {
     const [tasks, projects] = await Promise.all([listAllTasks(), listAllProjects()]);
     return { tasks, projects };
@@ -82,42 +86,115 @@ export default function HomeTasksTab() {
     });
   }, [data, filter]);
 
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    try {
+      await createTask({
+        title: title.trim(),
+        status: "active",
+        projectId: projectId || undefined,
+      });
+      showToast({ type: "success", message: "Task added" });
+      setTitle("");
+      setProjectId("");
+      setQuickAdd(false);
+      reload();
+    } catch (err) {
+      showToast({ type: "error", message: "Failed to add task" });
+    }
+  }
+
   if (error) return <ErrorNote error={error} onRetry={reload} />;
   if (loading) return <Loading label="Loading tasks..." />;
 
   return (
     <div>
       <div className="chip-row">
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            className={`chip ${filter === f.id ? "chip-active" : ""}`}
-            onClick={() => setFilter(f.id)}
-            data-tip={`${f.hint}. ${counts[f.id]} shown.`}
-            aria-pressed={filter === f.id}
-          >
-            {f.label}
-            <span className="tab-btn-count">{counts[f.id]}</span>
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`chip ${!quickAdd ? "chip-active" : ""}`}
+          onClick={() => setQuickAdd(false)}
+          data-tip="Show all tasks"
+        >
+          All Tasks
+        </button>
+        <button
+          type="button"
+          className={`chip ${quickAdd ? "chip-active" : ""}`}
+          onClick={() => setQuickAdd(true)}
+          data-tip="Quick add a new task from here"
+        >
+          + Add
+        </button>
+        {quickAdd ? (
+          <form className="quick-add-bar" onSubmit={handleQuickAdd}>
+            <input
+              type="text"
+              placeholder="Task title..."
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+              data-tip="Enter task title"
+            />
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              data-tip="Link this task to a project (optional)"
+            >
+              <option value="">Standalone (no project)</option>
+              {(data?.projects ?? []).map((p: any) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <button type="submit" className="btn-action clickable" data-tip="Add task">
+              +
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-small"
+              onClick={() => setQuickAdd(false)}
+              data-tip="Cancel"
+            >
+              ✕
+            </button>
+          </form>
+        ) : (
+          FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`chip ${filter === f.id ? "chip-active" : ""}`}
+              onClick={() => setFilter(f.id)}
+              data-tip={`${f.hint}. ${counts[f.id]} shown.`}
+              aria-pressed={filter === f.id}
+            >
+              {f.label}
+              <span className="tab-btn-count">{counts[f.id]}</span>
+            </button>
+          ))
+        )}
       </div>
 
-      {filtered.length === 0 ? (
-        <p className="empty-state">
-          Nothing matches this filter. Tasks are added from a project's Tasks tab.
-        </p>
-      ) : (
-        <ul className="item-list">
-          {filtered.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              projectName={projectName.get(task.projectId) ?? ""}
-              onToggle={handleToggleStatus}
-            />
-          ))}
-        </ul>
+      {!quickAdd && (
+        <>
+          {filtered.length === 0 ? (
+            <p className="empty-state">
+              Nothing matches this filter. Click + Add to create a task from here.
+            </p>
+          ) : (
+            <ul className="item-list">
+              {filtered.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  projectName={projectName.get(task.projectId) ?? ""}
+                  onToggle={handleToggleStatus}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
@@ -170,6 +247,14 @@ function TaskRow({
         >
           Open
         </Link>
+        <button
+          type="button"
+          className="btn-icon clickable"
+          data-tip="Copy task title to clipboard"
+          onClick={async () => { await copyToClipboard(task.title); }}
+        >
+          📋
+        </button>
       </span>
     </li>
   );
