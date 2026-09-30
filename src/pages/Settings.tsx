@@ -4,6 +4,7 @@ import {
   downloadSnapshot,
   readSnapshotFile,
   importSnapshot,
+  exportSnapshot,
 } from "../sync/snapshot";
 
 export default function Settings() {
@@ -15,6 +16,11 @@ export default function Settings() {
   const [backupStatus, setBackupStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
+
+  // Email backup
+  const [emailBackupEmail, setEmailBackupEmail] = useState("");
+  const [emailBackupStatus, setEmailBackupStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [emailBackupMessage, setEmailBackupMessage] = useState<string | null>(null);
 
   // File input ref for snapshot upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,14 +80,58 @@ export default function Settings() {
     }
   }
 
+  async function handleEmailBackup() {
+    if (!emailBackupEmail.trim() || !emailBackupEmail.includes('@')) {
+      setEmailBackupMessage("Please enter a valid email address.");
+      setEmailBackupStatus("error");
+      return;
+    }
+
+    setBackupLoading(true);
+    setEmailBackupStatus("sending");
+    setEmailBackupMessage("Generating backup and sending email...");
+
+    try {
+      // Generate snapshot
+      const snapshot = await exportSnapshot();
+
+      // Send to API
+      const response = await fetch('/api/backup/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: emailBackupEmail.trim(),
+          snapshot,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send email');
+      }
+
+      setEmailBackupStatus("sent");
+      setEmailBackupMessage(`Backup sent to ${emailBackupEmail.trim()}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setEmailBackupStatus("error");
+      setEmailBackupMessage(`Email backup failed: ${message}`);
+    } finally {
+      setBackupLoading(false);
+    }
+  }
+
   const getStatusBadge = () => {
     const statusStyles: Record<string, { bg: string; color: string; label: string }> = {
       idle: { bg: "#f3f4f6", color: "#6b7280", label: "Ready" },
       saving: { bg: "#fef3c7", color: "#92400e", label: "Working..." },
+      sending: { bg: "#fef3c7", color: "#92400e", label: "Sending..." },
       saved: { bg: "#ecfdf5", color: "#065f46", label: "Success" },
+      sent: { bg: "#ecfdf5", color: "#065f46", label: "Sent" },
       error: { bg: "#fef2f2", color: "#991b1b", label: "Error" },
     };
-    const s = statusStyles[backupStatus];
+    const s = statusStyles[backupStatus] || statusStyles[emailBackupStatus] || statusStyles.idle;
     return (
       <span
         className="chip-small"
@@ -144,7 +194,34 @@ export default function Settings() {
           </button>
         </div>
 
-        {backupMessage && (
+        {/* Email Backup Section */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--color-border)" }}>
+          <h3 style={{ margin: "0 0 8px 0", fontSize: "14px" }}>📧 Email Backup</h3>
+          <p className="settings-help" style={{ marginBottom: 12 }}>
+            Send a complete backup of your data to any email address as a JSON attachment.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              type="email"
+              placeholder="recipient@example.com"
+              value={emailBackupEmail}
+              onChange={(e) => setEmailBackupEmail(e.target.value)}
+              style={{ minWidth: "280px", flex: 1 }}
+              data-tip="Email address to receive the backup"
+            />
+            <button
+              type="button"
+              className="btn-primary clickable"
+              onClick={handleEmailBackup}
+              disabled={backupLoading || emailBackupStatus === "sending"}
+              data-tip="Generate backup and send via email"
+            >
+              {emailBackupStatus === "sending" ? "Sending..." : "📧 Email Backup"}
+            </button>
+          </div>
+        </div>
+
+        {(backupMessage || emailBackupMessage) && (
           <p
             className="progress-label"
             style={{
@@ -152,12 +229,16 @@ export default function Settings() {
               padding: "8px 12px",
               borderRadius: "var(--radius-sm)",
               background:
-                backupStatus === "error" ? "#fef2f2" : backupStatus === "saving" ? "#fef3c7" : "#f0fdf4",
-              color: backupStatus === "error" ? "#991b1b" : backupStatus === "saving" ? "#92400e" : "#166534",
+                backupStatus === "error" || emailBackupStatus === "error" ? "#fef2f2"
+                : backupStatus === "saving" || emailBackupStatus === "sending" ? "#fef3c7"
+                : "#f0fdf4",
+              color: backupStatus === "error" || emailBackupStatus === "error" ? "#991b1b"
+                : backupStatus === "saving" || emailBackupStatus === "sending" ? "#92400e"
+                : "#166534",
               border: "1px solid var(--color-border)",
             }}
           >
-            {backupMessage}
+            {backupMessage || emailBackupMessage}
           </p>
         )}
       </section>

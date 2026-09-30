@@ -1,0 +1,42 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/assistant/chat",
+      "destination": "/api/assistant/chat"
+    },
+    {
+      "source": "/api/backup/email",
+      "destination": "/api/backup/email"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/assistant/chat.js": {
+      "maxDuration": 30
+    },
+    "api/backup/email.js": {
+      "maxDuration": 60
+    }
+  }
+}
