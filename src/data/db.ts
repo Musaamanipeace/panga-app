@@ -237,6 +237,7 @@ export const SETTINGS_KEYS = {
   googlePickerKey: "googlePickerKey",
   googleAccessToken: "googleAccessToken",
   driveFolderPrefix: "driveFolder:",
+  webdavConfig: "webdavConfig",
 } as const;
 
 // Derive a stable, per-user database name from the logged-in user ID.

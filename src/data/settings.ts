@@ -1,6 +1,7 @@
 // src/data/settings.ts
 import { db, SETTINGS_KEYS } from "./db";
 import { syncPushSetting } from "../sync/sync";
+import { encryptText, decryptText } from "../sync/crypto";
 
 export { SETTINGS_KEYS };
 
@@ -86,4 +87,63 @@ export async function getGeminiApiKey(): Promise<string | null> {
 
 export async function setGeminiApiKey(key: string): Promise<void> {
   await setSetting("geminiApiKey", key);
+}
+
+// --- WebDAV configuration ---
+
+/** Stored form (password is AES-GCM encrypted in IndexedDB, never plaintext). */
+interface WebdavConfigStored {
+  endpoint: string;
+  username: string;
+  encryptedPassword: string;
+  backupPath: string;
+}
+
+/** In-memory form returned to callers (password decrypted on the fly). */
+export interface WebdavConfigRuntime {
+  endpoint: string;
+  username: string;
+  password: string;
+  backupPath: string;
+}
+
+/** Default backup file path on the WebDAV server. */
+export const DEFAULT_BACKUP_PATH = "app_backup.json";
+
+export async function getWebdavConfig(): Promise<WebdavConfigRuntime | null> {
+  const stored = await getSetting<WebdavConfigStored>("webdavConfig");
+  if (!stored?.endpoint || !stored?.username || !stored?.encryptedPassword) {
+    return null;
+  }
+  try {
+    const password = await decryptText(stored.encryptedPassword);
+    return {
+      endpoint: stored.endpoint,
+      username: stored.username,
+      password,
+      backupPath: stored.backupPath || DEFAULT_BACKUP_PATH,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setWebdavConfig(config: {
+  endpoint: string;
+  username: string;
+  password: string;
+  backupPath?: string;
+}): Promise<void> {
+  const encryptedPassword = await encryptText(config.password);
+  const stored: WebdavConfigStored = {
+    endpoint: config.endpoint.trim(),
+    username: config.username.trim(),
+    encryptedPassword,
+    backupPath: (config.backupPath?.trim() || DEFAULT_BACKUP_PATH),
+  };
+  await setSetting("webdavConfig", stored);
+}
+
+export async function clearWebdavConfig(): Promise<void> {
+  await setSetting("webdavConfig", null);
 }

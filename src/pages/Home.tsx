@@ -40,6 +40,8 @@ export default function Home() {
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "Tasks";
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [projectsVisible, setProjectsVisible] = useState(true);
+  const [projectSearch, setProjectSearch] = useState("");
 
   const { data, error, loading, reload } = useAsync(async () => {
     const [projects, alerts, summary] = await Promise.all([
@@ -67,6 +69,16 @@ export default function Home() {
   const summary: DashboardSummary | null = data?.summary ?? null;
   const statsMap: Record<string, { percent: number; pending: number }> = data?.statsMap ?? {};
 
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch.trim()) return projects;
+    const q = projectSearch.toLowerCase();
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q)
+    );
+  }, [projects, projectSearch]);
+
   function setTab(tab: Tab) {
     setSearchParams(tab === "Tasks" ? {} : { tab }, { replace: true });
   }
@@ -93,14 +105,26 @@ export default function Home() {
     <div className="page page-wide home">
       <header className="page-header">
         <h1>Home</h1>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => setDrawerOpen(true)}
-          data-tip="Create a project — its own tasks, resources, docs and schedule"
-        >
-          + Add project
-        </button>
+        <div className="header-actions">
+          <button
+            type="button"
+            className={`btn-secondary btn-small clickable ${
+              projectsVisible ? "toggle-pressed" : ""
+            }`}
+            data-tip={projectsVisible ? "Hide projects" : "Show all projects"}
+            onClick={() => setProjectsVisible(!projectsVisible)}
+          >
+            {projectsVisible ? "▼ Projects" : "▶ Projects"}
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setDrawerOpen(true)}
+            data-tip="Create a project — its own tasks, resources, docs and schedule"
+          >
+            + Add project
+          </button>
+        </div>
       </header>
 
       {/* Alerts — computed on read, never stored. */}
@@ -165,27 +189,44 @@ export default function Home() {
       )}
 
       {/* Project grid. */}
-      <section className="dashboard-section">
-        <h2 className="section-heading">Projects</h2>
-        {projects.length === 0 ? (
-          <p className="empty-state">
-            No projects yet. Add one above and it becomes the container for tasks,
-            resources, documentation, milestones and issues.
-          </p>
-        ) : (
-          <div className="project-grid">
-             {projects.map((p) => (
-              <ProjectCard
-                key={p.id}
-                project={p}
-                progress={statsMap[p.id]?.percent ?? 0}
-                pending={statsMap[p.id]?.pending ?? 0}
-                onChange={reload}
+      {projectsVisible && (
+        <section className="dashboard-section">
+          <div className="section-header-row">
+            <h2 className="section-heading">
+              Projects
+              {projectSearch.trim() && ` (${filteredProjects.length})`}
+            </h2>
+            <div className="project-search-wrapper">
+              <input
+                type="text"
+                className="project-search-input"
+                placeholder="Search projects by name or description..."
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
               />
-            ))}
+            </div>
           </div>
-        )}
-      </section>
+          {filteredProjects.length === 0 ? (
+            <p className="empty-state">
+              {projectSearch.trim()
+                ? "No projects match your search."
+                : "No projects yet — add one above."}
+            </p>
+          ) : (
+            <div className="project-grid">
+              {filteredProjects.map((p) => (
+                <ProjectCard
+                  key={p.id}
+                  project={p}
+                  progress={statsMap[p.id]?.percent ?? 0}
+                  pending={statsMap[p.id]?.pending ?? 0}
+                  onChange={reload}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Cross-project tabs. */}
       <section className="dashboard-section">

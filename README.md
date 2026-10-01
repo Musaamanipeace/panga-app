@@ -6,8 +6,8 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 
 - **Frontend**: React 19 SPA with Vite, TypeScript, and offline-first IndexedDB (Dexie)
 - **Backend**: Express on Node.js 22 providing secure server-side Gemini AI processing (`/api/assistant/chat`) and health monitoring (`/health`)
-- **Storage**: Local IndexedDB as primary source of truth; optional encrypted sync to Google Drive AppData folder
-- **Hosting**: Configured for **Fly.io** using Docker and `fly.toml`; can also deploy as static site
+- **Storage**: Local IndexedDB as primary source of truth; optional encrypted sync via Google Drive AppData folder or provider-agnostic WebDAV
+- **Hosting**: Configured for **Fly.io** using Docker and `fly.toml`; can also deploy as static site (e.g. Vercel)
 
 ---
 
@@ -23,6 +23,14 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 - **Debounced Auto-sync**: Changes debounced (30s) and uploaded automatically
 - **Cross-device Restore**: On new device, connect Google Drive and offer to restore existing snapshot
 - **Manual Controls**: "Download Backup" / "Upload Snapshot" buttons in Settings
+
+### WebDAV Cloud Backup & Sync (Optional)
+- **Provider-agnostic**: Works with any standard WebDAV server — InfiniCLOUD, Nextcloud, ownCloud, pCloud, etc.
+- **Encrypted credentials**: Your WebDAV app password is encrypted locally (AES-256-GCM) before being stored in IndexedDB — never persisted plaintext.
+- **Test Connection**: Verifies credentials and endpoint reachability via a WebDAV `PROPFIND` request before saving.
+- **Manual Export / Import**: "Upload Backup" (PUT) serialises your full database to a single `app_backup.json` on your WebDAV server; "Download Backup" (GET) retrieves, validates, and prompts before restoring.
+- **Custom backup path**: Save your backup to a custom folder on the WebDAV server, e.g. `backups/my-backup.json`.
+- **No vendor lock-in**: Use your own self-hosted WebDAV/Nextcloud endpoint or a free provider — nothing is routed through Panga's servers.
 
 ### AI Integration
 - **Gemini API Proxy**: Server-side `/api/assistant/chat` endpoint keeps your API key secure
@@ -153,9 +161,25 @@ Fly.io will:
 
 1. Open **Settings** → **Data Persistence & Storage**
 2. Enter your **Google OAuth Client ID** (from Google Cloud Console)
-4. Click **"Connect Google Drive"** — completes OAuth consent flow
-5. Your local snapshot is uploaded to the private `appDataFolder`
-6. Auto-sync runs every 30 seconds after changes
+3. Click **"Connect Google Drive"** — completes OAuth consent flow
+4. Your local snapshot is uploaded to the private `appDataFolder`
+5. Auto-sync runs every 30 seconds after changes
+
+### Connect WebDAV Cloud Backup (Optional)
+
+1. Open **Settings** → **Cloud Backup & Sync (WebDAV)**
+2. Enter your WebDAV endpoint URL (e.g. `https://your-id.teracloud.jp/dav/`)
+3. Enter your **User ID / Username**
+4. Enter your **App Password** (app-specific password, not your regular login password)
+5. Set a **Backup File Path** (defaults to `app_backup.json`, or use a folder like `backups/my-backup.json`)
+6. Click **"Test Connection"** — verifies credentials via a WebDAV `PROPFIND` request
+7. Once verified, use **"Upload Backup"** to export your database, or **"Download Backup"** to restore
+
+> **Need free cloud storage?** Sign up at [InfiniCLOUD (20GB Free)](https://www.infiniclouds.com/) → Go to Account Settings → Enable "Apps Connection" to get your WebDAV URL and App Password.
+
+**Recommended free providers:**
+- **InfiniCLOUD** — 20 GB free, WebDAV access
+- **Nextcloud providers** — many offer free WebDAV accounts
 
 ### Manual Backup/Restore
 
@@ -166,8 +190,9 @@ Fly.io will:
 ### Sync Status Badge
 
 The header shows your sync state:
-- `📱 Offline Only` — No Google Drive connection
+- `📱 Offline Only` — No cloud sync connection configured
 - `☁️ Google Drive` — Connected, auto-sync active
+- `☁️ WebDAV` — Connected, manual backup/restore available
 - `⟳ Syncing...` — Background sync in progress
 - `✗` — Sync error (check Settings for details)
 
@@ -228,7 +253,9 @@ Exported snapshots follow this structure:
 }
 ```
 
-**Security**: Snapshots contain **only application state** — never credentials, API keys, or OAuth tokens.
+**Security**: Snapshots contain **only application state** — never credentials, API keys, or OAuth tokens. WebDAV app passwords are encrypted locally (AES-256-GCM) in IndexedDB via the `crypto.ts` module before storage; plaintext passwords are discarded from memory after connection verification.
+
+> **WebDAV backup file**: Uploaded backups are stored as `app_backup.json` (or a custom path you specify) at your WebDAV endpoint using HTTP `PUT` with Basic Auth. Downloads use `GET` and are validated against the snapshot schema before restoring.
 
 ---
 
@@ -249,6 +276,8 @@ src/
 │   └── utils.ts        # ID generation, timestamps
 ├── sync/
 │   ├── snapshot.ts     # Export/import utilities
+│   ├── webdav.ts       # WebDAV cloud backup client (PUT/GET/PROPFIND)
+│   ├── crypto.ts       # AES-256-GCM credential encryption
 │   ├── driveSync.ts    # Google Drive AppData sync
 │   ├── googleCalendar.ts # Google Calendar import
 │   └── sync.ts         # Local sync coordination
@@ -296,6 +325,14 @@ npx playwright test test-*.mjs
 lsof -ti:3000 | xargs kill -9
 ```
 
+### "WebDAV: Unauthorized / Not Found / Connection failed"
+- Verify the endpoint URL — it must end with a trailing slash and include the correct path (e.g. `https://your-id.teracloud.jp/dav/`)
+- Use an **App Password**, not your regular login password
+- Ensure "Apps Connection" (or equivalent WebDAV/app access) is enabled in your provider's settings
+- Check the **Backup File Path** — it must point to a file, not a collection (folder)
+- For Nextcloud, the URL typically looks like `https://your-server.com/remote.php/dav/files/username/`
+- Ensure your server supports WebDAV over HTTPS; some providers require whitelisting your app
+
 ---
 
 ## License
@@ -312,3 +349,6 @@ MIT License — feel free to use, modify, and distribute.
 - **Google Drive API** — AppData folder sync
 - **Google Identity Services** — OAuth flow
 - **@google/genai** — Gemini AI SDK
+- **WebDAV** — Provider-agnostic cloud backup protocol
+- **InfiniCLOUD** — Recommended free WebDAV provider (20 GB)
+- **Web Crypto API** — AES-256-GCM credential encryption
