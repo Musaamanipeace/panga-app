@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   getRecentActivity,
-  getActivityForProject,
   type ActivityLog,
   type ActivityEntityType,
 } from "../../data/activity";

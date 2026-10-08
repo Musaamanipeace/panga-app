@@ -11,6 +11,7 @@ import {
 import type { Project } from "../data/db.ts"
 import ProjectCard from "../components/ProjectCard.tsx"
 import MicButton from "../components/MicButton.tsx"
+import QuickAddResourceModal from "../components/QuickAddResourceModal.tsx"
 import { Drawer, ErrorNote, Loading, Slide, useAsync } from "../components/ui.tsx"
 import HomeTasksTab from "../components/home/HomeTasksTab.tsx"
 import HomeResourcesTab from "../components/home/HomeResourcesTab.tsx"
@@ -40,8 +41,23 @@ export default function Home() {
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "Tasks";
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [projectsVisible, setProjectsVisible] = useState(true);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [projectsVisible, setProjectsVisible] = useState(() => {
+    try {
+      return localStorage.getItem("panga_projects_visible") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [projectSearch, setProjectSearch] = useState("");
+
+  function toggleProjectsVisible() {
+    const next = !projectsVisible;
+    setProjectsVisible(next);
+    try {
+      localStorage.setItem("panga_projects_visible", String(next));
+    } catch {}
+  }
 
   const { data, error, loading, reload } = useAsync(async () => {
     const [projects, alerts, summary] = await Promise.all([
@@ -108,19 +124,28 @@ export default function Home() {
         <div className="header-actions">
           <button
             type="button"
-            className={`btn-secondary btn-small clickable ${
-              projectsVisible ? "toggle-pressed" : ""
-            }`}
-            data-tip={projectsVisible ? "Hide projects" : "Show all projects"}
-            onClick={() => setProjectsVisible(!projectsVisible)}
+            className="btn-primary clickable"
+            onClick={() => setQuickAddOpen(true)}
+            data-tip="Quickly save any note, link, list, task, milestone, or issue and peg it to a project"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
-            {projectsVisible ? "▼ Projects" : "▶ Projects"}
+            <span>⚡ Quick Add Resource</span>
           </button>
           <button
             type="button"
-            className="btn-primary"
+            className={`btn-secondary btn-small clickable ${
+              projectsVisible ? "toggle-pressed" : ""
+            }`}
+            data-tip={projectsVisible ? "Hide projects grid" : "Show all projects"}
+            onClick={toggleProjectsVisible}
+          >
+            {projectsVisible ? "▼ Hide Projects" : "▶ Show Projects"} ({projects.length})
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
             onClick={() => setDrawerOpen(true)}
-            data-tip="Create a project — its own tasks, resources, docs and schedule"
+            data-tip="Create a new project workspace"
           >
             + Add project
           </button>
@@ -262,6 +287,11 @@ export default function Home() {
       </section>
 
       <AddProjectDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreated={reload} />
+      <QuickAddResourceModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onSaved={reload}
+      />
     </div>
   );
 }

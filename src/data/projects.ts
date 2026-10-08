@@ -82,33 +82,49 @@ export async function deleteProject(id: string): Promise<void> {
       db.insights.where("projectId").equals(id).primaryKeys(),
     ]);
 
-  await db.transaction(
-    "rw",
-    [
-      db.projects,
-      db.tasks,
-      db.resources,
-      db.docEntries,
-      db.milestones,
-      db.issues,
-      db.reminders,
-      db.calendarEvents,
-      db.scheduleItems,
-      db.insights,
-    ],
-    async () => {
-      await db.tasks.where("projectId").equals(id).delete();
-      await db.resources.where("projectId").equals(id).delete();
-      await db.docEntries.where("projectId").equals(id).delete();
-      await db.milestones.where("projectId").equals(id).delete();
-      await db.issues.where("projectId").equals(id).delete();
-      await db.reminders.where("projectId").equals(id).delete();
-      await db.calendarEvents.where("projectId").equals(id).delete();
-      await db.scheduleItems.where("projectId").equals(id).delete();
-      await db.insights.where("projectId").equals(id).delete();
-      await db.projects.delete(id);
-    }
-  );
+  try {
+    await db.transaction(
+      "rw",
+      [
+        db.projects,
+        db.tasks,
+        db.resources,
+        db.docEntries,
+        db.milestones,
+        db.issues,
+        db.reminders,
+        db.calendarEvents,
+        db.scheduleItems,
+        db.insights,
+      ],
+      async () => {
+        await db.tasks.where("projectId").equals(id).delete();
+        await db.resources.where("projectId").equals(id).delete();
+        await db.docEntries.where("projectId").equals(id).delete();
+        await db.milestones.where("projectId").equals(id).delete();
+        await db.issues.where("projectId").equals(id).delete();
+        await db.reminders.where("projectId").equals(id).delete();
+        await db.calendarEvents.where("projectId").equals(id).delete();
+        await db.scheduleItems.where("projectId").equals(id).delete();
+        await db.insights.where("projectId").equals(id).delete();
+        await db.projects.delete(id);
+      }
+    );
+  } catch (err) {
+    console.warn("Transaction failed, deleting records individually:", err);
+    await Promise.allSettled([
+      db.tasks.where("projectId").equals(id).delete(),
+      db.resources.where("projectId").equals(id).delete(),
+      db.docEntries.where("projectId").equals(id).delete(),
+      db.milestones.where("projectId").equals(id).delete(),
+      db.issues.where("projectId").equals(id).delete(),
+      db.reminders.where("projectId").equals(id).delete(),
+      db.calendarEvents.where("projectId").equals(id).delete(),
+      db.scheduleItems.where("projectId").equals(id).delete(),
+      db.insights.where("projectId").equals(id).delete(),
+      db.projects.delete(id),
+    ]);
+  }
 
   // Remote cascade deletes
   void syncDeleteRecord("projects", id);

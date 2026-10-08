@@ -1,7 +1,7 @@
 // src/components/Stash.tsx
 // Global drag-and-drop storage box — a floating panel for temporarily holding snippets, links, files, or text.
 import { useEffect, useState, useRef } from "react";
-import { useToasts } from "./ui";
+import { showToast } from "./ui";
 
 export interface StashItem {
   id: string;
@@ -29,7 +29,6 @@ export function saveStash(items: StashItem[]): void {
 
 export function useStash() {
   const [items, setItems] = useState<StashItem[]>([]);
-  const { showToast } = useToasts();
 
   useEffect(() => {
     setItems(loadStash());
@@ -46,24 +45,24 @@ export function useStash() {
       createdAt: Date.now(),
     };
     setItems((prev) => [...prev, newItem]);
-    showToast({ type: "success", message: `Added to Stash: ${item.label}` });
+    showToast(`Added to Stash: ${item.label}`, "success");
   }
 
   function removeItem(id: string): void {
-    setItems((prev) => prev.filter((i) => i !== id));
-    showToast({ type: "info", message: "Removed from Stash" });
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    showToast("Removed from Stash", "info");
   }
 
   function clearStash(): void {
     setItems([]);
-    showToast({ type: "info", message: "Stash cleared" });
+    showToast("Stash cleared", "info");
   }
 
   function copyItem(id: string): void {
     const item = items.find((i) => i.id === id);
     if (item) {
       navigator.clipboard.writeText(item.content);
-      showToast({ type: "success", message: "Copied to clipboard" });
+      showToast("Copied to clipboard", "success");
     }
   }
 
@@ -71,8 +70,6 @@ export function useStash() {
 }
 
 export function StashDropZone({ onStash }: { onStash: (content: string) => void }) {
-  const { showToast } = useToasts();
-
   return (
     <div
       className="stash-drop-zone"
@@ -83,7 +80,7 @@ export function StashDropZone({ onStash }: { onStash: (content: string) => void 
         if (text) {
           onStash(text);
         } else {
-          showToast({ type: "error", message: "Drop content not recognized" });
+          showToast("Drop content not recognized", "error");
         }
       }}
       data-tip="Drag any text or link here to stash it"

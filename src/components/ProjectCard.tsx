@@ -13,6 +13,8 @@ interface Props {
 
 export default function ProjectCard({ project, progress, pending, onChange }: Props) {
   const [renaming, setRenaming] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState(project.name);
 
   async function saveRename(e: React.FormEvent) {
@@ -26,12 +28,57 @@ export default function ProjectCard({ project, progress, pending, onChange }: Pr
     onChange();
   }
 
-  async function handleDelete(e: React.MouseEvent) {
+  async function handleConfirmDelete(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`Delete "${project.name}" and everything in it? This can't be undone.`)) return;
-    await deleteProject(project.id);
-    onChange();
+    setDeleting(true);
+    try {
+      await deleteProject(project.id);
+      onChange();
+    } catch (err) {
+      console.error("Failed to delete project:", err);
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  if (confirmDelete) {
+    return (
+      <div
+        className="project-card project-card-editing"
+        style={{ borderColor: "var(--color-danger, #ef4444)", background: "rgba(239, 68, 68, 0.05)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ marginBottom: 8 }}>
+          <strong style={{ color: "var(--color-danger, #ef4444)" }}>Delete project?</strong>
+          <p style={{ margin: "4px 0", fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
+            "{project.name}" and all tasks, documents, and resources in it will be removed.
+          </p>
+        </div>
+        <div className="project-card-actions" style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="btn-danger btn-small clickable"
+            disabled={deleting}
+            onClick={handleConfirmDelete}
+            style={{ background: "#dc2626", color: "#fff", border: "none", padding: "4px 10px", borderRadius: "4px" }}
+          >
+            {deleting ? "Deleting…" : "Yes, Delete"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            disabled={deleting}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDelete(false);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (renaming) {
@@ -78,7 +125,11 @@ export default function ProjectCard({ project, progress, pending, onChange }: Pr
             type="button"
             className="btn-icon clickable"
             data-tip="Delete project"
-            onClick={handleDelete}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setConfirmDelete(true);
+            }}
           >
             Del
           </button>

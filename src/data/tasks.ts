@@ -34,7 +34,7 @@ export function isOverdue(task: Task): boolean {
 }
 
 export async function createTask(input: {
-  projectId: string;
+  projectId?: string | null;
   title: string;
   notes?: string;
   executor?: "ai" | "manual";
@@ -47,7 +47,7 @@ export async function createTask(input: {
   const t = now();
   const task: Task = {
     id: newId(),
-    projectId: input.projectId,
+    projectId: input.projectId ?? null,
     title: input.title,
     notes: input.notes ?? "",
     status: "active",

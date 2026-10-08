@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import { getProject, getProjectTaskStats } from "../data/projects";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { getProject, getProjectTaskStats, deleteProject } from "../data/projects";
 import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile, type ResourceListItem } from "../data/resources";
+import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
@@ -10,12 +10,13 @@ import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type Calenda
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
 import { db, type Project } from "../data/db";
 import { newId, now } from "../data/utils";
-import { copyToClipboard } from "../components/ui";
-import { useTabHistory } from "../data/tabHistory";
+import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
+import { showToast } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
+import HomeResourcesTab from "../components/home/HomeResourcesTab";
 
 const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Insights", "Issues", "Reminders", "Contacts", "Calendar"] as const;
 type Tab = (typeof TABS)[number];
@@ -46,31 +47,20 @@ const TAB_QUERY: Record<string, Tab> = {
 };
 
 export default function ProjectView() {
+  const navigate = useNavigate();
   const { projectId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
   const [progress, setProgress] = useState(0);
   const [pending, setPending] = useState(0);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [internalQuery, setInternalQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ type: Tab; id: string; title: string; subtitle?: string }[]>([]);
   const activeTab = (TAB_QUERY[searchParams.get("tab") ?? ""] as Tab) ?? "Documentation";
-
-  // Tab navigation history (Prompt 1.3)
-  const tabHistory = useTabHistory(projectId, activeTab);
-  const { backTab, forwardTab, recentTabs } = tabHistory;
 
   function setActiveTab(tab: Tab) {
     setSearchParams({ tab });
-  }
-
-  function goBack() {
-    if (backTab) {
-      setSearchParams({ tab: backTab as Tab });
-    }
-  }
-
-  function goForward() {
-    if (forwardTab) {
-      setSearchParams({ tab: forwardTab as Tab });
-    }
   }
 
   async function refreshProject() {
@@ -86,6 +76,85 @@ export default function ProjectView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Internal project search: searches only within this project
+  useEffect(() => {
+    if (!projectId || !internalQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const q = internalQuery.trim().toLowerCase();
+    let cancelled = false;
+
+    async function runInternalSearch() {
+      if (!projectId) return;
+      const [tasks, docs, res, ms, issues] = await Promise.all([
+        db.tasks.where("projectId").equals(projectId).toArray(),
+        db.docEntries.where("projectId").equals(projectId).toArray(),
+        db.resources.where("projectId").equals(projectId).toArray(),
+        db.milestones.where("projectId").equals(projectId).toArray(),
+        db.issues.where("projectId").equals(projectId).toArray(),
+      ]);
+
+      if (cancelled) return;
+      const results: { type: Tab; id: string; title: string; subtitle?: string }[] = [];
+
+      for (const t of tasks) {
+        if (t.title.toLowerCase().includes(q) || (t.notes && t.notes.toLowerCase().includes(q))) {
+          results.push({ type: "Tasks", id: t.id, title: t.title, subtitle: `Status: ${t.status}` });
+        }
+      }
+      for (const d of docs) {
+        if (d.title.toLowerCase().includes(q) || (d.content && d.content.toLowerCase().includes(q))) {
+          results.push({ type: "Documentation", id: d.id, title: d.title, subtitle: "Documentation Section" });
+        }
+      }
+      for (const r of res) {
+        if (
+          r.title.toLowerCase().includes(q) ||
+          (r.body && r.body.toLowerCase().includes(q)) ||
+          (r.url && r.url.toLowerCase().includes(q)) ||
+          (r.tags && r.tags.some((tag) => tag.toLowerCase().includes(q)))
+        ) {
+          results.push({ type: "Resources", id: r.id, title: r.title, subtitle: `Category: ${r.category}` });
+        }
+      }
+      for (const m of ms) {
+        if (m.title.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q))) {
+          results.push({ type: "Milestones", id: m.id, title: m.title, subtitle: `Status: ${m.status}` });
+        }
+      }
+      for (const i of issues) {
+        if (i.title.toLowerCase().includes(q)) {
+          results.push({ type: "Issues", id: i.id, title: i.title, subtitle: `Severity: ${i.severity}` });
+        }
+      }
+
+      setSearchResults(results);
+    }
+
+    const timer = setTimeout(runInternalSearch, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [projectId, internalQuery]);
+
+  async function handleDeleteProject() {
+    if (!projectId || !project) return;
+    setDeleting(true);
+    try {
+      await deleteProject(projectId);
+      showToast(`Deleted project "${project.name}"`, "info");
+      navigate("/dashboard");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to delete project", "error");
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
+  }
+
   if (!project || !projectId) {
     return (
       <div className="page project-view">
@@ -96,54 +165,111 @@ export default function ProjectView() {
 
   return (
     <div className="page project-view">
-      <header className="page-header">
+      <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div>
-          <h1>{project.name}</h1>
-          {project.description && <p>{project.description}</p>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link to="/dashboard" style={{ fontSize: 13, color: "var(--color-primary, #2563eb)" }}>
+              ← All Projects
+            </Link>
+          </div>
+          <h1 style={{ margin: "4px 0" }}>{project.name}</h1>
+          {project.description && <p style={{ margin: 0, color: "var(--color-text-muted)" }}>{project.description}</p>}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            style={{ color: "#ef4444" }}
+            onClick={() => setShowDeleteModal(true)}
+            data-tip="Delete this project and all its tasks, docs, and resources"
+          >
+            🗑️ Delete Project
+          </button>
         </div>
       </header>
 
       <ProgressBar percent={progress} pending={pending} />
       <span className="progress-label">{progress}% complete</span>
 
-      <nav className="tab-bar tab-bar-scrollable" ref={(el) => { if (el) el.style.overflowX = "auto"; }}>
-        <div className="tab-nav-controls">
-          <button
-            type="button"
-            className="btn-icon clickable tab-history-btn"
-            onClick={goBack}
-            disabled={!backTab}
-            data-tip={backTab ? `Go back to ${backTab}` : "No previous tab"}
-            aria-label="Back"
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            className="btn-icon clickable tab-history-btn"
-            onClick={goForward}
-            disabled={!forwardTab}
-            data-tip={forwardTab ? `Go forward to ${forwardTab}` : "No next tab"}
-            aria-label="Forward"
-          >
-            →
-          </button>
-          {recentTabs.length > 0 && (
-            <select
-              className="tab-history-dropdown"
-              value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value as Tab)}
-              data-tip="Switch to recently visited tab"
-              aria-label="Tab history"
+      {/* Internal Project Search Tool (Searches only within this project) */}
+      <div className="project-internal-search-container" style={{ margin: "16px 0 12px 0", position: "relative" }}>
+        <div className="inline-form" style={{ marginBottom: 0 }}>
+          <input
+            type="search"
+            placeholder={`🔍 Search in "${project.name}" (tasks, docs, resources, milestones, issues)...`}
+            value={internalQuery}
+            onChange={(e) => setInternalQuery(e.target.value)}
+            style={{ width: "100%", padding: "10px 14px", fontSize: 14, borderRadius: 8, border: "1px solid var(--color-border)" }}
+          />
+          {internalQuery && (
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => setInternalQuery("")}
             >
-              {recentTabs.map((entry) => (
-                <option key={`${entry.tab}-${entry.timestamp}`} value={entry.tab}>
-                  {entry.tab} · {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </option>
-              ))}
-            </select>
+              Clear
+            </button>
           )}
         </div>
+
+        {/* Search Results Dropdown inside Project */}
+        {internalQuery.trim() && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              background: "var(--color-bg-surface, #ffffff)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 8,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+              zIndex: 100,
+              maxHeight: 320,
+              overflowY: "auto",
+              marginTop: 4,
+            }}
+          >
+            <div style={{ padding: "8px 12px", background: "var(--color-bg-subtle)", fontSize: 12, fontWeight: 600, borderBottom: "1px solid var(--color-border)" }}>
+              {searchResults.length} result(s) in {project.name}
+            </div>
+            {searchResults.length === 0 ? (
+              <div style={{ padding: "16px 12px", textAlign: "center", fontSize: 13, color: "var(--color-text-muted)" }}>
+                No matches found in this project for "{internalQuery}".
+              </div>
+            ) : (
+              searchResults.map((res) => (
+                <div
+                  key={`${res.type}-${res.id}`}
+                  className="clickable"
+                  onClick={() => {
+                    setActiveTab(res.type);
+                    setInternalQuery("");
+                  }}
+                  style={{
+                    padding: "10px 14px",
+                    borderBottom: "1px solid var(--color-border)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{res.title}</div>
+                    {res.subtitle && <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{res.subtitle}</div>}
+                  </div>
+                  <span className="chip-small" style={{ fontWeight: 600 }}>
+                    Jump to {res.type} →
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <nav className="tab-bar">
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -159,7 +285,7 @@ export default function ProjectView() {
       <div className="tab-panel">
         {activeTab === "Documentation" && <DocumentationTab projectId={projectId} />}
         {activeTab === "Tasks" && <TasksTab projectId={projectId} onChange={refreshProject} />}
-        {activeTab === "Resources" && <ResourcesTab projectId={projectId} />}
+        {activeTab === "Resources" && <HomeResourcesTab initialProjectId={projectId} scopedToProject={true} />}
         {activeTab === "Milestones" && <MilestonesTab projectId={projectId} />}
         {activeTab === "Insights" && <InsightsTab projectId={projectId} />}
         {activeTab === "Issues" && <IssuesTab projectId={projectId} />}
@@ -167,6 +293,62 @@ export default function ProjectView() {
         {activeTab === "Contacts" && <ContactsTab projectId={projectId} />}
         {activeTab === "Calendar" && <CalendarTab projectId={projectId} />}
       </div>
+
+      {/* Delete Project Modal */}
+      {showDeleteModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--color-bg-surface, #ffffff)",
+              borderRadius: 8,
+              padding: 24,
+              maxWidth: 420,
+              width: "100%",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 12px 0", color: "#dc2626" }}>Delete Project?</h3>
+            <p style={{ margin: "0 0 20px 0", fontSize: 14, lineHeight: 1.5 }}>
+              Are you sure you want to delete <strong>"{project.name}"</strong>? All associated tasks, documentation, resources, milestones, and issues will be permanently removed.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="btn-secondary clickable"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger clickable"
+                style={{ background: "#dc2626", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 6, fontWeight: 600 }}
+                onClick={handleDeleteProject}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting..." : "Yes, Delete Project"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -233,19 +415,13 @@ function DocumentationTab({ projectId }: { projectId: string }) {
     refresh();
   }
 
-  async function onContentChange(id: string, content: string) {
-    await updateDocEntry(id, { content });
-  }
-
-  async function onTitleChange(id: string, title: string) {
-    if (!title.trim()) return;
-    await updateDocEntry(id, { title: title.trim() });
-    refresh();
+  async function onSaveEntry(id: string, title: string, content: string) {
+    await updateDocEntry(id, { title: title.trim() || "Untitled Section", content });
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Delete this section?")) return;
     await deleteDocEntry(id);
+    showToast("Documentation section deleted", "info");
     refresh();
   }
 
@@ -262,7 +438,7 @@ function DocumentationTab({ projectId }: { projectId: string }) {
               onChange={(e) => setNewTitle(e.target.value)}
               required
             />
-            <MicButton onResult={(text) => setNewTitle(text)} />
+            <MicButton onResult={setNewTitle} />
           </div>
         </div>
 
@@ -309,32 +485,125 @@ function DocumentationTab({ projectId }: { projectId: string }) {
       ) : (
         <div className="doc-list">
           {entries.map((entry) => (
-            <div key={entry.id} className="doc-entry">
-              <div className="doc-entry-header">
-                <input
-                  className="doc-entry-title-input"
-                  defaultValue={entry.title}
-                  onBlur={(e) => onTitleChange(entry.id, e.target.value)}
-                />
-                <button
-                  className="task-delete-btn clickable"
-                  data-tip="Delete section"
-                  onClick={() => onDelete(entry.id)}
-                >
-                  ×
-                </button>
-              </div>
-              <textarea
-                defaultValue={entry.content}
-                placeholder="Write here..."
-                rows={5}
-                onBlur={(e) => onContentChange(entry.id, e.target.value)}
-              />
-              <MicButton onResult={(text) => onContentChange(entry.id, entry.content + " " + text)} />
-            </div>
+            <DocEntryCard
+              key={entry.id}
+              entry={entry}
+              onDelete={onDelete}
+              onSave={onSaveEntry}
+            />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function DocEntryCard({
+  entry,
+  onDelete,
+  onSave,
+}: {
+  entry: DocEntry;
+  onDelete: (id: string) => void;
+  onSave: (id: string, title: string, content: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(entry.title);
+  const [content, setContent] = useState(entry.content);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const timerRef = useRef<any>(null);
+  const latestRef = useRef({ title, content });
+  latestRef.current = { title, content };
+
+  const triggerAutosave = (newTitle: string, newContent: string) => {
+    setSaveStatus("saving");
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      await onSave(entry.id, newTitle, newContent);
+      setSaveStatus("saved");
+    }, 400);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        void onSave(entry.id, latestRef.current.title, latestRef.current.content);
+      }
+    };
+  }, [entry.id, onSave]);
+
+  return (
+    <div className="doc-entry" style={{ position: "relative", marginBottom: 16 }}>
+      <div className="doc-entry-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <input
+          className="doc-entry-title-input"
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            triggerAutosave(e.target.value, content);
+          }}
+          placeholder="Section title..."
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: saveStatus === "saving" ? "#f59e0b" : "#10b981",
+            }}
+          >
+            {saveStatus === "saving" ? "⟳ Saving..." : "✓ Saved"}
+          </span>
+
+          {confirmDelete ? (
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                type="button"
+                className="btn-danger btn-small clickable"
+                style={{ background: "#ef4444", color: "#fff", border: "none", padding: "2px 6px", fontSize: 11 }}
+                onClick={() => onDelete(entry.id)}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                style={{ padding: "2px 6px", fontSize: 11 }}
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="task-delete-btn clickable"
+              data-tip="Delete section"
+              onClick={() => setConfirmDelete(true)}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+      <textarea
+        value={content}
+        placeholder="Write here..."
+        rows={6}
+        onChange={(e) => {
+          setContent(e.target.value);
+          triggerAutosave(title, e.target.value);
+        }}
+      />
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+        <MicButton
+          onResult={(text) => {
+            const updated = content ? content + " " + text : text;
+            setContent(updated);
+            triggerAutosave(title, updated);
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -430,13 +699,6 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
               <span className="task-status-label">{task.status}</span>
               <button
                 className="btn-icon clickable"
-                data-tip="Copy task title"
-                onClick={async () => { await copyToClipboard(task.title); }}
-              >
-                📋
-              </button>
-              <button
-                className="btn-icon clickable"
                 data-tip="Rename task"
                 onClick={() => startEdit(task)}
               >
@@ -469,10 +731,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [provider, setProvider] = useState<"gemini" | "claude" | "gpt" | "other">("other");
   const [images, setImages] = useState<ResourceImage[]>([]);
   const [files, setFiles] = useState<ResourceFile[]>([]);
-  const [listItems, setListItems] = useState<ResourceListItem[]>([]);
-  const [customFields, setCustomFields] = useState<Record<string, string>>({});
-  const [newFieldKey, setNewFieldKey] = useState("");
-  const [newFieldValue, setNewFieldValue] = useState("");
   const [imgLink, setImgLink] = useState("");
   const [pdfLink, setPdfLink] = useState("");
 
@@ -482,7 +740,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     { id: "links", label: "Links" },
     { id: "images", label: "Images" },
     { id: "pdfs", label: "PDFs" },
-    { id: "preset-list", label: "Preset List" },
   ];
 
   // Custom categories state (global addition, accessible across all projects)
@@ -571,7 +828,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     },
     images: { all: "All" },
     pdfs: { all: "All" },
-    "preset-list": { all: "All" },
   };
 
   // Custom subcategories state (shared across all projects)
@@ -654,10 +910,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setFiles([]);
     setImgLink("");
     setPdfLink("");
-    setListItems([]);
-    setCustomFields({});
-    setNewFieldKey("");
-    setNewFieldValue("");
     setEditing(null);
   }
 
@@ -672,8 +924,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       title: title.trim(),
       tags: subcat ? [subcat] : [],
       body: body.trim() || null,
-      listItems: listItems,
-      customFields,
       files,
       images,
       url: url.trim() || null,
@@ -696,8 +946,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
-    setListItems(r.listItems ?? []);
-    setCustomFields(r.customFields ?? {});
     if (r.tags.length > 0 && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]]) {
       setSubfilter(r.tags[0]);
     } else {
@@ -923,7 +1171,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
         )}
 
         {/* Explicit Note Body / Content Area */}
-        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || (!DEFAULT_CATEGORIES.some((c) => c.id === activeCategory) && activeCategory !== "preset-list")) && (
+        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory)) && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>
               {activeCategory === "notes" ? "Note Body" : "Body / Description / Content"}
@@ -937,191 +1185,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             />
             <div style={{ marginTop: 4 }}>
               <MicButton onResult={(text) => setBody((prev) => (prev ? prev + " " + text : text))} />
-            </div>
-          </div>
-         )}
-
-        {/* Preset List Items Editor */}
-        {activeCategory === "preset-list" && (
-          <div className="field" style={{ flexBasis: "100%" }}>
-            <label>Preset List Items</label>
-            {listItems.length === 0 ? (
-              <p className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
-                No items yet. Add items below.
-              </p>
-            ) : (
-              <ul style={{ listStyle: "none", padding: 0, margin: "8px 0", maxHeight: 200, overflowY: "auto" }}>
-                {listItems.map((item, idx) => (
-                  <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={item.checked}
-                      onChange={(e) => {
-                        const updated = [...listItems];
-                        updated[idx] = { ...item, checked: e.target.checked };
-                        setListItems(updated);
-                      }}
-                      data-tip="Check/uncheck this item"
-                    />
-                    <input
-                      type="text"
-                      value={item.text}
-                      onChange={(e) => {
-                        const updated = [...listItems];
-                        updated[idx] = { ...item, text: e.target.value };
-                        setListItems(updated);
-                      }}
-                      placeholder="Item text..."
-                      style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
-                    />
-                    <input
-                      type="text"
-                      value={item.tags?.join(", ") ?? ""}
-                      onChange={(e) => {
-                        const updated = [...listItems];
-                        updated[idx] = { ...item, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) };
-                        setListItems(updated);
-                      }}
-                      placeholder="tags (comma separated)"
-                      style={{ width: 120, padding: "4px 8px", fontSize: 13 }}
-                      data-tip="Tags for this item"
-                    />
-                    <button
-                      type="button"
-                      className="btn-icon clickable"
-                      data-tip="Move item up"
-                      onClick={() => {
-                        if (idx === 0) return;
-                        const updated = [...listItems];
-                        [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
-                        setListItems(updated);
-                      }}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon clickable"
-                      data-tip="Move item down"
-                      onClick={() => {
-                        if (idx === listItems.length - 1) return;
-                        const updated = [...listItems];
-                        [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
-                        setListItems(updated);
-                      }}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="task-delete-btn"
-                      data-tip="Delete this item"
-                      onClick={() => setListItems(listItems.filter((_, i) => i !== idx))}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="inline-form">
-              <button
-                type="button"
-                className="btn-secondary btn-small clickable"
-                onClick={() => {
-                  const newItem: ResourceListItem = { id: newId(), text: "", checked: false, tags: [] };
-                  setListItems([...listItems, newItem]);
-                }}
-                data-tip="Add a new list item"
-              >
-                + Add item
-              </button>
-              <button
-                type="button"
-                className="btn-secondary btn-small clickable"
-                onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: true })))}
-                data-tip="Check all items"
-              >
-                Check all
-              </button>
-              <button
-                type="button"
-                className="btn-secondary btn-small clickable"
-                onClick={() => setListItems(listItems.map((i) => ({ ...i, checked: false })))}
-                data-tip="Uncheck all items"
-              >
-                Clear all
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Custom Fields for non-default categories */}
-        {!DEFAULT_CATEGORIES.some((c) => c.id === activeCategory) && activeCategory !== "preset-list" && (
-          <div className="field" style={{ flexBasis: "100%" }}>
-            <label>Custom Metadata Fields</label>
-            {Object.keys(customFields).length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                {Object.entries(customFields).map(([key, val]) => (
-                  <div key={key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                    <input
-                      type="text"
-                      value={key}
-                      readOnly
-                      style={{ width: 120, padding: "4px 8px", fontSize: 13, background: "var(--color-bg-subtle)" }}
-                    />
-                    <input
-                      type="text"
-                      value={val}
-                      onChange={(e) => setCustomFields({ ...customFields, [key]: e.target.value })}
-                      placeholder="value..."
-                      style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
-                    />
-                    <button
-                      type="button"
-                      className="task-delete-btn"
-                      data-tip="Remove field"
-                      onClick={() => {
-                        const next = { ...customFields };
-                        delete next[key];
-                        setCustomFields(next);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="inline-form">
-              <input
-                type="text"
-                placeholder="Field name (e.g. price, vendor, status)"
-                value={newFieldKey}
-                onChange={(e) => setNewFieldKey(e.target.value)}
-                style={{ width: 140, padding: "4px 8px", fontSize: 13 }}
-              />
-              <input
-                type="text"
-                placeholder="Value"
-                value={newFieldValue}
-                onChange={(e) => setNewFieldValue(e.target.value)}
-                style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
-              />
-              <button
-                type="button"
-                className="btn-secondary btn-small clickable"
-                data-tip="Add a custom metadata field"
-                onClick={() => {
-                  const k = newFieldKey.trim();
-                  if (!k) return;
-                  setCustomFields({ ...customFields, [k]: newFieldValue });
-                  setNewFieldKey("");
-                  setNewFieldValue("");
-                }}
-              >
-                + Add field
-              </button>
             </div>
           </div>
         )}
@@ -1335,30 +1398,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                       {r.url}
                     </a>
                   ) : null}
-                   {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
-                   {r.customFields && Object.keys(r.customFields).length > 0 && (
-                     <div style={{ marginTop: 6, fontSize: 13 }}>
-                       {Object.entries(r.customFields).map(([k, v]) => (
-                         <span key={k} className="chip-small" data-tip={`${k}: ${v}`}>{k}: {v}</span>
-                       ))}
-                     </div>
-                   )}
-                   {r.category === "preset-list" && r.listItems && r.listItems.length > 0 && (
-                     <ul className="preset-list-preview" style={{ listStyle: "none", padding: 0, margin: "8px 0", fontSize: 13 }}>
-                       {r.listItems.map((item) => (
-                         <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
-                           <input type="checkbox" checked={item.checked} readOnly style={{ pointerEvents: "none" }} />
-                           <span style={{ textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "var(--color-text-muted)" : "inherit" }}>
-                             {item.text}
-                           </span>
-                           {item.tags && item.tags.length > 0 && (
-                             <span className="chip-small" style={{ fontSize: 10 }}>{item.tags.join(", ")}</span>
-                           )}
-                         </li>
-                       ))}
-                     </ul>
-                   )}
-                   {r.images.length > 0 && (
+                  {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
+                  {r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) => (
                         img.link ? (
@@ -1398,23 +1439,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                   Edit
                 </button>
                 <button
-                  className="btn-icon clickable"
-                  data-tip="Copy resource title"
-                  onClick={async () => { await copyToClipboard(r.title || ""); }}
-                >
-                  📋 Title
-                </button>
-                <button
-                  className="btn-icon clickable"
-                  data-tip="Copy full resource text"
-                  onClick={async () => {
-                    const full = [r.title, r.body, r.url, ...(r.tags || [])].filter(Boolean).join("\n\n");
-                    await copyToClipboard(full);
-                  }}
-                >
-                  📋 Full
-                </button>
-                <button
                   className="task-delete-btn"
                   data-tip="Delete resource"
                   onClick={async () => { await deleteResource(r.id); refresh(); }}
@@ -1437,7 +1461,6 @@ function getCategoryColor(cat: string): string {
     links: "#22c55e",
     images: "#a855f7",
     pdfs: "#f59e0b",
-    "preset-list": "#f59e0b",
   };
   if (colors[cat]) return colors[cat];
   let hash = 0;
@@ -2062,7 +2085,6 @@ function CalendarTab({ projectId }: { projectId: string }) {
         syncStatus: "pending" as const,
       }));
       await db.calendarEvents.bulkPut(toImport);
-      const { syncPushRecord } = await import("../sync/sync");
       for (const ev of toImport) void syncPushRecord("calendar_events", ev);
       setImportStatus({ message: `Imported ${toImport.length} event(s) from .ics file.`, type: "success" });
       setIcsFile(null);

@@ -25,9 +25,9 @@ export async function getDashboardAlerts(limit = 10): Promise<Alert[]> {
         id: `task-${t.id}`,
         type: "overdue_task",
         title: t.title,
-        subtitle: `Overdue task in ${await projectName(t.projectId)}`,
-        projectId: t.projectId,
-        routerLink: `/project/${t.projectId}?tab=Tasks`,
+        subtitle: `Overdue task in ${t.projectId ? await projectName(t.projectId) : "General"}`,
+        projectId: t.projectId ?? "",
+        routerLink: t.projectId ? `/project/${t.projectId}?tab=Tasks` : "/?tab=Tasks",
       });
     }
   }

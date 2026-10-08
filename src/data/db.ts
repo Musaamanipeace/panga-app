@@ -72,7 +72,7 @@ export interface Project {
 
 export interface Task {
   id: string;
-  projectId: string;
+  projectId: string | null;
   title: string;
   notes: string;
   status: TaskStatus;
@@ -275,8 +275,6 @@ export interface ThoughtEntry {
   createdAt: number;
   updatedAt: number;
 }
-
-export type { ResourceListItem };
 
 class PangaDB extends Dexie {
   projects!: Table<Project, string>;

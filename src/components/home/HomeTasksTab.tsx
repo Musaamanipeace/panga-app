@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { listAllTasks, isOverdue, setTaskStatus, createTask, type Task, type TaskStatus } from "../../data/tasks";
 import { listAllProjects } from "../../data/projects";
 import { reconcileMilestoneStatuses } from "../../data/milestones";
-import { copyToClipboard, ErrorNote, Loading, StatusLabel, useAsync, useToasts } from "../../components/ui";
+import { copyToClipboard, ErrorNote, Loading, StatusLabel, useAsync, showToast } from "../../components/ui";
 
 type Filter = "all" | "active" | "inactive" | "completed" | "overdue" | "ai" | "scheduled";
 
@@ -19,7 +19,6 @@ const FILTERS: { id: Filter; label: string; hint: string }[] = [
 
 export default function HomeTasksTab() {
   const [filter, setFilter] = useState<Filter>("active");
-  const { showToast } = useToasts();
   const [quickAdd, setQuickAdd] = useState(false);
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -92,16 +91,15 @@ export default function HomeTasksTab() {
     try {
       await createTask({
         title: title.trim(),
-        status: "active",
-        projectId: projectId || undefined,
+        projectId: projectId || null,
       });
-      showToast({ type: "success", message: "Task added" });
+      showToast("Task added", "success");
       setTitle("");
       setProjectId("");
       setQuickAdd(false);
       reload();
     } catch (err) {
-      showToast({ type: "error", message: "Failed to add task" });
+      showToast("Failed to add task", "error");
     }
   }
 
@@ -188,7 +186,7 @@ export default function HomeTasksTab() {
                 <TaskRow
                   key={task.id}
                   task={task}
-                  projectName={projectName.get(task.projectId) ?? ""}
+                  projectName={task.projectId ? (projectName.get(task.projectId) ?? "") : "General"}
                   onToggle={handleToggleStatus}
                 />
               ))}

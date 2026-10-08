@@ -47,6 +47,5 @@ export async function updateDocEntry(
 export async function deleteDocEntry(id: string): Promise<void> {
   await db.docEntries.delete(id);
   void syncDeleteRecord("doc_entries", id);
-  const projectId = await db.docEntries.where("id").equals(id).first().then(() => null) || null;
   void logActivity({ entityType: "docEntry", entityId: id, action: "deleted", description: "Documentation deleted" });
 }

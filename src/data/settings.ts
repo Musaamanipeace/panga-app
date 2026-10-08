@@ -93,22 +93,28 @@ export async function setGeminiApiKey(key: string): Promise<void> {
 
 /** Stored form (password is AES-GCM encrypted in IndexedDB, never plaintext). */
 interface WebdavConfigStored {
+  provider?: "nextcloud" | "webdav";
   endpoint: string;
   username: string;
   encryptedPassword: string;
   backupPath: string;
+  autoSync?: boolean;
+  lastSyncTime?: number;
 }
 
 /** In-memory form returned to callers (password decrypted on the fly). */
 export interface WebdavConfigRuntime {
+  provider: "nextcloud" | "webdav";
   endpoint: string;
   username: string;
   password: string;
   backupPath: string;
+  autoSync?: boolean;
+  lastSyncTime?: number;
 }
 
-/** Default backup file path on the WebDAV server. */
-export const DEFAULT_BACKUP_PATH = "app_backup.json";
+/** Default backup file path on the Nextcloud / WebDAV server. */
+export const DEFAULT_BACKUP_PATH = "Panga/panga_backup.json";
 
 export async function getWebdavConfig(): Promise<WebdavConfigRuntime | null> {
   const stored = await getSetting<WebdavConfigStored>("webdavConfig");
@@ -118,10 +124,13 @@ export async function getWebdavConfig(): Promise<WebdavConfigRuntime | null> {
   try {
     const password = await decryptText(stored.encryptedPassword);
     return {
+      provider: stored.provider || "nextcloud",
       endpoint: stored.endpoint,
       username: stored.username,
       password,
       backupPath: stored.backupPath || DEFAULT_BACKUP_PATH,
+      autoSync: stored.autoSync ?? false,
+      lastSyncTime: stored.lastSyncTime,
     };
   } catch {
     return null;
@@ -129,17 +138,23 @@ export async function getWebdavConfig(): Promise<WebdavConfigRuntime | null> {
 }
 
 export async function setWebdavConfig(config: {
+  provider?: "nextcloud" | "webdav";
   endpoint: string;
   username: string;
   password: string;
   backupPath?: string;
+  autoSync?: boolean;
+  lastSyncTime?: number;
 }): Promise<void> {
   const encryptedPassword = await encryptText(config.password);
   const stored: WebdavConfigStored = {
+    provider: config.provider || "nextcloud",
     endpoint: config.endpoint.trim(),
     username: config.username.trim(),
     encryptedPassword,
     backupPath: (config.backupPath?.trim() || DEFAULT_BACKUP_PATH),
+    autoSync: config.autoSync ?? false,
+    lastSyncTime: config.lastSyncTime,
   };
   await setSetting("webdavConfig", stored);
 }
