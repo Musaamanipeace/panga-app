@@ -1,10 +1,10 @@
 // src/data/projects.ts
-import { db, type Project, type ProjectStatus } from "./db";
+import { db, type Project, type ProjectStatus, type WorkspaceKind } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
 
-export type { Project, ProjectStatus };
+export type { Project, ProjectStatus, WorkspaceKind };
 
 export async function listProjects(
   status: ProjectStatus = "active"
@@ -22,6 +22,18 @@ export async function listAllProjects(): Promise<Project[]> {
   return db.projects.orderBy("updatedAt").reverse().toArray();
 }
 
+
+export async function listWorkspacesByKind(
+  kind: WorkspaceKind,
+  status: ProjectStatus = "active"
+): Promise<Project[]> {
+  const all = await listProjects(status);
+  if (kind === "project") {
+    return all.filter((p) => !p.kind || p.kind === "project");
+  }
+  return all.filter((p) => p.kind === kind);
+}
+
 export async function getProject(id: string): Promise<Project | undefined> {
   if (!db.isOpen()) await db.open();
   return db.projects.get(id);
@@ -30,6 +42,7 @@ export async function getProject(id: string): Promise<Project | undefined> {
 export async function createProject(input: {
   name: string;
   description?: string;
+  kind?: WorkspaceKind;
 }): Promise<Project> {
   if (!db.isOpen()) await db.open();
   const t = now();
@@ -38,6 +51,7 @@ export async function createProject(input: {
     name: input.name,
     description: input.description ?? "",
     status: "active",
+    kind: input.kind ?? "project",
     createdAt: t,
     updatedAt: t,
     syncStatus: "pending",
@@ -50,7 +64,7 @@ export async function createProject(input: {
 
 export async function updateProject(
   id: string,
-  changes: Partial<Pick<Project, "name" | "description" | "status">>
+  changes: Partial<Pick<Project, "name" | "description" | "status" | "kind">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();

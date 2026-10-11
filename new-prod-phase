@@ -1,0 +1,47 @@
+panga app (targeted to assist people in a distractive workplace, and utilise ree resources , or paid. )
+
+home page ,,,
+    menu bar
+         (brand, settings,
+          save status(savd online status and saved ofline status),
+           login status, search tool(searches the intire app for resources, projects, all tab and file categries basically. even settings. it categorises search results. either way, ai assistant can provide presission search.),
+           throught train.. 
+                thought tracker box, 
+                you write down notes that occur as a list of notes. ou ca go back and see what you were thiking a while ago, and move back up. thanks to ai transcription and voice to text, it makes this featre crucial to store insights, and to help you remember something, in a distractive workplac.)
+    elements you interact with on the home logged in page {
+        projects
+            could be: bussiness projects, research projects, charity projects, science projects, social project, personal project.
+            clicking it, expands a project tab, which is minimisable. projects preload with some customised resource categories such as contacts, lists, links, documents, notes, locations, scripts, prompts, insights, milestones. some of these need to bcustomisd to suit the exact feature. like links should just store urls, and so on. but the names are titles, not types(classes of resources), you can add a new titled resource , state its types (its individual resorce attributes or qualities can be a note, a list, a title a body (a note, or a list, or a link, or all of these in one resource.) 
+            
+        activities, 
+                    events, chores, errands, vacations, learning programs, hobbies,
+
+        daily schedule,
+                    a time table
+        alerts,
+                useful to alert ou that an ai assigned task is done, a deadline is nearly or over due, or a spontaneous ai insight.
+        new ideas,
+                just a ta for a new idea that has not yet evolved into a proect or activity.
+        reminder, 
+                reminders are set to remind you something at a sertain time periodically,
+        resources,
+                notes, parsed text documents, check list objects, url links, maps pins, contacts, noting that resources can have subresources. (eference to other resources falling under a parent resource). we take advantage of oth local storage ond cloud storage by networing you to a cloud storage service that is either free or not free, but of your choice, for instant syncing of data. resources that you add in a proect also appear here. as well, you can add a resource straigt from her and have it as a globa resource or a project boud resource, where if you go to that proect you shoud fid that resource there. 
+
+        ai assistant.
+                it searches files, edits files, performs researches and reports, provides insights, offers quick text manilupaton hacks(grammer, tone, formality and format, language translation, techniacal and infromal writing,  .. more could be consdered  ) it has context of your livelhood, as far as the text stored. it cannot open links ou save on its own. 
+            crucially, there should be a quick command ai chatbot where you command it to perform baicaly any fucntion that ou would have to manualy perform . the Ai command chat box. its response is either a prompt to approve the action, or an error message. in the case thereof. 
+        
+        }
+
+
+the there is the experience, and the redesign to enforce this flow. i am supposed to be able to copy and paste resource through a secure copy button, i need an edit button as well, and a delete button. 
+            i need grammer correction suggestions through out the experience, 
+            the translitions wil incorporate sliding element transitions and animations, which are customisable, and monetisable. 
+
+notes... a project, activity, and idea, are all categories of workspaces. there may be need to tailor them for thier utility.
+
+thence , provide nextcoud intgraion, where individuas will use heir own nexcloud accounts and keys to sync, as well as google if ha is prefered. saving is crucal. he json file is eiher savable on the device, or syncs o a cloud network. all seps one needs o do will be elaborated in the ux design. one can import from cloud pr fro device. this saving feature is priority. it must work. its not yur radiional entr your email to sync. therefore wih such sync, one would radher log in o thir clod storgae accounts. if this logic dos not make propr sence , rais issus. bu mae sure he json can be sav don the device.
+
+            
+
+      

@@ -14,9 +14,11 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 ## Features
 
 ### Local-First Core
-- **Zero-authentication Quick Upload**: Restore from `.json` snapshot on first load without any account setup
+- **Guest / unlogged mode**: Start and use the app without any account. Progress is saved on-device (IndexedDB). Log in or connect cloud later from Settings.
+- **Zero-authentication Quick Upload**: Restore from `.json` snapshot on first load (or Landing dropzone) without any account setup
 - **Full Offline Support**: All data stored in IndexedDB; works completely offline
 - **Snapshot Export/Import**: Download complete backups as versioned JSON files; drag-and-drop to restore
+- **Thought train**: Capture fleeting notes (with optional voice input) on the Home screen and scroll history later
 
 ### Google Drive Sync (Optional)
 - **AppData Folder Sync**: Automatic background sync to your private Google Drive `appDataFolder`

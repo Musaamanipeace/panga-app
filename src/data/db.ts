@@ -60,11 +60,16 @@ export interface ResourceListItem {
   tags: string[];
 }
 
+/** Workspace kinds: project | activity | idea share the same table. */
+export type WorkspaceKind = "project" | "activity" | "idea";
+
 export interface Project {
   id: string;
   name: string;
   description: string;
   status: ProjectStatus;
+  /** project (default), activity (events/chores/etc), or idea (not yet evolved). */
+  kind?: WorkspaceKind;
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -564,6 +569,8 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
     "insights",
     "settings",
     "drafts",
+    "activityLog",
+    "trainOfThought",
   ];
 
   const data: Record<string, any[]> = {};
@@ -601,6 +608,8 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
     "insights",
     "settings",
     "drafts",
+    "activityLog",
+    "trainOfThought",
   ];
 
   // Use the array form of transaction to avoid argument limit
@@ -625,7 +634,7 @@ export async function hasLocalData(): Promise<boolean> {
     "projects", "tasks", "resources", "docEntries", "milestones",
     "issues", "contacts", "reminders", "calendarEvents",
     "scheduleItems", "conversations", "messages", "insights",
-    "drafts",
+    "drafts", "activityLog", "trainOfThought",
   ];
   const counts = await Promise.all(
     tables.map((t) => (db as any)[t]?.count().catch(() => 0))

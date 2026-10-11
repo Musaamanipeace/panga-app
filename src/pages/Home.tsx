@@ -1,105 +1,233 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listProjects, createProject, getProjectTaskStats } from "../data/projects.ts"
+import {
+  listProjects,
+  createProject,
+  getProjectTaskStats,
+  listWorkspacesByKind,
+  type WorkspaceKind,
+} from "../data/projects";
 import {
   getDashboardAlerts,
   getDashboardSummary,
   summaryCards,
   type Alert,
   type DashboardSummary,
-} from "../data/dashboard.ts"
-import type { Project } from "../data/db.ts"
-import ProjectCard from "../components/ProjectCard.tsx"
-import MicButton from "../components/MicButton.tsx"
-import QuickAddResourceModal from "../components/QuickAddResourceModal.tsx"
-import { Drawer, ErrorNote, Loading, Slide, useAsync } from "../components/ui.tsx"
-import HomeTasksTab from "../components/home/HomeTasksTab.tsx"
-import HomeResourcesTab from "../components/home/HomeResourcesTab.tsx"
-import HomeLinksTab from "../components/home/HomeLinksTab.tsx"
-import HomeContactsTab from "../components/home/HomeContactsTab.tsx"
-import HomeCalendarTab from "../components/home/HomeCalendarTab.tsx"
-import HomeScheduleTab from "../components/home/HomeScheduleTab.tsx"
-import HomeRemindersTab from "../components/home/HomeRemindersTab.tsx"
-import HomeActivityTab from "../components/home/HomeActivityTab.tsx"
+} from "../data/dashboard";
+import type { Project } from "../data/db";
+import ProjectCard from "../components/ProjectCard";
+import QuickAddResourceModal from "../components/QuickAddResourceModal";
+import { Drawer, ErrorNote, Loading, useAsync } from "../components/ui";
+import HomeTasksTab from "../components/home/HomeTasksTab";
+import HomeResourcesTab from "../components/home/HomeResourcesTab";
+import HomeLinksTab from "../components/home/HomeLinksTab";
+import HomeContactsTab from "../components/home/HomeContactsTab";
+import HomeCalendarTab from "../components/home/HomeCalendarTab";
+import HomeScheduleTab from "../components/home/HomeScheduleTab";
+import HomeRemindersTab from "../components/home/HomeRemindersTab";
+import HomeActivityTab from "../components/home/HomeActivityTab";
 
-const TABS = ["Tasks", "Resources", "Links", "Contacts", "Calendar", "Schedule", "Reminders", "Activity"] as const;
-type Tab = (typeof TABS)[number];
+const SECTIONS = [
+  "Overview",
+  "Projects",
+  "Activities",
+  "Schedule",
+  "Ideas",
+  "Reminders",
+  "Resources",
+  "Alerts",
+] as const;
+type Section = (typeof SECTIONS)[number];
 
-const TAB_HINTS: Record<Tab, string> = {
-  Tasks: "Every task across every project, with a status filter",
-  Resources: "Quick notes, links, scripts, images and documents — standalone or tied to projects",
-  Links: "Add and organize web links and bookmarks with titles and descriptions — standalone at Home or tied to projects",
-  Contacts: "Every contact, with links to reach them and add contacts",
-  Calendar: "Month grid and list view of all events across projects, with Google Calendar .ics import",
-  Schedule: "Tasks with a date and time, plus calendar events and Meet links",
-  Reminders: "Reminders grouped into overdue, due and upcoming",
-  Activity: "Recent activity log across all projects and entity types",
+const SECTION_HINTS: Record<Section, string> = {
+  Overview: "Expandable cards for everything on one scrollable page",
+  Projects: "Business, research, charity, science, social, personal workspaces",
+  Activities: "Events, chores, errands, vacations, learning, hobbies",
+  Schedule: "Daily timetable — tasks and calendar blocks",
+  Ideas: "New ideas not yet evolved into a project or activity",
+  Reminders: "Time-based reminders",
+  Resources: "Notes, docs, checklists, links, contacts — global or project-bound",
+  Alerts: "Deadlines, overdue items, AI insights",
 };
+
+type ExpandedMap = Record<string, boolean>;
+
+function loadExpanded(): ExpandedMap {
+  try {
+    const raw = localStorage.getItem("panga_home_expanded");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {
+    Alerts: true,
+    Projects: true,
+    Activities: false,
+    Schedule: false,
+    Ideas: false,
+    Reminders: false,
+    Resources: false,
+  };
+}
 
 export default function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get("tab") as Tab | null;
-  const activeTab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "Tasks";
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [projectsVisible, setProjectsVisible] = useState(() => {
-    try {
-      return localStorage.getItem("panga_projects_visible") !== "false";
-    } catch {
-      return true;
-    }
-  });
-  const [projectSearch, setProjectSearch] = useState("");
+  const sectionParam = searchParams.get("section") as Section | null;
+  const activeSection: Section = SECTIONS.includes(sectionParam as Section)
+    ? (sectionParam as Section)
+    : "Overview";
 
-  function toggleProjectsVisible() {
-    const next = !projectsVisible;
-    setProjectsVisible(next);
-    try {
-      localStorage.setItem("panga_projects_visible", String(next));
-    } catch {}
+  const [expanded, setExpanded] = useState<ExpandedMap>(loadExpanded);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerKind, setDrawerKind] = useState<WorkspaceKind>("project");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+
+  function setSection(s: Section) {
+    setSearchParams(s === "Overview" ? {} : { section: s }, { replace: true });
+  }
+
+  function toggleExpand(key: string) {
+    setExpanded((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("panga_home_expanded", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   }
 
   const { data, error, loading, reload } = useAsync(async () => {
-    const [projects, alerts, summary] = await Promise.all([
+    const [allProjects, alerts, summary, projects, activities, ideas] = await Promise.all([
       listProjects("active"),
       getDashboardAlerts(),
       getDashboardSummary(),
+      listWorkspacesByKind("project"),
+      listWorkspacesByKind("activity"),
+      listWorkspacesByKind("idea"),
     ]);
     const statsEntries = await Promise.all(
-      projects.map(async (p) => [p.id, await getProjectTaskStats(p.id)] as const)
+      allProjects.map(async (p) => [p.id, await getProjectTaskStats(p.id)] as const)
     );
-    const statsMap = Object.fromEntries(statsEntries);
-    return { projects, alerts, summary, statsMap };
+    return {
+      allProjects,
+      alerts,
+      summary,
+      projects,
+      activities,
+      ideas,
+      statsMap: Object.fromEntries(statsEntries),
+    };
   }, []);
 
   useEffect(() => {
-    const handleUpdate = () => {
-      reload();
-    };
+    const handleUpdate = () => reload();
     window.addEventListener("panga-data-updated", handleUpdate);
     return () => window.removeEventListener("panga-data-updated", handleUpdate);
   }, [reload]);
 
-  const projects: Project[] = data?.projects ?? [];
   const alerts: Alert[] = data?.alerts ?? [];
   const summary: DashboardSummary | null = data?.summary ?? null;
-  const statsMap: Record<string, { percent: number; pending: number }> = data?.statsMap ?? {};
+  const projects: Project[] = data?.projects ?? [];
+  const activities: Project[] = data?.activities ?? [];
+  const ideas: Project[] = data?.ideas ?? [];
+  const statsMap = data?.statsMap ?? {};
+  const cards = useMemo(() => (summary ? summaryCards(summary) : []), [summary]);
 
-  const filteredProjects = useMemo(() => {
-    if (!projectSearch.trim()) return projects;
+  function filterList(list: Project[]) {
+    if (!projectSearch.trim()) return list;
     const q = projectSearch.toLowerCase();
-    return projects.filter(
+    return list.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q)
     );
-  }, [projects, projectSearch]);
-
-  function setTab(tab: Tab) {
-    setSearchParams(tab === "Tasks" ? {} : { tab }, { replace: true });
   }
 
-  const cards = useMemo(() => (summary ? summaryCards(summary) : []), [summary]);
+  async function handleCreateWorkspace(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    await createProject({
+      name: newName.trim(),
+      description: newDesc.trim(),
+      kind: drawerKind,
+    });
+    setNewName("");
+    setNewDesc("");
+    setDrawerOpen(false);
+    reload();
+  }
+
+  function openCreate(kind: WorkspaceKind) {
+    setDrawerKind(kind);
+    setDrawerOpen(true);
+  }
+
+  function WorkspaceGrid({
+    list,
+    emptyLabel,
+  }: {
+    list: Project[];
+    emptyLabel: string;
+  }) {
+    const filtered = filterList(list);
+    if (filtered.length === 0) {
+      return <p className="empty-state">{emptyLabel}</p>;
+    }
+    return (
+      <div className="project-grid">
+        {filtered.map((p) => (
+          <ProjectCard
+            key={p.id}
+            project={p}
+            progress={statsMap[p.id]?.percent ?? 0}
+            pending={statsMap[p.id]?.pending ?? 0}
+            onChange={reload}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function ExpandableSection({
+    id,
+    title,
+    count,
+    actions,
+    children,
+    defaultOpen,
+  }: {
+    id: string;
+    title: string;
+    count?: number;
+    actions?: React.ReactNode;
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+  }) {
+    const isOpen = expanded[id] ?? defaultOpen ?? false;
+    return (
+      <section className={`home-section ${isOpen ? "home-section-open" : ""}`}>
+        <header className="home-section-header">
+          <button
+            type="button"
+            className="home-section-toggle"
+            onClick={() => toggleExpand(id)}
+            aria-expanded={isOpen}
+          >
+            <span className="home-section-chevron">{isOpen ? "▼" : "▶"}</span>
+            <h2>
+              {title}
+              {typeof count === "number" && (
+                <span className="home-section-count">{count}</span>
+              )}
+            </h2>
+          </button>
+          {actions && <div className="home-section-actions">{actions}</div>}
+        </header>
+        {isOpen && <div className="home-section-body slide-enter">{children}</div>}
+      </section>
+    );
+  }
 
   if (error) {
     return (
@@ -112,50 +240,72 @@ export default function Home() {
   if (loading) {
     return (
       <div className="page page-wide">
-        <Loading label="Loading home..." />
+        <Loading label="Loading home…" />
       </div>
     );
   }
 
+  const overview = activeSection === "Overview";
+
   return (
     <div className="page page-wide home">
-      <header className="page-header">
-        <h1>Home</h1>
+      <header className="page-header home-page-header">
+        <div>
+          <h1>Home</h1>
+          <p className="home-subtitle">
+            Workspaces, schedule, resources &amp; focus tools for a distractive workplace.
+          </p>
+        </div>
         <div className="header-actions">
           <button
             type="button"
             className="btn-primary clickable"
             onClick={() => setQuickAddOpen(true)}
-            data-tip="Quickly save any note, link, list, task, milestone, or issue and peg it to a project"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            data-tip="Quickly save a note, link, list, or resource"
           >
-            <span>⚡ Quick Add Resource</span>
-          </button>
-          <button
-            type="button"
-            className={`btn-secondary btn-small clickable ${
-              projectsVisible ? "toggle-pressed" : ""
-            }`}
-            data-tip={projectsVisible ? "Hide projects grid" : "Show all projects"}
-            onClick={toggleProjectsVisible}
-          >
-            {projectsVisible ? "▼ Hide Projects" : "▶ Show Projects"} ({projects.length})
+            ⚡ Quick add
           </button>
           <button
             type="button"
             className="btn-secondary btn-small clickable"
-            onClick={() => setDrawerOpen(true)}
-            data-tip="Create a new project workspace"
+            onClick={() => openCreate("project")}
           >
-            + Add project
+            + Project
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            onClick={() => openCreate("activity")}
+          >
+            + Activity
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            onClick={() => openCreate("idea")}
+          >
+            + Idea
           </button>
         </div>
       </header>
 
-      {/* Alerts — computed on read, never stored. */}
-      {alerts.length > 0 && (
-        <section className="dashboard-section">
-          <h2 className="section-heading">Alerts</h2>
+      {/* Section nav */}
+      <nav className="home-section-nav" aria-label="Home sections">
+        {SECTIONS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className={`chip ${activeSection === s ? "chip-active" : ""}`}
+            onClick={() => setSection(s)}
+            data-tip={SECTION_HINTS[s]}
+          >
+            {s}
+          </button>
+        ))}
+      </nav>
+
+      {(overview || activeSection === "Alerts") && alerts.length > 0 && (
+        <ExpandableSection id="Alerts" title="Alerts" count={alerts.length} defaultOpen>
           <ul className="alert-list">
             {alerts.map((a) => (
               <li key={a.id} className={`alert-item alert-${a.type}`}>
@@ -165,45 +315,28 @@ export default function Home() {
                   <span className="alert-subtitle">{a.subtitle}</span>
                 </span>
                 {a.routerLink && (
-                  <Link
-                    to={a.routerLink}
-                    className="alert-link"
-                    data-tip={`Open: ${a.title}`}
-                    data-tip-edge="left"
-                  >
+                  <Link to={a.routerLink} className="alert-link">
                     Open
                   </Link>
                 )}
               </li>
             ))}
           </ul>
-        </section>
+        </ExpandableSection>
       )}
 
-      {/* Summary row — each card deep-links to where that number lives. */}
-      {summary && (
-        <section className="dashboard-section">
-          <h2 className="section-heading">Summary</h2>
+      {overview && summary && (
+        <section className="dashboard-section home-summary">
           <div className="summary-row">
-            {cards.map((card: { key: string; label: string; value: string | number; hint?: string; tab?: string }) =>
-              card.tab ? (
-                <Link
-                  key={card.key}
-                  to={`/home${card.tab === "Tasks" ? "" : `?tab=${card.tab}`}`}
-                  className="summary-card"
-                  data-tip={card.hint}
-                >
-                  <span className="summary-card-num">{card.value}</span>
-                  <span className="summary-card-label">{card.label}</span>
-                </Link>
-              ) : (
-                <div
-                  key={card.key}
-                  className="summary-card"
-                  data-tip={card.hint}
-                  role="group"
-                  aria-label={card.label}
-                >
+            {cards.map(
+              (card: {
+                key: string;
+                label: string;
+                value: string | number;
+                hint?: string;
+                tab?: string;
+              }) => (
+                <div key={card.key} className="summary-card" data-tip={card.hint}>
                   <span className="summary-card-num">{card.value}</span>
                   <span className="summary-card-label">{card.label}</span>
                 </div>
@@ -213,200 +346,162 @@ export default function Home() {
         </section>
       )}
 
-      {/* Project grid. */}
-      {projectsVisible && (
-        <section className="dashboard-section">
-          <div className="section-header-row">
-            <h2 className="section-heading">
-              Projects
-              {projectSearch.trim() && ` (${filteredProjects.length})`}
-            </h2>
-            <div className="project-search-wrapper">
-              <input
-                type="text"
-                className="project-search-input"
-                placeholder="Search projects by name or description..."
-                value={projectSearch}
-                onChange={(e) => setProjectSearch(e.target.value)}
-              />
-            </div>
-          </div>
-          {filteredProjects.length === 0 ? (
-            <p className="empty-state">
-              {projectSearch.trim()
-                ? "No projects match your search."
-                : "No projects yet — add one above."}
-            </p>
-          ) : (
-            <div className="project-grid">
-              {filteredProjects.map((p) => (
-                <ProjectCard
-                  key={p.id}
-                  project={p}
-                  progress={statsMap[p.id]?.percent ?? 0}
-                  pending={statsMap[p.id]?.pending ?? 0}
-                  onChange={reload}
-                />
-              ))}
+      {(overview || activeSection === "Projects") && (
+        <ExpandableSection
+          id="Projects"
+          title="Projects"
+          count={projects.length}
+          defaultOpen
+          actions={
+            <input
+              type="search"
+              className="project-search-input"
+              placeholder="Filter…"
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+            />
+          }
+        >
+          <p className="section-hint">
+            Business, research, charity, science, social, personal — each expands into contacts,
+            lists, links, documents, notes, locations, scripts, prompts, insights, milestones.
+          </p>
+          <WorkspaceGrid list={projects} emptyLabel="No projects yet — create one above." />
+        </ExpandableSection>
+      )}
+
+      {(overview || activeSection === "Activities") && (
+        <ExpandableSection
+          id="Activities"
+          title="Activities"
+          count={activities.length}
+          actions={
+            <button type="button" className="btn-secondary btn-small" onClick={() => openCreate("activity")}>
+              + Add
+            </button>
+          }
+        >
+          <p className="section-hint">
+            Events, chores, errands, vacations, learning programs, hobbies.
+          </p>
+          <WorkspaceGrid list={activities} emptyLabel="No activities yet." />
+          {!overview && (
+            <div className="tab-panel" style={{ marginTop: 16 }}>
+              <HomeActivityTab />
             </div>
           )}
+        </ExpandableSection>
+      )}
+
+      {(overview || activeSection === "Schedule") && (
+        <ExpandableSection id="Schedule" title="Daily schedule">
+          <p className="section-hint">Timetable of scheduled tasks and calendar blocks.</p>
+          <HomeScheduleTab />
+          {!overview && (
+            <div style={{ marginTop: 16 }}>
+              <HomeCalendarTab />
+            </div>
+          )}
+        </ExpandableSection>
+      )}
+
+      {(overview || activeSection === "Ideas") && (
+        <ExpandableSection
+          id="Ideas"
+          title="New ideas"
+          count={ideas.length}
+          actions={
+            <button type="button" className="btn-secondary btn-small" onClick={() => openCreate("idea")}>
+              + Idea
+            </button>
+          }
+        >
+          <p className="section-hint">
+            Capture ideas before they become projects or activities. Promote later by editing kind
+            in the workspace.
+          </p>
+          <WorkspaceGrid list={ideas} emptyLabel="No ideas yet — jot one down." />
+        </ExpandableSection>
+      )}
+
+      {(overview || activeSection === "Reminders") && (
+        <ExpandableSection id="Reminders" title="Reminders">
+          <HomeRemindersTab />
+        </ExpandableSection>
+      )}
+
+      {(overview || activeSection === "Resources") && (
+        <ExpandableSection id="Resources" title="Resources" defaultOpen={activeSection === "Resources"}>
+          <p className="section-hint">
+            Notes, documents, checklists, URLs, map pins, contacts. Resources can be global or
+            bound to a project; sub-resources supported. Copy, edit, and delete on each item.
+          </p>
+          <div className="resources-subtabs">
+            <HomeResourcesTab />
+          </div>
+          {!overview && (
+            <>
+              <h3 className="section-heading" style={{ marginTop: 20 }}>
+                Links
+              </h3>
+              <HomeLinksTab />
+              <h3 className="section-heading" style={{ marginTop: 20 }}>
+                Contacts
+              </h3>
+              <HomeContactsTab />
+            </>
+          )}
+        </ExpandableSection>
+      )}
+
+      {/* Focused non-overview: tasks shortcut */}
+      {!overview && activeSection === "Projects" && (
+        <section className="dashboard-section">
+          <h2 className="section-heading">All tasks</h2>
+          <HomeTasksTab />
         </section>
       )}
 
-      {/* Cross-project tabs. */}
-      <section className="dashboard-section">
-        <h2 className="section-heading">Everything</h2>
-        <nav className="tab-bar tab-bar-scrollable" aria-label="Cross-project views">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`tab-btn ${activeTab === tab ? "tab-btn-active" : ""}`}
-              onClick={() => setTab(tab)}
-              data-tip={TAB_HINTS[tab]}
-              aria-current={activeTab === tab}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-        <Slide
-          slideKey={activeTab}
-          order={TABS.indexOf(activeTab)}
-          previousOrder={0}
-        >
-          {activeTab === "Tasks" && <HomeTasksTab />}
-          {activeTab === "Resources" && <HomeResourcesTab />}
-          {activeTab === "Links" && <HomeLinksTab />}
-          {activeTab === "Contacts" && <HomeContactsTab />}
-          {activeTab === "Calendar" && <HomeCalendarTab />}
-          {activeTab === "Schedule" && <HomeScheduleTab />}
-          {activeTab === "Reminders" && <HomeRemindersTab />}
-          {activeTab === "Activity" && <HomeActivityTab />}
-        </Slide>
-      </section>
+      <p className="home-ai-hint">
+        Use the <strong>AI assistant</strong> (bottom-right) for command chat: create tasks,
+        projects, reminders, insights, text rewrites (grammar, tone, translation). Approve or
+        reject each proposed action.
+      </p>
 
-      <AddProjectDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreated={reload} />
-      <QuickAddResourceModal
-        open={quickAddOpen}
-        onClose={() => setQuickAddOpen(false)}
-        onSaved={reload}
-      />
-    </div>
-  );
-}
+      <QuickAddResourceModal open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
 
-function AddProjectDrawer({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleCreate(e?: React.FormEvent | React.MouseEvent) {
-    if (e) e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Give the project a name.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await createProject({ name: trimmed, description: description.trim() });
-      setName("");
-      setDescription("");
-      onCreated();
-      onClose();
-    } catch (err) {
-      console.error("Failed to create project:", err);
-      setError(err instanceof Error ? err.message : "Could not create the project.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Drawer
-      open={open}
-      onClose={onClose}
-      title="New project"
-      edge="right"
-      closeTip="Discard this project"
-      footer={
-        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", width: "100%" }}>
-          <button
-            type="button"
-            className="btn-secondary clickable"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="add-project-form"
-            className="btn-primary clickable"
-            disabled={saving}
-            onClick={handleCreate}
-            data-tip="Create the project and open it"
-          >
-            {saving ? "Creating..." : "Create project"}
-          </button>
-        </div>
-      }
-    >
-      <form id="add-project-form" onSubmit={handleCreate} className="stack">
-        <div>
-          <label htmlFor="new-project-name">Project name</label>
-          <div className="inline-form" style={{ marginBottom: 0 }}>
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title={`New ${drawerKind}`}>
+        <form onSubmit={handleCreateWorkspace} className="drawer-form">
+          <label>
+            Name
             <input
-              id="new-project-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              required
               autoFocus
-              type="text"
-              placeholder="e.g. Album release"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCreate();
-                }
-              }}
-            />
-            <MicButton onResult={setName} />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="new-project-description">
-            Description <span className="faint">(optional)</span>
-          </label>
-          <input
-            id="new-project-description"
-            type="text"
-            placeholder="One line on what this is for"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleCreate();
+              placeholder={
+                drawerKind === "idea"
+                  ? "Idea title"
+                  : drawerKind === "activity"
+                    ? "Activity name"
+                    : "Project name"
               }
-            }}
-          />
-        </div>
-        {error && <p className="form-error">{error}</p>}
-        <p className="form-note">
-          The project starts empty. Everything is added from its own workspace tabs.
-        </p>
-      </form>
-    </Drawer>
+            />
+          </label>
+          <label>
+            Description
+            <textarea
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              rows={3}
+              placeholder="Optional details"
+            />
+          </label>
+          <button type="submit" className="btn-primary">
+            Create {drawerKind}
+          </button>
+        </form>
+      </Drawer>
+    </div>
   );
 }

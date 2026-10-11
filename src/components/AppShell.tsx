@@ -2,13 +2,16 @@ import { Link, Outlet } from "react-router-dom";
 import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
+import ThoughtTrain from "./ThoughtTrain";
 import { ToastContainer } from "./ui";
 import StashPanel from "./Stash";
-import { getSessionEmail } from "../auth/session";
+import { getSessionEmail, isGuest } from "../auth/session";
 import { signOut, subscribeSyncStatus, syncAll } from "../sync/sync";
 
 export default function AppShell() {
   const email = getSessionEmail();
+  const guest = isGuest();
+  const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const [syncState, setSyncState] = useState<{ status: string; message: string; timestamp: number }>({
     status: "idle",
     message: "",
@@ -38,86 +41,71 @@ export default function AppShell() {
     error: "#ef4444",
   };
 
+  const online = typeof navigator !== "undefined" ? navigator.onLine : true;
+
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/dashboard" className="app-logo clickable" data-tip="Back to your project dashboard">
+        <Link to="/home" className="app-logo clickable" data-tip="Home">
           Panga
         </Link>
         <GlobalSearch />
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable"
+          onClick={() => setThoughtsOpen(true)}
+          data-tip="Thought train — capture notes quickly"
+        >
+          💭 Thoughts
+        </button>
         <Link
           to="/settings"
           className="btn-secondary btn-small clickable"
-          data-tip="Settings: API keys, backup & restore"
+          data-tip="Settings: API keys, backup & sync (JSON, Google Drive, WebDAV/Nextcloud)"
         >
           Settings
         </Link>
         <span
           className="user-email"
-          style={{
-            fontSize: "12px",
-            color: "var(--color-text-muted)",
-            marginRight: "8px",
-            maxWidth: "160px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={email || ""}
+          title={guest ? "Guest (offline)" : email || ""}
         >
-          {email || ""}
+          {guest ? "Guest · offline" : email || "Local"}
         </span>
         <button
           className="btn-secondary btn-small clickable"
           onClick={handleManualSync}
           disabled={syncState.status === "syncing"}
-          style={{ marginRight: "8px" }}
-          data-tip={syncState.message || "Save changes locally"}
+          data-tip={syncState.message || "Save progress on this device"}
         >
-          {syncState.status === "syncing" ? "⟳ Saving..." : "💾 Save"}
+          {syncState.status === "syncing" ? "⟳ Saving…" : "💾 Save"}
         </button>
         <span
           className="sync-status"
-          style={{
-            fontSize: "11px",
-            color: statusColors[syncState.status] || "var(--color-text-muted)",
-            marginRight: "8px",
-            fontFamily: "monospace",
-          }}
+          style={{ color: statusColors[syncState.status] || "var(--color-text-muted)" }}
           title={syncState.message || "Local storage"}
         >
-          {syncState.status === "idle" 
-            ? "⏸" 
-            : syncState.status === "syncing" 
-              ? "⟳" 
-              : syncState.status === "synced" 
-                ? "✓" 
-                : "✗"}
+          {syncState.status === "synced" ? "✓ saved" : syncState.status === "syncing" ? "⟳" : syncState.status === "error" ? "✗" : "·"}
         </span>
         <span
           className="offline-badge"
-          style={{
-            fontSize: "11px",
-            color: "var(--color-text-muted)",
-            marginRight: "8px",
-            fontFamily: "monospace",
-          }}
-          title="Offline-first mode"
+          style={{ color: online ? "var(--color-accent-resource)" : "var(--color-text-muted)" }}
+          title={online ? "Online — cloud sync available if configured" : "Offline — progress still saved on device"}
         >
-          📱 Offline
+          {online ? "● online" : "○ offline"}
         </span>
         <button
           className="btn-secondary btn-small clickable logout-btn"
-          data-tip={email ? `Signed in as ${email} — click to log out` : "Log out"}
+          data-tip={guest ? "Exit guest mode" : "Log out"}
           onClick={handleLogout}
         >
-          Logout
+          {guest ? "Exit" : "Logout"}
         </button>
       </header>
       <main className="app-main">
         <Outlet />
       </main>
       <AssistantPanel />
+      <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
       <ToastContainer />
       <StashPanel />
     </div>

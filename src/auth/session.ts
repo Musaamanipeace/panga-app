@@ -25,6 +25,33 @@ export function isLoggedIn(): boolean {
   return !!getSessionEmail() && !!getSessionUserId();
 }
 
+/** Guest / unlogged mode: app usable offline with local IndexedDB only. */
+export function isGuest(): boolean {
+  if (typeof window === "undefined" || !window.localStorage) return false;
+  return localStorage.getItem("panga_guest") === "1";
+}
+
+export function setGuestMode(): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  localStorage.setItem("panga_guest", "1");
+  // Ensure a stable local user id for data ownership without email
+  if (!getSessionUserId()) {
+    const id = "guest_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem(SESSION_USER_ID_KEY, id);
+    localStorage.setItem(SESSION_EMAIL_KEY, "guest@local");
+  }
+}
+
+export function clearGuestMode(): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  localStorage.removeItem("panga_guest");
+}
+
+/** True if the user can use the app (logged in or guest). */
+export function canUseApp(): boolean {
+  return isLoggedIn() || isGuest();
+}
+
 export function setSession(email: string, userId: string): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.setItem(SESSION_EMAIL_KEY, email);
@@ -166,6 +193,7 @@ export async function signUp(email: string, password: string): Promise<AuthResul
 
 export async function signOut(): Promise<void> {
   clearSession();
+  clearGuestMode();
   window.location.assign("/");
 }
 
