@@ -1,5 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { getGeminiApiKey, setGeminiApiKey, getWebdavConfig, setWebdavConfig, clearWebdavConfig, DEFAULT_BACKUP_PATH } from "../data/settings";
+import {
+  getGeminiApiKey,
+  setGeminiApiKey,
+  getWebdavConfig,
+  setWebdavConfig,
+  clearWebdavConfig,
+  DEFAULT_BACKUP_PATH,
+  getEmailBackupApiKey,
+  setEmailBackupApiKey,
+  getEmailBackupProvider,
+  setEmailBackupProvider,
+} from "../data/settings";
 import { syncAll } from "../sync/sync";
 import {
   downloadSnapshot,
@@ -31,6 +42,10 @@ export default function Settings() {
   const [emailBackupEmail, setEmailBackupEmail] = useState("");
   const [emailBackupStatus, setEmailBackupStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [emailBackupMessage, setEmailBackupMessage] = useState<string | null>(null);
+  const [emailApiKey, setEmailApiKey] = useState("");
+  const [emailProvider, setEmailProvider] = useState("resend");
+  const [emailConfigSaved, setEmailConfigSaved] = useState(false);
+  const [showEmailConfig, setShowEmailConfig] = useState(false);
 
   // WebDAV cloud backup config
   const [webdavEndpoint, setWebdavEndpoint] = useState("");
@@ -54,6 +69,10 @@ export default function Settings() {
   const loadSettings = useCallback(async () => {
     const key = await getGeminiApiKey();
     setGeminiKey(key ?? "");
+    const emailKey = await getEmailBackupApiKey();
+    setEmailApiKey(emailKey ?? "");
+    const provider = await getEmailBackupProvider();
+    setEmailProvider(provider ?? "resend");
     const webdav = await getWebdavConfig();
     if (webdav) {
       setWebdavEndpoint(webdav.endpoint);
@@ -112,6 +131,14 @@ export default function Settings() {
     }
   }
 
+  async function handleSaveEmailConfig(e: React.FormEvent) {
+    e.preventDefault();
+    await setEmailBackupApiKey(emailApiKey.trim());
+    await setEmailBackupProvider(emailProvider);
+    setEmailConfigSaved(true);
+    setTimeout(() => setEmailConfigSaved(false), 2500);
+  }
+
   async function handleEmailBackup() {
     if (!emailBackupEmail.trim() || !emailBackupEmail.includes('@')) {
       setEmailBackupMessage("Please enter a valid email address.");
@@ -127,20 +154,30 @@ export default function Settings() {
       // Generate snapshot
       const snapshot = await exportSnapshot();
 
-      // Send to API
+      // Send to API with user's configured free credentials
       const response = await fetch('/api/backup/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: emailBackupEmail.trim(),
           snapshot,
+          apiKey: emailApiKey.trim() || undefined,
+          provider: emailProvider,
         }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          `Server returned HTTP ${response.status}: ${rawText.slice(0, 100).replace(/<[^>]*>/g, "").trim()}`
+        );
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to send email');
+        throw new Error(data.error || `Failed to send email (HTTP ${response.status})`);
       }
 
       setEmailBackupStatus("sent");
@@ -368,10 +405,21 @@ export default function Settings() {
 
         {/* Email Backup Section */}
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--color-border)" }}>
-          <h3 style={{ margin: "0 0 8px 0", fontSize: "14px" }}>📧 Email Backup</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            <h3 style={{ margin: 0, fontSize: "14px" }}>📧 Email Backup</h3>
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => setShowEmailConfig((prev) => !prev)}
+              data-tip="Configure your own free email API key"
+            >
+              {showEmailConfig ? "Hide Email Settings" : "⚙️ Email API Settings"}
+            </button>
+          </div>
           <p className="settings-help" style={{ marginBottom: 12 }}>
-            Send a complete backup of your data to any email address as a JSON attachment.
+            Send a complete backup of your data to your inbox as a JSON attachment.
           </p>
+
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <input
               type="email"
@@ -391,6 +439,62 @@ export default function Settings() {
               {emailBackupStatus === "sending" ? "Sending..." : "📧 Email Backup"}
             </button>
           </div>
+
+          {/* User-configurable email credentials */}
+          {showEmailConfig && (
+            <form
+              onSubmit={handleSaveEmailConfig}
+              style={{
+                marginTop: 12,
+                padding: 12,
+                borderRadius: "var(--radius-sm)",
+                background: "var(--color-bg-subtle, #f9fafb)",
+                border: "1px solid var(--color-border)",
+              }}
+            >
+              <div style={{ fontSize: "13px", fontWeight: 600, marginBottom: 6 }}>
+                Free Email Dispatch Credentials (Stored Locally)
+              </div>
+              <p className="settings-help" style={{ marginBottom: 10 }}>
+                Get a completely free API key from{" "}
+                <a href="https://resend.com" target="_blank" rel="noreferrer">
+                  Resend.com
+                </a>{" "}
+                (3,000 emails/month forever, <strong>no credit card required</strong>).
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <select
+                  value={emailProvider}
+                  onChange={(e) => setEmailProvider(e.target.value)}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    fontSize: "13px",
+                  }}
+                >
+                  <option value="resend">Resend (Free, 3,000/mo)</option>
+                  <option value="sendgrid">SendGrid (Free, 100/day)</option>
+                </select>
+                <input
+                  type="password"
+                  placeholder="re_123456789..."
+                  value={emailApiKey}
+                  onChange={(e) => setEmailApiKey(e.target.value)}
+                  style={{ flex: 1, minWidth: "220px" }}
+                  data-tip="Your personal free API key"
+                />
+                <button type="submit" className="btn-secondary clickable">
+                  {emailConfigSaved ? "Saved ✓" : "Save Email Key"}
+                </button>
+              </div>
+              {emailConfigSaved && (
+                <p style={{ fontSize: "12px", color: "green", marginTop: 6, margin: "6px 0 0 0" }}>
+                  ✓ Email dispatch key saved in your profile!
+                </p>
+              )}
+            </form>
+          )}
         </div>
 
         {(backupMessage || emailBackupMessage) && (

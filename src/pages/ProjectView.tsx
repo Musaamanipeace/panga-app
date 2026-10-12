@@ -16,7 +16,6 @@ import MicButton from "../components/MicButton";
 import { showToast } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
-import HomeResourcesTab from "../components/home/HomeResourcesTab";
 
 const TABS = ["Documentation", "Tasks", "Resources", "Milestones", "Insights", "Issues", "Reminders", "Contacts", "Calendar"] as const;
 type Tab = (typeof TABS)[number];
@@ -285,7 +284,7 @@ export default function ProjectView() {
       <div className="tab-panel">
         {activeTab === "Documentation" && <DocumentationTab projectId={projectId} />}
         {activeTab === "Tasks" && <TasksTab projectId={projectId} onChange={refreshProject} />}
-        {activeTab === "Resources" && <HomeResourcesTab initialProjectId={projectId} scopedToProject={true} />}
+        {activeTab === "Resources" && <ResourcesTab projectId={projectId} />}
         {activeTab === "Milestones" && <MilestonesTab projectId={projectId} />}
         {activeTab === "Insights" && <InsightsTab projectId={projectId} />}
         {activeTab === "Issues" && <IssuesTab projectId={projectId} />}

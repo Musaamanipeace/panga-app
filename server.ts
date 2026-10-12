@@ -213,6 +213,100 @@ app.post("/api/assistant/chat", async (req, res) => {
   }
 });
 
+// Email backup route
+app.post("/api/backup/email", async (req, res) => {
+  try {
+    const { email, snapshot, apiKey: clientApiKey, provider = "resend" } = req.body;
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email address is required" });
+    }
+    if (!snapshot) {
+      return res.status(400).json({ error: "Snapshot data is required" });
+    }
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `panga-backup-${timestamp}.json`;
+    const jsonContent = JSON.stringify(snapshot, null, 2);
+
+    const html = `
+      <div style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #1f2937; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 20px;">📦 Panga Backup</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+          <p>Your Panga data backup is attached as <strong>${filename}</strong>.</p>
+          <p>Exported on: ${new Date().toLocaleString()}</p>
+          <p style="color: #6b7280; font-size: 14px;">
+            This file contains all your projects, tasks, resources, notes, milestones, reminders, and settings.
+            Restore anytime in Panga Settings &rarr; <strong>Upload Snapshot</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+
+    const resendKey = clientApiKey || process.env.RESEND_API_KEY;
+    const sendgridKey = clientApiKey || process.env.SENDGRID_API_KEY;
+
+    if (provider === "resend" && resendKey) {
+      const emailRes = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM_EMAIL || "Panga <onboarding@resend.dev>",
+          to: [email],
+          subject: `Panga Backup - ${timestamp}`,
+          html,
+          attachments: [{
+            filename,
+            content: Buffer.from(jsonContent).toString("base64"),
+          }],
+        }),
+      });
+      if (emailRes.ok) {
+        return res.json({ ok: true, message: `Backup sent successfully to ${email}` });
+      }
+      const errData = await emailRes.json().catch(() => ({}));
+      return res.status(400).json({ error: `Resend error: ${errData.message || JSON.stringify(errData)}` });
+    }
+
+    if (provider === "sendgrid" && sendgridKey) {
+      const emailRes = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${sendgridKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email }] }],
+          from: { email: process.env.SENDGRID_FROM_EMAIL || "noreply@panga.app" },
+          subject: `Panga Backup - ${timestamp}`,
+          content: [{ type: "text/html", value: html }],
+          attachments: [{
+            content: Buffer.from(jsonContent).toString("base64"),
+            filename,
+            type: "application/json",
+            disposition: "attachment",
+          }],
+        }),
+      });
+      if (emailRes.ok) {
+        return res.json({ ok: true, message: `Backup sent successfully to ${email}` });
+      }
+      return res.status(400).json({ error: "SendGrid rejected the email dispatch. Check your API key." });
+    }
+
+    return res.status(400).json({
+      error: "No email API key found. Enter your free API key from Resend (resend.com) in Settings, or use 'Download Snapshot' for an instant local backup.",
+    });
+  } catch (error: any) {
+    console.error("Email backup error:", error);
+    res.status(500).json({ error: error?.message || "Failed to send backup email" });
+  }
+});
+
 async function start() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

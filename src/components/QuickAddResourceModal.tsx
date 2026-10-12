@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db } from "../data/db";
 import { listAllProjects } from "../data/projects";
 import { createResource } from "../data/resources";
 import { createTask } from "../data/tasks";

@@ -1,13 +1,10 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenAI } from '@google/genai';
-
 // Email sending function - supports multiple providers
 async function sendEmail(
-  to: string,
-  subject: string,
-  html: string,
-  attachment: { filename: string; content: string }
-): Promise<{ ok: boolean; error?: string }> {
+  to,
+  subject,
+  html,
+  attachment
+) {
   // Try Resend first (if RESEND_API_KEY is set)
   if (process.env.RESEND_API_KEY) {
     try {
@@ -106,7 +103,7 @@ async function generateSnapshot() {
   return null;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -159,7 +156,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(200).json({ ok: true, message: `Backup sent to ${email}` });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Email backup error:', error);
     return res.status(500).json({ error: error?.message || 'Failed to send backup email' });
   }

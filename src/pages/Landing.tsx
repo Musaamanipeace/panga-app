@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { setGuestMode, isLoggedIn, canUseApp, restoreSessionFromSnapshot } from "../auth/session";
+import { setGuestMode, canUseApp, restoreSessionFromSnapshot } from "../auth/session";
 import { hasLocalData, importDbState } from "../data/db";
 import { signIn, signUp } from "../sync/sync";
 

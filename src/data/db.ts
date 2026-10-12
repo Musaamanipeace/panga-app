@@ -243,6 +243,8 @@ export const SETTINGS_KEYS = {
   googleAccessToken: "googleAccessToken",
   driveFolderPrefix: "driveFolder:",
   webdavConfig: "webdavConfig",
+  emailBackupApiKey: "emailBackupApiKey",
+  emailBackupProvider: "emailBackupProvider",
 } as const;
 
 // Derive a stable, per-user database name from the logged-in user ID.

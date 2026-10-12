@@ -1,7 +1,6 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req, res) {
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -26,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    const tools: any[] = [];
+    const tools = [];
     if (enableSearch) {
       tools.push({ googleSearch: {} });
     }
@@ -44,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       text: response.text ?? '',
       functionCalls: response.functionCalls,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Gemini API error:', error);
     return res.status(500).json({
       error: error?.message || 'Failed to generate AI response.',

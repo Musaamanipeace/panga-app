@@ -89,6 +89,23 @@ export async function setGeminiApiKey(key: string): Promise<void> {
   await setSetting("geminiApiKey", key);
 }
 
+// Email Backup API Key (Saved locally in Dexie per user)
+export async function getEmailBackupApiKey(): Promise<string | null> {
+  return (await getSetting<string>("emailBackupApiKey")) ?? null;
+}
+
+export async function setEmailBackupApiKey(key: string): Promise<void> {
+  await setSetting("emailBackupApiKey", key);
+}
+
+export async function getEmailBackupProvider(): Promise<string> {
+  return (await getSetting<string>("emailBackupProvider")) ?? "resend";
+}
+
+export async function setEmailBackupProvider(provider: string): Promise<void> {
+  await setSetting("emailBackupProvider", provider);
+}
+
 // --- WebDAV configuration ---
 
 /** Stored form (password is AES-GCM encrypted in IndexedDB, never plaintext). */
