@@ -223,48 +223,6 @@ export function formatResourceForClipboard(resource: Resource): string {
   return parts.filter(Boolean).join("\n\n");
 }
 
-/**
- * Seeds the default list and checklist resources for a project
- * "there are two resource types, and categories of those types added to each default project. a list, and a checklist."
- */
-export async function seedDefaultProjectResources(projectId: string): Promise<void> {
-  if (!db.isOpen()) await db.open();
-  const existing = await db.resources.where("projectId").equals(projectId).toArray();
-  const hasList = existing.some((r) => r.category === "lists" || r.category === "list");
-  const hasChecklist = existing.some((r) => r.category === "checklists" || r.category === "checklist" || r.category === "preset-list");
-
-  if (!hasList) {
-    await createResource({
-      projectId,
-      category: "lists",
-      title: "Key Project Reference & Resources",
-      tags: ["reference", "default"],
-      listItems: [
-        { id: newId(), text: "API Base URL: https://api.example.com/v1", checked: false, tags: ["api"] },
-        { id: newId(), text: "Design Tokens: Primary #3b82f6, Accent #10b981", checked: false, tags: ["design"] },
-        { id: newId(), text: "CLI Build Command: npm run build", checked: false, tags: ["cli"] },
-        { id: newId(), text: "Documentation: https://docs.example.com", checked: false, tags: ["docs"] },
-      ],
-    });
-  }
-
-  if (!hasChecklist) {
-    await createResource({
-      projectId,
-      category: "checklists",
-      title: "Project Setup & Launch Checklist",
-      tags: ["checklist", "default"],
-      listItems: [
-        { id: newId(), text: "Define project objectives and requirements", checked: true, tags: ["planning"] },
-        { id: newId(), text: "Configure environment variables and local database", checked: true, tags: ["dev"] },
-        { id: newId(), text: "Verify sync status and credential security", checked: false, tags: ["security"] },
-        { id: newId(), text: "Conduct comprehensive QA and cross-device testing", checked: false, tags: ["qa"] },
-        { id: newId(), text: "Deploy production build and verify health endpoints", checked: false, tags: ["release"] },
-      ],
-    });
-  }
-}
-
 /** Formats resource as Markdown */
 export function formatResourceAsMarkdown(resource: Resource, projectName?: string): string {
   let output = `# ${resource.title}\n\n`;

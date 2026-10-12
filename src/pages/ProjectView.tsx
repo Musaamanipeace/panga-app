@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getProject, getProjectTaskStats, deleteProject } from "../data/projects";
 import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, formatResourceForClipboard, seedDefaultProjectResources, type Resource, type ResourceImage, type ResourceFile, type ResourceListItem } from "../data/resources";
+import { listResourcesForProject, createResource, updateResource, deleteResource, formatResourceForClipboard, type Resource, type ResourceImage, type ResourceFile, type ResourceListItem } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
@@ -737,7 +737,6 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
 // ---------- Resources ----------
 function ResourcesTab({ projectId }: { projectId: string }) {
   const [resources, setResources] = useState<Resource[]>([]);
-  const [userCleared, setUserCleared] = useState(false);
   const [filter, setFilter] = useState<string>("all");
   const [subfilter, setSubfilter] = useState<string>("all");
   const [editing, setEditing] = useState<Resource | null>(null);
@@ -920,15 +919,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   });
 
   async function refresh() {
-    let list = await listResourcesForProject(projectId);
-    if (list.length === 0 && !userCleared) {
-      await seedDefaultProjectResources(projectId);
-      list = await listResourcesForProject(projectId);
-    }
+    const list = await listResourcesForProject(projectId);
     setResources(list);
   }
   useEffect(() => {
-    setUserCleared(false);
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -977,7 +971,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       await updateResource(editing.id, input);
     } else {
       await createResource(input);
-      setUserCleared(false);
     }
     resetForm();
     refresh();
@@ -1672,8 +1665,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                     e.stopPropagation();
                     if (!confirm(`Delete resource "${r.title}"?`)) return;
                     await deleteResource(r.id);
-                    const remaining = await listResourcesForProject(projectId);
-                    if (remaining.length === 0) setUserCleared(true);
                     refresh();
                   }}
                 >
