@@ -737,6 +737,7 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
 // ---------- Resources ----------
 function ResourcesTab({ projectId }: { projectId: string }) {
   const [resources, setResources] = useState<Resource[]>([]);
+  const [userCleared, setUserCleared] = useState(false);
   const [filter, setFilter] = useState<string>("all");
   const [subfilter, setSubfilter] = useState<string>("all");
   const [editing, setEditing] = useState<Resource | null>(null);
@@ -920,13 +921,14 @@ function ResourcesTab({ projectId }: { projectId: string }) {
 
   async function refresh() {
     let list = await listResourcesForProject(projectId);
-    if (list.length === 0) {
+    if (list.length === 0 && !userCleared) {
       await seedDefaultProjectResources(projectId);
       list = await listResourcesForProject(projectId);
     }
     setResources(list);
   }
   useEffect(() => {
+    setUserCleared(false);
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -975,6 +977,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       await updateResource(editing.id, input);
     } else {
       await createResource(input);
+      setUserCleared(false);
     }
     resetForm();
     refresh();
@@ -1664,7 +1667,15 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                 <button
                   className="task-delete-btn"
                   data-tip="Delete resource"
-                  onClick={async () => { await deleteResource(r.id); refresh(); }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!confirm(`Delete resource "${r.title}"?`)) return;
+                    await deleteResource(r.id);
+                    const remaining = await listResourcesForProject(projectId);
+                    if (remaining.length === 0) setUserCleared(true);
+                    refresh();
+                  }}
                 >
                   ×
                 </button>
