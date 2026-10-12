@@ -124,48 +124,6 @@ app.get("/api/sync/export", (req, res) => {
   res.send(JSON.stringify(data, null, 2));
 });
 
-// --- WebDAV / Nextcloud Proxy Route (avoids browser CORS for Nextcloud servers) ---
-app.post("/api/sync/webdav/proxy", async (req, res) => {
-  try {
-    const { url, method = "GET", headers = {}, body } = req.body;
-    if (!url) {
-      return res.status(400).json({ error: "Missing url parameter" });
-    }
-
-    const fetchOptions: RequestInit = {
-      method,
-      headers: {
-        ...headers,
-        "User-Agent": "Panga/1.0 (Nextcloud Sync)",
-      },
-    };
-    if (body !== undefined && method !== "GET" && method !== "HEAD") {
-      fetchOptions.body = body;
-    }
-
-    const response = await fetch(url, fetchOptions);
-    const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((val, key) => {
-      responseHeaders[key] = val;
-    });
-
-    const responseText = await response.text();
-    return res.status(200).json({
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      headers: responseHeaders,
-      body: responseText,
-    });
-  } catch (err: any) {
-    console.error("WebDAV proxy error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: err?.message || "Failed to proxy WebDAV request",
-    });
-  }
-});
-
 // Server-side Gemini API route
 app.post("/api/assistant/chat", async (req, res) => {
   try {

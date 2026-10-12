@@ -2,31 +2,57 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getGeminiApiKey,
   setGeminiApiKey,
-  getWebdavConfig,
-  setWebdavConfig,
-  clearWebdavConfig,
-  DEFAULT_BACKUP_PATH,
+  getGoogleClientId,
+  setGoogleClientId,
   getEmailBackupApiKey,
   setEmailBackupApiKey,
   getEmailBackupProvider,
   setEmailBackupProvider,
+  getActiveSyncProvider,
+  setActiveSyncProvider,
+  getGithubGistToken,
+  setGithubGistToken,
+  getGithubGistId,
+  setGithubGistId,
+  getNextcloudConfig,
+  setNextcloudConfig,
+  clearNextcloudConfig,
+  getLastSyncInfo,
+  setLastSyncInfo,
+  type CloudSyncProvider,
+  type LastSyncInfo,
 } from "../data/settings";
-import { syncAll } from "../sync/sync";
 import {
   downloadSnapshot,
   readSnapshotFile,
   importSnapshot,
   exportSnapshot,
-  validateSnapshot,
   type Snapshot,
 } from "../sync/snapshot";
+import { syncAll } from "../sync/sync";
 import {
-  webdavTestConnection,
-  webdavUploadBackup,
-  webdavDownloadBackup,
-  type WebdavConfig,
-  type WebdavTestResult,
-} from "../sync/webdav";
+  connectGoogleDrive,
+  disconnectGoogleDrive,
+  isGoogleDriveConnected,
+  getStoredToken,
+  syncNowToGoogleDrive,
+  fetchDriveBackupForRestore,
+} from "../sync/googleDriveSync";
+import {
+  syncNowToGithubGist,
+  fetchGithubGistForRestore,
+} from "../sync/githubGistSync";
+import {
+  syncNowToNextcloud,
+  fetchNextcloudForRestore,
+  testNextcloudConnection,
+} from "../sync/nextcloudSync";
+
+const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
+  google_drive: "Google Drive",
+  github_gist: "GitHub Gist",
+  nextcloud: "Nextcloud (WebDAV)",
+};
 
 export default function Settings() {
   // Gemini settings
@@ -47,17 +73,32 @@ export default function Settings() {
   const [emailConfigSaved, setEmailConfigSaved] = useState(false);
   const [showEmailConfig, setShowEmailConfig] = useState(false);
 
-  // WebDAV cloud backup config
-  const [webdavEndpoint, setWebdavEndpoint] = useState("");
-  const [webdavUsername, setWebdavUsername] = useState("");
-  const [webdavPassword, setWebdavPassword] = useState("");
-  const [webdavBackupPath, setWebdavBackupPath] = useState(DEFAULT_BACKUP_PATH);
+  // Multi-Cloud Sync state
+  const [activeProvider, setActiveProviderState] = useState<CloudSyncProvider>("google_drive");
+  const [selectedProviderTab, setSelectedProviderTab] = useState<CloudSyncProvider>("google_drive");
+  const [lastSync, setLastSync] = useState<LastSyncInfo | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [cloudSyncMessage, setCloudSyncMessage] = useState("");
 
-  // WebDAV status
-  const [webdavTestStatus, setWebdavTestStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
-  const [webdavTestMessage, setWebdavTestMessage] = useState("");
-  const [webdavUploadStatus, setWebdavUploadStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
-  const [webdavUploadMessage, setWebdavUploadMessage] = useState("");
+  // Google Drive state
+  const [googleClientId, setGoogleClientIdState] = useState("");
+  const [googleClientIdSaved, setGoogleClientIdSaved] = useState(false);
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [driveTokenExpiresAt, setDriveTokenExpiresAt] = useState<number | null>(null);
+
+  // GitHub Gist state
+  const [gistToken, setGistToken] = useState("");
+  const [gistId, setGistId] = useState("");
+  const [gistConfigSaved, setGistConfigSaved] = useState(false);
+  const [showGistToken, setShowGistToken] = useState(false);
+
+  // Nextcloud state
+  const [nextcloudServerUrl, setNextcloudServerUrl] = useState("");
+  const [nextcloudUsername, setNextcloudUsername] = useState("");
+  const [nextcloudPassword, setNextcloudPassword] = useState("");
+  const [nextcloudConfigSaved, setNextcloudConfigSaved] = useState(false);
+  const [nextcloudTestStatus, setNextcloudTestStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [nextcloudTestMessage, setNextcloudTestMessage] = useState("");
 
   // Restore confirmation modal
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
@@ -73,11 +114,38 @@ export default function Settings() {
     setEmailApiKey(emailKey ?? "");
     const provider = await getEmailBackupProvider();
     setEmailProvider(provider ?? "resend");
-    const webdav = await getWebdavConfig();
-    if (webdav) {
-      setWebdavEndpoint(webdav.endpoint);
-      setWebdavUsername(webdav.username);
-      setWebdavBackupPath(webdav.backupPath || DEFAULT_BACKUP_PATH);
+
+    // Multi-provider settings
+    const currentProvider = await getActiveSyncProvider();
+    setActiveProviderState(currentProvider);
+    setSelectedProviderTab(currentProvider);
+    const lastSyncInfo = await getLastSyncInfo();
+    setLastSync(lastSyncInfo);
+
+    // Google Drive state
+    const savedClientId = await getGoogleClientId();
+    const envClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
+    setGoogleClientIdState(savedClientId || envClientId || "");
+
+    const connected = isGoogleDriveConnected();
+    setIsDriveConnected(connected);
+    const storedToken = getStoredToken();
+    if (storedToken) {
+      setDriveTokenExpiresAt(storedToken.expires_at);
+    }
+
+    // GitHub Gist state
+    const savedGistToken = await getGithubGistToken();
+    const savedGistId = await getGithubGistId();
+    setGistToken(savedGistToken ?? "");
+    setGistId(savedGistId ?? "");
+
+    // Nextcloud state
+    const nc = await getNextcloudConfig();
+    if (nc) {
+      setNextcloudServerUrl(nc.serverUrl ?? "");
+      setNextcloudUsername(nc.username ?? "");
+      setNextcloudPassword(nc.password ?? "");
     }
   }, []);
 
@@ -191,136 +259,198 @@ export default function Settings() {
     }
   }
 
-  // --- WebDAV handlers ---
+  // --- Provider selection & config handlers ---
 
-  async function handleWebdavTestConnection() {
-    const endpoint = webdavEndpoint.trim();
-    const username = webdavUsername.trim();
-    if (!endpoint || !username || !webdavPassword) {
-      setWebdavTestStatus("error");
-      setWebdavTestMessage("Please fill in all WebDAV fields.");
-      return;
+  async function handleSelectProvider(provider: CloudSyncProvider) {
+    setSelectedProviderTab(provider);
+    setActiveProviderState(provider);
+    await setActiveSyncProvider(provider);
+    setCloudSyncStatus("idle");
+    setCloudSyncMessage("");
+  }
+
+  // Google Drive
+  async function handleConnectDrive() {
+    setCloudSyncStatus("loading");
+    setCloudSyncMessage("Opening Google authorization popup...");
+    try {
+      const token = await connectGoogleDrive(googleClientId.trim());
+      setIsDriveConnected(true);
+      setDriveTokenExpiresAt(token.expires_at);
+      setCloudSyncStatus("ok");
+      setCloudSyncMessage("Connected to Google Drive! AppData folder authorized.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCloudSyncStatus("error");
+      setCloudSyncMessage(`Connection failed: ${message}`);
     }
+  }
 
-    setWebdavTestStatus("loading");
-    setWebdavTestMessage("Testing connection...");
+  async function handleDisconnectDrive() {
+    await disconnectGoogleDrive();
+    setIsDriveConnected(false);
+    setDriveTokenExpiresAt(null);
+    setCloudSyncStatus("idle");
+    setCloudSyncMessage("Disconnected from Google Drive.");
+  }
 
-    const config: WebdavConfig = {
-      endpoint,
-      username,
-      password: webdavPassword,
-      backupPath: webdavBackupPath || DEFAULT_BACKUP_PATH,
-    };
+  async function handleSaveGoogleClientId(e: React.FormEvent) {
+    e.preventDefault();
+    await setGoogleClientId(googleClientId.trim());
+    setGoogleClientIdSaved(true);
+    setTimeout(() => setGoogleClientIdSaved(false), 2500);
+  }
+
+  // GitHub Gist
+  async function handleSaveGistConfig(e: React.FormEvent) {
+    e.preventDefault();
+    await setGithubGistToken(gistToken.trim());
+    await setGithubGistId(gistId.trim());
+    setGistConfigSaved(true);
+    setTimeout(() => setGistConfigSaved(false), 2500);
+  }
+
+  async function handleClearGistId() {
+    setGistId("");
+    await setGithubGistId("");
+  }
+
+  // Nextcloud
+  async function handleSaveNextcloudConfig(e: React.FormEvent) {
+    e.preventDefault();
+    await setNextcloudConfig({
+      serverUrl: nextcloudServerUrl.trim(),
+      username: nextcloudUsername.trim(),
+      password: nextcloudPassword.trim(),
+    });
+    setNextcloudConfigSaved(true);
+    setTimeout(() => setNextcloudConfigSaved(false), 2500);
+  }
+
+  async function handleTestNextcloud() {
+    setNextcloudTestStatus("loading");
+    setNextcloudTestMessage("Testing Nextcloud WebDAV endpoint...");
+    const res = await testNextcloudConnection({
+      serverUrl: nextcloudServerUrl.trim(),
+      username: nextcloudUsername.trim(),
+      password: nextcloudPassword.trim(),
+    });
+    setNextcloudTestStatus(res.ok ? "ok" : "error");
+    setNextcloudTestMessage(res.message);
+  }
+
+  async function handleClearNextcloud() {
+    await clearNextcloudConfig();
+    setNextcloudServerUrl("");
+    setNextcloudUsername("");
+    setNextcloudPassword("");
+    setNextcloudTestStatus("idle");
+    setNextcloudTestMessage("");
+  }
+
+  // --- Primary Sync & Restore Pipeline ---
+
+  async function handleSyncNow() {
+    setCloudSyncStatus("loading");
+    const providerName = PROVIDER_NAMES[activeProvider];
+    setCloudSyncMessage(`Exporting database and syncing via ${providerName}...`);
 
     try {
-      const result: WebdavTestResult = await webdavTestConnection(config);
-      setWebdavTestStatus(result.ok ? "ok" : "error");
-      setWebdavTestMessage(result.message);
-      if (result.ok) {
-        // Persist the verified config (password encrypted in IndexedDB)
-        await setWebdavConfig({
-          endpoint,
-          username,
-          password: webdavPassword,
-          backupPath: webdavBackupPath || DEFAULT_BACKUP_PATH,
+      let res: { ok: boolean; message: string; gistId?: string };
+
+      if (activeProvider === "google_drive") {
+        res = await syncNowToGoogleDrive();
+        if (res.ok) {
+          setIsDriveConnected(true);
+        }
+      } else if (activeProvider === "github_gist") {
+        res = await syncNowToGithubGist(gistToken.trim(), gistId.trim());
+        if (res.ok && res.gistId) {
+          setGistId(res.gistId);
+        }
+      } else {
+        // Nextcloud
+        res = await syncNowToNextcloud({
+          serverUrl: nextcloudServerUrl.trim(),
+          username: nextcloudUsername.trim(),
+          password: nextcloudPassword.trim(),
         });
-        // Clear the plaintext password from state
-        setWebdavPassword("");
+      }
+
+      setCloudSyncStatus(res.ok ? "ok" : "error");
+      setCloudSyncMessage(res.message);
+
+      if (res.ok) {
+        const info: LastSyncInfo = {
+          provider: activeProvider,
+          timestamp: Date.now(),
+          message: res.message,
+        };
+        await setLastSyncInfo(info);
+        setLastSync(info);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setWebdavTestStatus("error");
-      setWebdavTestMessage(`Test failed: ${message}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudSyncStatus("error");
+      setCloudSyncMessage(`${providerName} sync failed: ${msg}`);
     }
   }
 
-  async function handleWebdavUpload() {
-    const config = await getWebdavConfig();
-    if (!config) {
-      setWebdavUploadStatus("error");
-      setWebdavUploadMessage("Please test and save your WebDAV connection first.");
-      return;
-    }
-
-    setWebdavUploadStatus("loading");
-    setWebdavUploadMessage("Exporting and uploading backup...");
+  async function handleDownloadAndRestore() {
+    setCloudSyncStatus("loading");
+    const providerName = PROVIDER_NAMES[activeProvider];
+    setCloudSyncMessage(`Downloading backup from ${providerName}...`);
 
     try {
-      const snapshot = await exportSnapshot();
-      const jsonContent = JSON.stringify(snapshot, null, 2);
-      const result = await webdavUploadBackup(
-        { ...config, backupPath: webdavBackupPath || DEFAULT_BACKUP_PATH },
-        jsonContent
-      );
-      setWebdavUploadStatus(result.ok ? "ok" : "error");
-      setWebdavUploadMessage(result.message);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setWebdavUploadStatus("error");
-      setWebdavUploadMessage(`Upload failed: ${message}`);
-    }
-  }
+      let res: { ok: boolean; message: string; data?: Snapshot };
 
-  async function handleWebdavDownload() {
-    const config = await getWebdavConfig();
-    if (!config) {
-      setWebdavUploadStatus("error");
-      setWebdavUploadMessage("Please test and save your WebDAV connection first.");
-      return;
-    }
+      if (activeProvider === "google_drive") {
+        res = await fetchDriveBackupForRestore();
+        if (res.ok) setIsDriveConnected(true);
+      } else if (activeProvider === "github_gist") {
+        res = await fetchGithubGistForRestore(gistToken.trim(), gistId.trim());
+      } else {
+        res = await fetchNextcloudForRestore({
+          serverUrl: nextcloudServerUrl.trim(),
+          username: nextcloudUsername.trim(),
+          password: nextcloudPassword.trim(),
+        });
+      }
 
-    setWebdavUploadStatus("loading");
-    setWebdavUploadMessage("Downloading backup from WebDAV...");
-
-    try {
-      const result = await webdavDownloadBackup(
-        { ...config, backupPath: webdavBackupPath || DEFAULT_BACKUP_PATH }
-      );
-      if (!result.ok) {
-        setWebdavUploadStatus("error");
-        setWebdavUploadMessage(result.message);
+      if (!res.ok || !res.data) {
+        setCloudSyncStatus("error");
+        setCloudSyncMessage(res.message || `Failed to download from ${providerName}`);
         return;
       }
 
-      // Validate the downloaded data against the snapshot schema
-      const snapshot = validateSnapshot(result.data);
-      if (!snapshot) {
-        setWebdavUploadStatus("error");
-        setWebdavUploadMessage(
-          "Downloaded file is not a valid Panga snapshot. Check the backup path."
-        );
-        return;
-      }
-
-      // Show confirmation modal with backup details
-      setRestoreData(snapshot);
+      setRestoreData(res.data);
       setRestoreConfirmOpen(true);
-      setWebdavUploadStatus("idle");
-      setWebdavUploadMessage("");
+      setCloudSyncStatus("idle");
+      setCloudSyncMessage("");
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setWebdavUploadStatus("error");
-      setWebdavUploadMessage(`Download failed: ${message}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudSyncStatus("error");
+      setCloudSyncMessage(`Download failed: ${msg}`);
     }
   }
 
   async function handleRestoreConfirm() {
     if (!restoreData) return;
 
-    setWebdavUploadStatus("loading");
-    setWebdavUploadMessage("Restoring snapshot into local database...");
+    setCloudSyncStatus("loading");
+    setCloudSyncMessage("Restoring snapshot into local database...");
     setRestoreConfirmOpen(false);
 
     try {
       await importSnapshot(restoreData);
       await syncAll();
-      setWebdavUploadStatus("ok");
-      setWebdavUploadMessage("Backup restored successfully. The page will reload to refresh data.");
+      setCloudSyncStatus("ok");
+      setCloudSyncMessage("Backup restored successfully. The page will reload to refresh data.");
       setTimeout(() => window.location.reload(), 1500);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setWebdavUploadStatus("error");
-      setWebdavUploadMessage(`Restore failed: ${message}`);
+      setCloudSyncStatus("error");
+      setCloudSyncMessage(`Restore failed: ${message}`);
     } finally {
       setRestoreData(null);
     }
@@ -548,198 +678,478 @@ export default function Settings() {
         )}
       </section>
 
-      {/* §3 — WebDAV Cloud Backup & Sync */}
+      {/* §3 — Multi-Cloud Backup & Sync */}
       <section
         className="settings-section"
-        style={{ borderLeft: "4px solid var(--color-accent-primary)" }}
+        style={{
+          borderLeft: `4px solid ${
+            activeProvider === "google_drive"
+              ? "#4285f4"
+              : activeProvider === "github_gist"
+                ? "#24292f"
+                : "#0082c9"
+          }`,
+        }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>Cloud Backup &amp; Sync (WebDAV)</h2>
-          {webdavEndpoint && (
-            <button
-              type="button"
-              className="btn-secondary btn-small clickable"
-              onClick={async () => {
-                await clearWebdavConfig();
-                setWebdavEndpoint("");
-                setWebdavUsername("");
-                setWebdavPassword("");
-                setWebdavBackupPath(DEFAULT_BACKUP_PATH);
-                setWebdavTestStatus("idle");
-                setWebdavTestMessage("");
-                setWebdavUploadStatus("idle");
-                setWebdavUploadMessage("");
-              }}
-              data-tip="Remove saved WebDAV configuration"
-            >
-              Clear Config
-            </button>
-          )}
-        </div>
+        {/* Header & Status */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Cloud Backup &amp; Sync</h2>
+            <p className="settings-help" style={{ margin: "4px 0 0 0" }}>
+              Local-first data backup across devices. Choose your preferred cloud provider.
+            </p>
+          </div>
 
-        <p className="settings-help">
-          Back up and restore your entire Panga database to any standard WebDAV-compatible
-          cloud provider. Credentials are encrypted locally and never sent to any third party
-          except your own WebDAV endpoint.
-        </p>
-
-        <p className="settings-help">
-          Need free cloud storage? Sign up at{" "}
-          <a
-            href="https://infini-cloud.net/en/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            InfiniCLOUD (20GB Free)
-          </a>
-          {" "}→ Go to Account Settings → Enable "Apps Connection" to get your WebDAV URL
-          and App Password.
-        </p>
-
-        {/* WebDAV form inputs */}
-        <div className="webdav-form-row">
-          <label htmlFor="webdav-endpoint">Endpoint URL</label>
-          <input
-            id="webdav-endpoint"
-            type="url"
-            placeholder="https://your-id.teracloud.jp/dav/ or https://your-nextcloud.com/remote.php/dav/files/user/"
-            value={webdavEndpoint}
-            onChange={(e) => setWebdavEndpoint(e.target.value)}
-            data-tip="Full WebDAV endpoint URL (usually ends with a trailing slash)"
-          />
-        </div>
-
-        <div className="webdav-form-row">
-          <label htmlFor="webdav-username">User ID / Username</label>
-          <input
-            id="webdav-username"
-            type="text"
-            placeholder="e.g. your-email@example.com or user-id"
-            value={webdavUsername}
-            onChange={(e) => setWebdavUsername(e.target.value)}
-            data-tip="Your WebDAV username or user ID"
-          />
-        </div>
-
-        <div className="webdav-form-row">
-          <label htmlFor="webdav-password">App Password</label>
-          <input
-            id="webdav-password"
-            type="password"
-            placeholder="App-specific password (not your regular login password)"
-            value={webdavPassword}
-            onChange={(e) => setWebdavPassword(e.target.value)}
-            data-tip="Generate an app password in your cloud provider's settings"
-          />
-        </div>
-
-        <div className="webdav-form-row">
-          <label htmlFor="webdav-backup-path">
-            Backup File Path <span className="faint">(custom folder)</span>
-          </label>
-          <input
-            id="webdav-backup-path"
-            type="text"
-            placeholder="app_backup.json"
-            value={webdavBackupPath}
-            onChange={(e) => setWebdavBackupPath(e.target.value || DEFAULT_BACKUP_PATH)}
-            data-tip="Path on the WebDAV server where the backup file is stored. Use a folder prefix like backups/my-backup.json"
-          />
-        </div>
-
-        {/* Test Connection */}
-        <div style={{ marginTop: 12 }}>
-          <button
-            type="button"
-            className="btn-secondary btn-small clickable"
-            onClick={handleWebdavTestConnection}
-            disabled={webdavTestStatus === "loading"}
-            data-tip="Verify WebDAV credentials and endpoint"
-          >
-            {webdavTestStatus === "loading" ? "Testing…" : "Test Connection"}
-          </button>
-          {webdavTestStatus !== "idle" && webdavTestMessage && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span
               className="chip-small"
               style={{
-                marginLeft: 8,
-                fontSize: "12px",
-                background:
-                  webdavTestStatus === "ok" ? "#ecfdf5" : "#fef2f2",
-                color:
-                  webdavTestStatus === "ok" ? "#065f46" : "#991b1b",
-                border:
-                  webdavTestStatus === "ok"
-                    ? "1px solid #bbf7d0"
-                    : "1px solid #fecaca",
+                background: "#f0fdf4",
+                color: "#166534",
+                border: "1px solid #bbf7d0",
+                fontWeight: 600,
+                fontSize: 12,
               }}
             >
-              {webdavTestStatus === "ok" ? "✓" : "✗"} {webdavTestMessage}
+              Active: {PROVIDER_NAMES[activeProvider]}
             </span>
-          )}
+
+            {lastSync && (
+              <span
+                className="faint"
+                style={{ fontSize: 12 }}
+                title={new Date(lastSync.timestamp).toLocaleString()}
+              >
+                Last synced via {PROVIDER_NAMES[lastSync.provider]} at{" "}
+                {new Date(lastSync.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Export / Import actions */}
-        {webdavTestStatus === "ok" && (
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginTop: 16,
-              paddingTop: 16,
-              borderTop: "1px solid var(--color-border)",
-            }}
-          >
+        {/* Provider Selection Tabs */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
+            Select Cloud Sync Provider:
+          </label>
+          <div className="tab-bar-chips" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="button"
-              className="btn-primary btn-small clickable"
-              onClick={handleWebdavUpload}
-              disabled={webdavUploadStatus === "loading"}
-              data-tip="Export your full database to JSON and upload to WebDAV"
+              className={`chip ${selectedProviderTab === "google_drive" ? "chip-active" : ""}`}
+              onClick={() => handleSelectProvider("google_drive")}
+              data-tip="Use Google Drive AppData folder (client-side OAuth)"
+              style={{
+                borderColor: selectedProviderTab === "google_drive" ? "#4285f4" : undefined,
+                fontWeight: selectedProviderTab === "google_drive" ? 600 : 400,
+              }}
             >
-              {webdavUploadStatus === "loading" && webdavUploadMessage.includes("Upload")
-                ? "Uploading…"
-                : "⬆ Upload Backup"}
+              📁 Google Drive {activeProvider === "google_drive" && "✓"}
             </button>
+            <button
+              type="button"
+              className={`chip ${selectedProviderTab === "github_gist" ? "chip-active" : ""}`}
+              onClick={() => handleSelectProvider("github_gist")}
+              data-tip="Use GitHub Gist (Private Gist with Personal Access Token)"
+              style={{
+                borderColor: selectedProviderTab === "github_gist" ? "#24292f" : undefined,
+                fontWeight: selectedProviderTab === "github_gist" ? 600 : 400,
+              }}
+            >
+              🐙 GitHub Gist {activeProvider === "github_gist" && "✓"}
+            </button>
+            <button
+              type="button"
+              className={`chip ${selectedProviderTab === "nextcloud" ? "chip-active" : ""}`}
+              onClick={() => handleSelectProvider("nextcloud")}
+              data-tip="Use Nextcloud WebDAV (standard HTTPS WebDAV)"
+              style={{
+                borderColor: selectedProviderTab === "nextcloud" ? "#0082c9" : undefined,
+                fontWeight: selectedProviderTab === "nextcloud" ? 600 : 400,
+              }}
+            >
+              ☁️ Nextcloud (WebDAV) {activeProvider === "nextcloud" && "✓"}
+            </button>
+          </div>
+        </div>
+
+        {/* Primary Action Row (Executes active provider) */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            padding: "12px 14px",
+            background: "rgba(0,0,0,0.02)",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-border)",
+            marginBottom: 16,
+          }}
+        >
+          <button
+            type="button"
+            className="btn-primary clickable"
+            onClick={handleSyncNow}
+            disabled={cloudSyncStatus === "loading"}
+            data-tip={`Export database and sync to ${PROVIDER_NAMES[activeProvider]}`}
+          >
+            {cloudSyncStatus === "loading" && cloudSyncMessage.includes("syncing")
+              ? "Syncing…"
+              : `🔄 Sync Now (${PROVIDER_NAMES[activeProvider]})`}
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary clickable"
+            onClick={handleDownloadAndRestore}
+            disabled={cloudSyncStatus === "loading"}
+            data-tip={`Download backup from ${PROVIDER_NAMES[activeProvider]} and restore`}
+          >
+            {cloudSyncStatus === "loading" && cloudSyncMessage.includes("Downloading")
+              ? "Downloading…"
+              : `⬇ Restore from ${PROVIDER_NAMES[activeProvider]}`}
+          </button>
+
+          {activeProvider !== selectedProviderTab && (
             <button
               type="button"
               className="btn-secondary btn-small clickable"
-              onClick={handleWebdavDownload}
-              disabled={webdavUploadStatus === "loading"}
-              data-tip="Download backup from WebDAV and restore"
+              onClick={() => handleSelectProvider(selectedProviderTab)}
+              data-tip={`Make ${PROVIDER_NAMES[selectedProviderTab]} the active sync target`}
             >
-              {webdavUploadStatus === "loading" && webdavUploadMessage.includes("Download")
-                ? "Downloading…"
-                : "⬇ Download Backup"}
+              Set {PROVIDER_NAMES[selectedProviderTab]} as Active
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
-        {webdavUploadMessage && (
+        {/* Provider Specific Configuration Card */}
+        <div style={{ marginTop: 12 }}>
+          {/* TAB 1: Google Drive */}
+          {selectedProviderTab === "google_drive" && (
+            <div className="provider-config-pane">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                  Google Drive Settings
+                  <span
+                    className="chip-small"
+                    style={{
+                      background: isDriveConnected ? "#ecfdf5" : "#f3f4f6",
+                      color: isDriveConnected ? "#065f46" : "#6b7280",
+                      border: isDriveConnected ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
+                      fontSize: 11,
+                    }}
+                  >
+                    {isDriveConnected ? "● Connected" : "○ Disconnected"}
+                  </span>
+                  {isDriveConnected && driveTokenExpiresAt && (
+                    <span className="faint" style={{ fontSize: 11 }}>
+                      (Token active)
+                    </span>
+                  )}
+                </h3>
+
+                {isDriveConnected ? (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-small clickable"
+                    onClick={handleDisconnectDrive}
+                    data-tip="Revoke Google Drive access token"
+                  >
+                    Disconnect
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-primary btn-small clickable"
+                    onClick={handleConnectDrive}
+                    disabled={cloudSyncStatus === "loading"}
+                    data-tip="Sign in to authorize private appDataFolder"
+                    style={{ background: "#4285f4", borderColor: "#4285f4" }}
+                  >
+                    Sign in with Google
+                  </button>
+                )}
+              </div>
+
+              <p className="settings-help">
+                Saves <code>data.json</code> directly to your private Google Drive <code>appDataFolder</code>.
+                Hidden from regular Drive views for enhanced privacy.
+              </p>
+
+              <form onSubmit={handleSaveGoogleClientId} style={{ marginBottom: 12 }}>
+                <div className="webdav-form-row">
+                  <label htmlFor="google-client-id">
+                    Google OAuth Web Client ID <span className="faint">(public, stored locally)</span>
+                  </label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      id="google-client-id"
+                      type="text"
+                      placeholder="e.g. 123456789-abcdef.apps.googleusercontent.com"
+                      value={googleClientId}
+                      onChange={(e) => setGoogleClientIdState(e.target.value)}
+                      data-tip="Google OAuth 2.0 Web Client ID with scope drive.appdata"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="submit"
+                      className="btn-secondary btn-small clickable"
+                      data-tip="Save Google Client ID"
+                    >
+                      {googleClientIdSaved ? "Saved ✓" : "Save ID"}
+                    </button>
+                  </div>
+                </div>
+                <p className="settings-help" style={{ marginTop: 4, fontSize: 12 }}>
+                  Get a free Web OAuth Client ID in{" "}
+                  <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">
+                    Google Cloud Console
+                  </a>
+                  {" "}under Credentials. Add this site's URL to <em>Authorized JavaScript origins</em>.
+                </p>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: GitHub Gist */}
+          {selectedProviderTab === "github_gist" && (
+            <div className="provider-config-pane">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                  GitHub Gist Settings
+                  <span
+                    className="chip-small"
+                    style={{
+                      background: gistToken ? "#ecfdf5" : "#f3f4f6",
+                      color: gistToken ? "#065f46" : "#6b7280",
+                      border: gistToken ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
+                      fontSize: 11,
+                    }}
+                  >
+                    {gistToken ? (gistId ? "● Gist Configured" : "● Token Ready") : "○ Needs Token"}
+                  </span>
+                </h3>
+
+                {gistId && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <a
+                      href={`https://gist.github.com/${gistId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-secondary btn-small clickable"
+                      style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                    >
+                      🔗 Open Gist
+                    </a>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small clickable"
+                      onClick={handleClearGistId}
+                      data-tip="Clear Gist ID to create a fresh one on next sync"
+                    >
+                      Clear Gist ID
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <p className="settings-help">
+                Back up your entire database to a <strong>private GitHub Gist</strong> as <code>data.json</code> using
+                the GitHub REST API. Credentials stay safely in your local device storage.
+              </p>
+
+              <form onSubmit={handleSaveGistConfig}>
+                <div className="webdav-form-row">
+                  <label htmlFor="gist-token">
+                    Personal Access Token (classic or fine-grained with <code>gist</code> scope)
+                  </label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      id="gist-token"
+                      type={showGistToken ? "text" : "password"}
+                      placeholder="ghp_... or github_pat_..."
+                      value={gistToken}
+                      onChange={(e) => setGistToken(e.target.value)}
+                      style={{ flex: 1 }}
+                      data-tip="GitHub Personal Access Token with 'gist' scope"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small clickable"
+                      onClick={() => setShowGistToken((v) => !v)}
+                      data-tip={showGistToken ? "Hide token" : "Show token"}
+                    >
+                      {showGistToken ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="webdav-form-row">
+                  <label htmlFor="gist-id">
+                    Gist ID <span className="faint">(optional — leave blank to auto-create private Gist)</span>
+                  </label>
+                  <input
+                    id="gist-id"
+                    type="text"
+                    placeholder="e.g. 7f3a8b... (leave blank to create automatically)"
+                    value={gistId}
+                    onChange={(e) => setGistId(e.target.value)}
+                    data-tip="Existing Gist ID or leave empty to create a new private Gist on first sync"
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                  <button type="submit" className="btn-primary btn-small clickable">
+                    {gistConfigSaved ? "Saved ✓" : "Save Gist Settings"}
+                  </button>
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=gist&description=Panga%20Planner%20Backup"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12, color: "var(--color-accent-primary)" }}
+                  >
+                    Generate GitHub Token (with gist scope) →
+                  </a>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 3: Nextcloud */}
+          {selectedProviderTab === "nextcloud" && (
+            <div className="provider-config-pane">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
+                  Nextcloud (WebDAV) Settings
+                  <span
+                    className="chip-small"
+                    style={{
+                      background: nextcloudServerUrl && nextcloudUsername ? "#ecfdf5" : "#f3f4f6",
+                      color: nextcloudServerUrl && nextcloudUsername ? "#065f46" : "#6b7280",
+                      border: nextcloudServerUrl && nextcloudUsername ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
+                      fontSize: 11,
+                    }}
+                  >
+                    {nextcloudServerUrl && nextcloudUsername ? "● Configured" : "○ Needs Info"}
+                  </span>
+                </h3>
+
+                {nextcloudServerUrl && (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-small clickable"
+                    onClick={handleClearNextcloud}
+                    data-tip="Clear saved Nextcloud configuration"
+                  >
+                    Clear Config
+                  </button>
+                )}
+              </div>
+
+              <p className="settings-help">
+                Upload and download <code>data.json</code> directly to your Nextcloud instance via WebDAV (<code>/remote.php/dav/files/user/data.json</code>).
+              </p>
+
+              <form onSubmit={handleSaveNextcloudConfig}>
+                <div className="webdav-form-row">
+                  <label htmlFor="nextcloud-url">Nextcloud Server URL</label>
+                  <input
+                    id="nextcloud-url"
+                    type="url"
+                    placeholder="https://your-instance.com"
+                    value={nextcloudServerUrl}
+                    onChange={(e) => setNextcloudServerUrl(e.target.value)}
+                    data-tip="Your Nextcloud root URL (e.g. https://cloud.example.com)"
+                  />
+                </div>
+
+                <div className="webdav-form-row">
+                  <label htmlFor="nextcloud-username">Username</label>
+                  <input
+                    id="nextcloud-username"
+                    type="text"
+                    placeholder="e.g. username"
+                    value={nextcloudUsername}
+                    onChange={(e) => setNextcloudUsername(e.target.value)}
+                    data-tip="Your Nextcloud account username"
+                  />
+                </div>
+
+                <div className="webdav-form-row">
+                  <label htmlFor="nextcloud-password">App Password</label>
+                  <input
+                    id="nextcloud-password"
+                    type="password"
+                    placeholder="App-specific password from Security settings"
+                    value={nextcloudPassword}
+                    onChange={(e) => setNextcloudPassword(e.target.value)}
+                    data-tip="App password generated in Nextcloud Settings > Security"
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                  <button type="submit" className="btn-primary btn-small clickable">
+                    {nextcloudConfigSaved ? "Saved ✓" : "Save Config"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-small clickable"
+                    onClick={handleTestNextcloud}
+                    disabled={nextcloudTestStatus === "loading"}
+                    data-tip="Verify WebDAV connectivity"
+                  >
+                    {nextcloudTestStatus === "loading" ? "Testing…" : "Test Connection"}
+                  </button>
+
+                  {nextcloudTestStatus !== "idle" && nextcloudTestMessage && (
+                    <span
+                      className="chip-small"
+                      style={{
+                        fontSize: 12,
+                        background: nextcloudTestStatus === "ok" ? "#ecfdf5" : "#fef2f2",
+                        color: nextcloudTestStatus === "ok" ? "#065f46" : "#991b1b",
+                        border: nextcloudTestStatus === "ok" ? "1px solid #bbf7d0" : "1px solid #fecaca",
+                      }}
+                    >
+                      {nextcloudTestStatus === "ok" ? "✓" : "✗"} {nextcloudTestMessage}
+                    </span>
+                  )}
+                </div>
+
+                <p className="settings-help" style={{ marginTop: 6, fontSize: 12 }}>
+                  Tip: In your Nextcloud account, go to <strong>Personal Settings &gt; Security &gt; Devices &amp; credentials</strong> to generate an App Password.
+                </p>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Status message */}
+        {cloudSyncMessage && (
           <p
             className="progress-label"
             style={{
-              marginTop: 10,
+              marginTop: 14,
               padding: "8px 12px",
               borderRadius: "var(--radius-sm)",
               background:
-                webdavUploadStatus === "error"
+                cloudSyncStatus === "error"
                   ? "#fef2f2"
-                  : webdavUploadStatus === "ok"
+                  : cloudSyncStatus === "ok"
                     ? "#f0fdf4"
                     : "#eff6ff",
               color:
-                webdavUploadStatus === "error"
+                cloudSyncStatus === "error"
                   ? "#991b1b"
-                  : webdavUploadStatus === "ok"
+                  : cloudSyncStatus === "ok"
                     ? "#166534"
                     : "#1e40af",
               border: "1px solid var(--color-border)",
             }}
           >
-            {webdavUploadMessage}
+            {cloudSyncStatus === "ok" && "✓ "}
+            {cloudSyncStatus === "error" && "✗ "}
+            {cloudSyncMessage}
           </p>
         )}
       </section>

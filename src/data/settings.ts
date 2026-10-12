@@ -1,7 +1,6 @@
 // src/data/settings.ts
 import { db, SETTINGS_KEYS } from "./db";
 import { syncPushSetting } from "../sync/sync";
-import { encryptText, decryptText } from "../sync/crypto";
 
 export { SETTINGS_KEYS };
 
@@ -106,76 +105,65 @@ export async function setEmailBackupProvider(provider: string): Promise<void> {
   await setSetting("emailBackupProvider", provider);
 }
 
-// --- WebDAV configuration ---
+// Multi-cloud Sync Provider Settings
+export type CloudSyncProvider = "google_drive" | "github_gist" | "nextcloud";
 
-/** Stored form (password is AES-GCM encrypted in IndexedDB, never plaintext). */
-interface WebdavConfigStored {
-  provider?: "nextcloud" | "webdav";
-  endpoint: string;
+export async function getActiveSyncProvider(): Promise<CloudSyncProvider> {
+  return (await getSetting<CloudSyncProvider>("activeSyncProvider")) ?? "google_drive";
+}
+
+export async function setActiveSyncProvider(provider: CloudSyncProvider): Promise<void> {
+  await setSetting("activeSyncProvider", provider);
+}
+
+// GitHub Gist settings
+export async function getGithubGistToken(): Promise<string | null> {
+  return (await getSetting<string>("githubGistToken")) ?? null;
+}
+
+export async function setGithubGistToken(token: string): Promise<void> {
+  await setSetting("githubGistToken", token);
+}
+
+export async function getGithubGistId(): Promise<string | null> {
+  return (await getSetting<string>("githubGistId")) ?? null;
+}
+
+export async function setGithubGistId(gistId: string): Promise<void> {
+  await setSetting("githubGistId", gistId);
+}
+
+// Nextcloud (WebDAV) settings
+export interface NextcloudConfig {
+  serverUrl: string;
   username: string;
-  encryptedPassword: string;
-  backupPath: string;
-  autoSync?: boolean;
-  lastSyncTime?: number;
+  password?: string;
 }
 
-/** In-memory form returned to callers (password decrypted on the fly). */
-export interface WebdavConfigRuntime {
-  provider: "nextcloud" | "webdav";
-  endpoint: string;
-  username: string;
-  password: string;
-  backupPath: string;
-  autoSync?: boolean;
-  lastSyncTime?: number;
+export async function getNextcloudConfig(): Promise<NextcloudConfig | null> {
+  return (await getSetting<NextcloudConfig>("nextcloudConfig")) ?? null;
 }
 
-/** Default backup file path on the Nextcloud / WebDAV server. */
-export const DEFAULT_BACKUP_PATH = "Panga/panga_backup.json";
-
-export async function getWebdavConfig(): Promise<WebdavConfigRuntime | null> {
-  const stored = await getSetting<WebdavConfigStored>("webdavConfig");
-  if (!stored?.endpoint || !stored?.username || !stored?.encryptedPassword) {
-    return null;
-  }
-  try {
-    const password = await decryptText(stored.encryptedPassword);
-    return {
-      provider: stored.provider || "nextcloud",
-      endpoint: stored.endpoint,
-      username: stored.username,
-      password,
-      backupPath: stored.backupPath || DEFAULT_BACKUP_PATH,
-      autoSync: stored.autoSync ?? false,
-      lastSyncTime: stored.lastSyncTime,
-    };
-  } catch {
-    return null;
-  }
+export async function setNextcloudConfig(config: NextcloudConfig): Promise<void> {
+  await setSetting("nextcloudConfig", config);
 }
 
-export async function setWebdavConfig(config: {
-  provider?: "nextcloud" | "webdav";
-  endpoint: string;
-  username: string;
-  password: string;
-  backupPath?: string;
-  autoSync?: boolean;
-  lastSyncTime?: number;
-}): Promise<void> {
-  const encryptedPassword = await encryptText(config.password);
-  const stored: WebdavConfigStored = {
-    provider: config.provider || "nextcloud",
-    endpoint: config.endpoint.trim(),
-    username: config.username.trim(),
-    encryptedPassword,
-    backupPath: (config.backupPath?.trim() || DEFAULT_BACKUP_PATH),
-    autoSync: config.autoSync ?? false,
-    lastSyncTime: config.lastSyncTime,
-  };
-  await setSetting("webdavConfig", stored);
+export async function clearNextcloudConfig(): Promise<void> {
+  await setSetting("nextcloudConfig", null);
 }
 
-export async function clearWebdavConfig(): Promise<void> {
-  await setSetting("webdavConfig", null);
+// Last Cloud Sync Metadata
+export interface LastSyncInfo {
+  provider: CloudSyncProvider;
+  timestamp: number;
+  message?: string;
 }
+
+export async function getLastSyncInfo(): Promise<LastSyncInfo | null> {
+  return (await getSetting<LastSyncInfo>("lastCloudSyncInfo")) ?? null;
+}
+
+export async function setLastSyncInfo(info: LastSyncInfo): Promise<void> {
+  await setSetting("lastCloudSyncInfo", info);
+}
+

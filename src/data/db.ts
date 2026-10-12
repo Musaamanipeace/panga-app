@@ -242,7 +242,6 @@ export const SETTINGS_KEYS = {
   googlePickerKey: "googlePickerKey",
   googleAccessToken: "googleAccessToken",
   driveFolderPrefix: "driveFolder:",
-  webdavConfig: "webdavConfig",
   emailBackupApiKey: "emailBackupApiKey",
   emailBackupProvider: "emailBackupProvider",
 } as const;
