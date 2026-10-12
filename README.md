@@ -7,7 +7,7 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 - **Frontend**: React 19 SPA with Vite, TypeScript, and offline-first IndexedDB (Dexie)
 - **Backend**: Express on Node.js 22 providing secure server-side Gemini AI processing (`/api/assistant/chat`) and health monitoring (`/health`)
 - **Storage**: Local IndexedDB as primary source of truth; optional encrypted sync via Google Drive AppData folder or provider-agnostic WebDAV
-- **Hosting**: Configured for **Fly.io** using Docker and `fly.toml`; can also deploy as static site (e.g. Vercel)
+- **Hosting**: Configured for **Vercel** with Vite SPA frontend and serverless API routes.
 
 ---
 
@@ -91,56 +91,27 @@ Required variables:
 
 ---
 
-## Deploying to Fly.io
+## Deploying to Vercel
 
-### 1. Install Flyctl
+### 1. Connect Git Repository
 
-```bash
-# macOS
-brew install flyctl
+1. Push your latest code to your GitHub repository (e.g. `main` branch).
+2. Go to [Vercel Dashboard](https://vercel.com/dashboard) and click **Add New... → Project**.
+3. Import your GitHub repository.
 
-# Linux / WSL
-curl -L https://fly.io/install.sh | sh
+### 2. Build & Output Settings
 
-# Windows (PowerShell)
-iwr https://fly.io/install.ps1 -useb | iex
-```
+Vercel automatically detects the Vite framework using the included `vercel.json`:
+- **Framework Preset**: Vite
+- **Build Command**: `npm run build`
+- **Output Directory**: `dist`
 
-### 2. Login to Fly.io
+### 3. Deploy
 
-```bash
-fly auth login
-```
-
-### 3. Launch App
-
-```bash
-fly launch --copy-config
-```
-
-This uses the included `fly.toml` and `Dockerfile`.
-
-### 4. Configure Secrets
-
-```bash
-# Set Gemini API key (required for AI features)
-fly secrets set GEMINI_API_KEY="your-gemini-api-key"
-
-# Optional: Google Drive sync credentials
-fly secrets set VITE_GOOGLE_CLIENT_ID="your-client-id"
-fly secrets set VITE_GOOGLE_API_KEY="your-api-key"
-```
-
-### 5. Deploy
-
-```bash
-fly deploy
-```
-
-Fly.io will:
-1. Build the production Docker container (Vite frontend + Express server)
-2. Start the server listening on internal port `8080` (mapped to public HTTPS 80/443)
-3. Validate container health via `/health`
+Click **Deploy**. Vercel will:
+1. Run `npm run build` to typecheck and bundle the React SPA.
+2. Deploy the static assets with SPA routing.
+3. Deploy serverless functions in `/api` (AI assistant, email backup).
 
 ---
 

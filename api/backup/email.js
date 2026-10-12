@@ -1,17 +1,12 @@
 // Email sending function - supports multiple providers
-async function sendEmail(
-  to,
-  subject,
-  html,
-  attachment
-) {
-  // Try Resend first (if RESEND_API_KEY is set)
-  if (process.env.RESEND_API_KEY) {
+async function sendEmail(to, subject, html, attachment, apiKey, provider = "resend") {
+  const resendKey = (provider === "resend" ? apiKey : null) || process.env.RESEND_API_KEY;
+  if (resendKey) {
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Authorization': `Bearer ${resendKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -27,19 +22,19 @@ async function sendEmail(
       });
       if (res.ok) return { ok: true };
       const err = await res.json();
-      console.warn('Resend failed:', err);
+      return { ok: false, error: err?.message || 'Resend dispatch failed' };
     } catch (e) {
       console.warn('Resend error:', e);
     }
   }
 
-  // Try SendGrid (if SENDGRID_API_KEY is set)
-  if (process.env.SENDGRID_API_KEY) {
+  const sendgridKey = (provider === "sendgrid" ? apiKey : null) || process.env.SENDGRID_API_KEY;
+  if (sendgridKey) {
     try {
       const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+          'Authorization': `Bearer ${sendgridKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -58,49 +53,16 @@ async function sendEmail(
         }),
       });
       if (res.ok) return { ok: true };
-      const err = await res.json();
-      console.warn('SendGrid failed:', err);
+      return { ok: false, error: 'SendGrid rejected the email dispatch.' };
     } catch (e) {
       console.warn('SendGrid error:', e);
     }
   }
 
-  // Try Gmail SMTP via nodemailer (if GMAIL_USER and GMAIL_APP_PASSWORD are set)
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    try {
-      const nodemailer = await import('nodemailer');
-      const transporter = nodemailer.default.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.GMAIL_USER,
-          pass: process.env.GMAIL_APP_PASSWORD,
-        },
-      });
-      await transporter.sendMail({
-        from: process.env.GMAIL_USER,
-        to,
-        subject,
-        html,
-        attachments: [{
-          filename: attachment.filename,
-          content: attachment.content,
-          contentType: 'application/json',
-        }],
-      });
-      return { ok: true };
-    } catch (e) {
-      console.warn('Gmail SMTP error:', e);
-    }
-  }
-
-  return { ok: false, error: 'No email provider configured. Set RESEND_API_KEY, SENDGRID_API_KEY, or GMAIL_USER+GMAIL_APP_PASSWORD.' };
-}
-
-// Generate the snapshot data (reuse logic from snapshot.ts)
-async function generateSnapshot() {
-  // This would normally come from IndexedDB, but on server we can't access it.
-  // The client will send the snapshot data in the request body.
-  return null;
+  return {
+    ok: false,
+    error: 'No email API key found. Enter your free API key from Resend (resend.com) in Settings, or use Download Snapshot for an instant local backup.',
+  };
 }
 
 export default async function handler(req, res) {
@@ -109,7 +71,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { email, snapshot } = req.body;
+    const { email, snapshot, apiKey, provider } = req.body;
 
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: 'Valid email is required' });
@@ -146,13 +108,20 @@ export default async function handler(req, res) {
       </html>
     `;
 
-    const result = await sendEmail(email, `Panga Backup - ${timestamp}`, html, {
-      filename,
-      content: jsonContent,
-    });
+    const result = await sendEmail(
+      email,
+      `Panga Backup - ${timestamp}`,
+      html,
+      {
+        filename,
+        content: jsonContent,
+      },
+      apiKey,
+      provider
+    );
 
     if (!result.ok) {
-      return res.status(500).json({ error: result.error });
+      return res.status(400).json({ error: result.error });
     }
 
     return res.status(200).json({ ok: true, message: `Backup sent to ${email}` });

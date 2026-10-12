@@ -10,6 +10,10 @@
     {
       "source": "/api/backup/email",
       "destination": "/api/backup/email"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [

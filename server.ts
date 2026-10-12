@@ -21,7 +21,7 @@ const HOST = "0.0.0.0";
 
 app.use(express.json({ limit: "50mb" }));
 
-// Health check endpoint for Fly.io machine monitoring and health checks
+// Health check endpoint
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
 });
