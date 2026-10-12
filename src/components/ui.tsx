@@ -422,3 +422,52 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     return false;
   }
 }
+
+export function CopyButton({
+  text,
+  label = "📋 Copy",
+  copiedLabel = "✓ Copied",
+  className = "btn-icon clickable",
+  tooltip = "Copy to clipboard",
+  title = "Copy to clipboard",
+  style,
+}: {
+  text: string | (() => string);
+  label?: ReactNode;
+  copiedLabel?: ReactNode;
+  className?: string;
+  tooltip?: string;
+  title?: string;
+  style?: React.CSSProperties;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const content = typeof text === "function" ? text() : text;
+    if (!content) return;
+    const ok = await copyToClipboard(content);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={handleCopy}
+      data-tip={copied ? "Copied!" : tooltip}
+      title={title}
+      style={{
+        ...style,
+        ...(copied ? { color: "var(--color-accent, #3b82f6)", fontWeight: 600 } : {}),
+      }}
+    >
+      {copied ? copiedLabel : label}
+    </button>
+  );
+}
+

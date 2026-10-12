@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAsync } from "../../components/ui.tsx";
+import { useAsync, CopyButton } from "../../components/ui.tsx";
 import { listInsights, createInsight, updateInsight, deleteInsight, type InsightType } from "../../data/insights.ts";
 import { ErrorNote, Loading, StatusLabel, Editable } from "../../components/ui.tsx";
 import MicButton from "../../components/MicButton.tsx";

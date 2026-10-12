@@ -5,7 +5,7 @@ import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider, ResourceListItem };
 
-export type BaseResourceFormat = "note" | "checklist" | "url";
+export type BaseResourceFormat = "note" | "checklist" | "list" | "url";
 
 export interface ResourceCategoryMeta {
   id: string;
@@ -20,7 +20,8 @@ export const PRELOADED_CATEGORIES: ResourceCategoryMeta[] = [
   { id: "documents", label: "Documents", baseFormat: "note", description: "Project documentation, specs & READMEs", icon: "📄" },
   { id: "notes", label: "Notes", baseFormat: "note", description: "Quick thoughts, memos & references", icon: "📝" },
   { id: "links", label: "Links (URLs)", baseFormat: "url", description: "Web bookmarks & URL links", icon: "🔗" },
-  { id: "lists", label: "Check-Lists", baseFormat: "checklist", description: "Checklists & structured item lists", icon: "☑️" },
+  { id: "lists", label: "Lists", baseFormat: "list", description: "Itemized list with copy button on every element", icon: "📋" },
+  { id: "checklists", label: "Checklists", baseFormat: "checklist", description: "Actionable checklist with checkboxes", icon: "☑️" },
   { id: "tasks", label: "Tasks", baseFormat: "checklist", description: "Task lists & actionable todos", icon: "📋" },
   { id: "milestones", label: "Milestones", baseFormat: "checklist", description: "Phase checkpoints & milestones", icon: "🏁" },
   { id: "issues", label: "Issues", baseFormat: "note", description: "Bugs, setbacks & blocker logs", icon: "⚠️" },
@@ -190,13 +191,78 @@ export function formatResourceAsText(resource: Resource, projectName?: string): 
     output += `${resource.body}\n\n`;
   }
   if (resource.listItems && resource.listItems.length > 0) {
-    output += `ITEMS / CHECKLIST:\n`;
+    const isListOnly = resource.category === "lists" || resource.category === "list";
+    output += isListOnly ? `LIST ITEMS:\n` : `ITEMS / CHECKLIST:\n`;
     for (const item of resource.listItems) {
-      output += `${item.checked ? "[x]" : "[ ]"} ${item.text}\n`;
+      output += isListOnly ? `• ${item.text}\n` : `${item.checked ? "[x]" : "[ ]"} ${item.text}\n`;
     }
     output += `\n`;
   }
   return output;
+}
+
+/** Formats resource cleanly for copying to clipboard */
+export function formatResourceForClipboard(resource: Resource): string {
+  const parts: string[] = [];
+  if (resource.title) parts.push(resource.title);
+  if (resource.category === "lists" || resource.category === "list") {
+    if (resource.listItems && resource.listItems.length > 0) {
+      parts.push(resource.listItems.map((item) => `• ${item.text}`).join("\n"));
+    }
+  } else if (resource.listItems && resource.listItems.length > 0) {
+    parts.push(resource.listItems.map((item) => `[${item.checked ? "x" : " "}] ${item.text}`).join("\n"));
+  }
+  if (resource.url) parts.push(`URL: ${resource.url}`);
+  if (resource.body) parts.push(resource.body);
+  if (resource.images && resource.images.length > 0) {
+    parts.push(resource.images.map((img) => img.link || img.name).join("\n"));
+  }
+  if (resource.files && resource.files.length > 0) {
+    parts.push(resource.files.map((f) => f.link || f.name).join("\n"));
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
+/**
+ * Seeds the default list and checklist resources for a project
+ * "there are two resource types, and categories of those types added to each default project. a list, and a checklist."
+ */
+export async function seedDefaultProjectResources(projectId: string): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const existing = await db.resources.where("projectId").equals(projectId).toArray();
+  const hasList = existing.some((r) => r.category === "lists" || r.category === "list");
+  const hasChecklist = existing.some((r) => r.category === "checklists" || r.category === "checklist" || r.category === "preset-list");
+
+  if (!hasList) {
+    await createResource({
+      projectId,
+      category: "lists",
+      title: "Key Project Reference & Resources",
+      tags: ["reference", "default"],
+      listItems: [
+        { id: newId(), text: "API Base URL: https://api.example.com/v1", checked: false, tags: ["api"] },
+        { id: newId(), text: "Design Tokens: Primary #3b82f6, Accent #10b981", checked: false, tags: ["design"] },
+        { id: newId(), text: "CLI Build Command: npm run build", checked: false, tags: ["cli"] },
+        { id: newId(), text: "Documentation: https://docs.example.com", checked: false, tags: ["docs"] },
+      ],
+    });
+  }
+
+  if (!hasChecklist) {
+    await createResource({
+      projectId,
+      category: "checklists",
+      title: "Project Setup & Launch Checklist",
+      tags: ["checklist", "default"],
+      listItems: [
+        { id: newId(), text: "Define project objectives and requirements", checked: true, tags: ["planning"] },
+        { id: newId(), text: "Configure environment variables and local database", checked: true, tags: ["dev"] },
+        { id: newId(), text: "Verify sync status and credential security", checked: false, tags: ["security"] },
+        { id: newId(), text: "Conduct comprehensive QA and cross-device testing", checked: false, tags: ["qa"] },
+        { id: newId(), text: "Deploy production build and verify health endpoints", checked: false, tags: ["release"] },
+      ],
+    });
+  }
 }
 
 /** Formats resource as Markdown */
@@ -218,9 +284,10 @@ export function formatResourceAsMarkdown(resource: Resource, projectName?: strin
     output += `### Content\n${resource.body}\n\n`;
   }
   if (resource.listItems && resource.listItems.length > 0) {
-    output += `### Checklist\n`;
+    const isListOnly = resource.category === "lists" || resource.category === "list";
+    output += isListOnly ? `### List Items\n` : `### Checklist\n`;
     for (const item of resource.listItems) {
-      output += `- [${item.checked ? "x" : " "}] ${item.text}\n`;
+      output += isListOnly ? `- ${item.text}\n` : `- [${item.checked ? "x" : " "}] ${item.text}\n`;
     }
     output += `\n`;
   }

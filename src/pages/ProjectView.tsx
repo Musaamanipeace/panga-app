@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getProject, getProjectTaskStats, deleteProject } from "../data/projects";
 import { listTasksForProject, createTask, updateTask, setTaskStatus, deleteTask, type Task, type TaskStatus } from "../data/tasks";
-import { listResourcesForProject, createResource, updateResource, deleteResource, type Resource, type ResourceImage, type ResourceFile } from "../data/resources";
+import { listResourcesForProject, createResource, updateResource, deleteResource, formatResourceForClipboard, seedDefaultProjectResources, type Resource, type ResourceImage, type ResourceFile, type ResourceListItem } from "../data/resources";
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
@@ -13,7 +13,7 @@ import { newId, now } from "../data/utils";
 import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
-import { showToast } from "../components/ui";
+import { showToast, CopyButton } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
 
@@ -556,6 +556,14 @@ function DocEntryCard({
             {saveStatus === "saving" ? "⟳ Saving..." : "✓ Saved"}
           </span>
 
+          <CopyButton
+            text={() => `${title}\n\n${content}`}
+            label="📋 Copy"
+            copiedLabel="✓ Copied"
+            tooltip="Copy section content"
+            className="btn-icon btn-small clickable"
+          />
+
           {confirmDelete ? (
             <div style={{ display: "flex", gap: 4 }}>
               <button
@@ -697,6 +705,13 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
                 <span className="task-title">{task.title}</span>
               )}
               <span className="task-status-label">{task.status}</span>
+              <CopyButton
+                text={() => task.title + (task.notes ? `\n\n${task.notes}` : "")}
+                label="📋 Copy"
+                copiedLabel="✓ Copied"
+                tooltip="Copy task"
+                className="btn-icon clickable"
+              />
               <button
                 className="btn-icon clickable"
                 data-tip="Rename task"
@@ -733,9 +748,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [files, setFiles] = useState<ResourceFile[]>([]);
   const [imgLink, setImgLink] = useState("");
   const [pdfLink, setPdfLink] = useState("");
+  const [listItems, setListItems] = useState<ResourceListItem[]>([]);
+  const [newListItemText, setNewListItemText] = useState("");
 
   const DEFAULT_CATEGORIES: { id: string; label: string }[] = [
     { id: "notes", label: "Notes" },
+    { id: "lists", label: "Lists" },
+    { id: "checklists", label: "Checklists" },
     { id: "scripts", label: "Scripts" },
     { id: "links", label: "Links" },
     { id: "images", label: "Images" },
@@ -798,10 +817,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const CATEGORY_LABELS: Record<string, string> = useMemo(() => {
     const map: Record<string, string> = {
       notes: "Notes",
+      lists: "Lists",
+      checklists: "Checklists",
       scripts: "Scripts",
       links: "Links",
       images: "Images",
       pdfs: "PDFs",
+      "preset-list": "Checklists",
     };
     for (const c of customCategories) {
       map[c.id] = c.label;
@@ -814,6 +836,18 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       all: "All",
       prompts: "Prompts",
       reports_memos: "Reports & Memos",
+    },
+    lists: {
+      all: "All",
+      reference: "Reference",
+      tokens: "Tokens",
+      inventory: "Inventory",
+    },
+    checklists: {
+      all: "All",
+      launch: "Launch",
+      qa: "QA & Testing",
+      deployment: "Deployment",
     },
     links: {
       all: "All",
@@ -885,7 +919,12 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   });
 
   async function refresh() {
-    setResources(await listResourcesForProject(projectId));
+    let list = await listResourcesForProject(projectId);
+    if (list.length === 0) {
+      await seedDefaultProjectResources(projectId);
+      list = await listResourcesForProject(projectId);
+    }
+    setResources(list);
   }
   useEffect(() => {
     refresh();
@@ -910,6 +949,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setFiles([]);
     setImgLink("");
     setPdfLink("");
+    setListItems([]);
+    setNewListItemText("");
     setEditing(null);
   }
 
@@ -926,6 +967,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
       body: body.trim() || null,
       files,
       images,
+      listItems,
       url: url.trim() || null,
       provider: cat === "links" && subcat === "ai_chats" ? provider : null,
     };
@@ -946,6 +988,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setProvider((r.provider as any) ?? "other");
     setImages(r.images ?? []);
     setFiles(r.files ?? []);
+    setListItems(r.listItems ? [...r.listItems] : []);
+    setNewListItemText("");
     if (r.tags.length > 0 && SUBCATEGORY_LABELS[r.category]?.[r.tags[0]]) {
       setSubfilter(r.tags[0]);
     } else {
@@ -1170,17 +1214,100 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
+        {/* List / Checklist Elements Editor */}
+        {(activeCategory === "lists" || activeCategory === "checklists" || activeCategory === "preset-list") && (
+          <div className="field" style={{ flexBasis: "100%" }}>
+            <label>
+              {activeCategory === "lists" ? "List Elements (each element in the list will have a copy button)" : "Checklist Items"}
+            </label>
+            <div className="inline-form" style={{ marginBottom: 6 }}>
+              <input
+                type="text"
+                placeholder={activeCategory === "lists" ? "Add element to list (e.g. API URL, credential, command, note)..." : "Add checklist item (e.g. Verify sync, Complete QA)..."}
+                value={newListItemText}
+                onChange={(e) => setNewListItemText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (!newListItemText.trim()) return;
+                    setListItems((prev) => [
+                      ...prev,
+                      { id: newId(), text: newListItemText.trim(), checked: false, tags: [] },
+                    ]);
+                    setNewListItemText("");
+                  }
+                }}
+                data-tip="Type element text and click + Add (or press Enter)"
+              />
+              <button
+                type="button"
+                className="btn-secondary clickable"
+                onClick={() => {
+                  if (!newListItemText.trim()) return;
+                  setListItems((prev) => [
+                    ...prev,
+                    { id: newId(), text: newListItemText.trim(), checked: false, tags: [] },
+                  ]);
+                  setNewListItemText("");
+                }}
+                data-tip="Add item to list"
+              >
+                + Add
+              </button>
+            </div>
+            {listItems.length > 0 && (
+              <ul className="resource-elements-edit-list" style={{ listStyle: "none", padding: 0, margin: "6px 0", maxHeight: 220, overflowY: "auto" }}>
+                {listItems.map((item, idx) => (
+                  <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    {activeCategory !== "lists" && (
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={(e) => {
+                          const updated = [...listItems];
+                          updated[idx] = { ...item, checked: e.target.checked };
+                          setListItems(updated);
+                        }}
+                        data-tip="Toggle initial checked state"
+                      />
+                    )}
+                    <span style={{ fontSize: 12, color: "var(--color-text-muted)", minWidth: 20 }}>{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={item.text}
+                      onChange={(e) => {
+                        const updated = [...listItems];
+                        updated[idx] = { ...item, text: e.target.value };
+                        setListItems(updated);
+                      }}
+                      style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
+                    />
+                    <button
+                      type="button"
+                      className="task-delete-btn"
+                      onClick={() => setListItems((prev) => prev.filter((_, i) => i !== idx))}
+                      data-tip="Remove item"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* Explicit Note Body / Content Area */}
-        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory)) && (
+        {(activeCategory === "notes" || activeCategory === "scripts" || activeCategory === "links" || activeCategory === "pdfs" || activeCategory === "lists" || activeCategory === "checklists" || !DEFAULT_CATEGORIES.some((c) => c.id === activeCategory)) && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>
               {activeCategory === "notes" ? "Note Body" : "Body / Description / Content"}
             </label>
             <textarea
-              placeholder={activeCategory === "notes" ? "Note body, details, notes, thoughts, reference text..." : "Description or details..."}
+              placeholder={activeCategory === "notes" ? "Note body, details, notes, thoughts, reference text..." : "Description or details (optional)..."}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              rows={4}
+              rows={3}
               data-tip="Resource body and notes"
             />
             <div style={{ marginTop: 4 }}>
@@ -1399,6 +1526,95 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                     </a>
                   ) : null}
                   {r.body && <p className="resource-notes" style={{ whiteSpace: "pre-wrap" }}>{r.body}</p>}
+                  {/* List format: every single element has a dedicated copy button */}
+                  {(r.category === "lists" || r.category === "list") && r.listItems && r.listItems.length > 0 && (
+                    <ul className="resource-elements-list" style={{ listStyle: "none", padding: 0, margin: "8px 0" }}>
+                      {r.listItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className="resource-list-element"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            padding: "5px 8px",
+                            margin: "4px 0",
+                            background: "var(--color-bg-subtle, rgba(0,0,0,0.03))",
+                            borderRadius: 6,
+                            border: "1px solid var(--color-border, rgba(0,0,0,0.08))",
+                          }}
+                        >
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                            <span className="element-bullet" style={{ color: "var(--color-accent, #3b82f6)", fontWeight: "bold" }}>•</span>
+                            <span className="element-text" style={{ wordBreak: "break-word" }}>{item.text}</span>
+                          </span>
+                          <CopyButton
+                            text={item.text}
+                            label="📋 Copy"
+                            copiedLabel="✓ Copied"
+                            tooltip="Copy element"
+                            className="btn-icon btn-small clickable"
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* Checklist format: interactive checkboxes + per-element copy button */}
+                  {(r.category === "checklists" || r.category === "checklist" || r.category === "preset-list") && r.listItems && r.listItems.length > 0 && (
+                    <ul className="resource-elements-list checklist-elements" style={{ listStyle: "none", padding: 0, margin: "8px 0" }}>
+                      {r.listItems.map((item, idx) => (
+                        <li
+                          key={item.id}
+                          className="resource-list-element"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            padding: "5px 8px",
+                            margin: "4px 0",
+                            background: "var(--color-bg-subtle, rgba(0,0,0,0.03))",
+                            borderRadius: 6,
+                            border: "1px solid var(--color-border, rgba(0,0,0,0.08))",
+                          }}
+                        >
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, cursor: "pointer", margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={item.checked}
+                              onChange={async (e) => {
+                                const updated = [...(r.listItems || [])];
+                                updated[idx] = { ...item, checked: e.target.checked };
+                                await updateResource(r.id, { listItems: updated });
+                                refresh();
+                              }}
+                              data-tip="Toggle item status"
+                            />
+                            <span
+                              className="element-text"
+                              style={{
+                                textDecoration: item.checked ? "line-through" : "none",
+                                opacity: item.checked ? 0.6 : 1,
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {item.text}
+                            </span>
+                          </label>
+                          <CopyButton
+                            text={item.text}
+                            label="📋 Copy"
+                            copiedLabel="✓ Copied"
+                            tooltip="Copy checklist item"
+                            className="btn-icon btn-small clickable"
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
                   {r.images.length > 0 && (
                     <div className="resource-image-row">
                       {r.images.map((img, i) => (
@@ -1431,6 +1647,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                   )}
                   <span className="chip-small">{label}{subTag ? ` · ${subTag}` : ""}</span>
                 </span>
+                <CopyButton
+                  text={() => formatResourceForClipboard(r)}
+                  label="📋 Copy"
+                  copiedLabel="✓ Copied"
+                  tooltip="Copy full resource"
+                  className="btn-icon clickable"
+                />
                 <button
                   className="btn-icon clickable"
                   data-tip="Edit resource"
@@ -1457,10 +1680,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
 function getCategoryColor(cat: string): string {
   const colors: Record<string, string> = {
     notes: "#3b82f6",
+    lists: "#0284c7",
+    checklists: "#10b981",
     scripts: "#8b5cf6",
     links: "#22c55e",
     images: "#a855f7",
     pdfs: "#f59e0b",
+    "preset-list": "#10b981",
   };
   if (colors[cat]) return colors[cat];
   let hash = 0;
@@ -1630,6 +1856,13 @@ function MilestonesTab({ projectId }: { projectId: string }) {
                     <option value="achieved">Achieved</option>
                     <option value="missed">Missed</option>
                   </select>
+                  <CopyButton
+                    text={() => `Milestone: ${m.title}${m.targetDate ? ` (Due: ${new Date(m.targetDate).toLocaleDateString()})` : ""}${m.description ? `\n\n${m.description}` : ""}`}
+                    label="📋 Copy"
+                    copiedLabel="✓ Copied"
+                    tooltip="Copy milestone"
+                    className="btn-icon clickable"
+                  />
                   <button
                     className="btn-icon clickable"
                     data-tip="Rename milestone"
@@ -1836,6 +2069,13 @@ function IssuesTab({ projectId }: { projectId: string }) {
                   Resolve
                 </button>
               )}
+              <CopyButton
+                text={() => `[${i.severity.toUpperCase()} ISSUE] ${i.title}${i.description ? `\n\n${i.description}` : ""}${i.labels?.length ? `\nLabels: ${i.labels.join(", ")}` : ""}`}
+                label="📋 Copy"
+                copiedLabel="✓ Copied"
+                tooltip="Copy issue"
+                className="btn-icon clickable"
+              />
               <button
                 className="btn-icon clickable"
                 data-tip="Edit issue"
@@ -1995,6 +2235,13 @@ function RemindersTab({ projectId }: { projectId: string }) {
                   Dismiss
                 </button>
               )}
+              <CopyButton
+                text={() => `Reminder: ${r.message} (${new Date(r.triggerAt).toLocaleString()})`}
+                label="📋 Copy"
+                copiedLabel="✓ Copied"
+                tooltip="Copy reminder"
+                className="btn-icon clickable"
+              />
               <button
                 className="btn-icon clickable"
                 data-tip="Rename reminder"
@@ -2320,6 +2567,13 @@ function CalendarTab({ projectId }: { projectId: string }) {
                     </p>
                     <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
                   </span>
+                  <CopyButton
+                    text={() => `${e.title}\n${new Date(e.startAt).toLocaleString()} - ${new Date(e.endAt).toLocaleTimeString()}${e.hangoutLink ? `\nMeet: ${e.hangoutLink}` : ""}${e.description ? `\n\n${e.description}` : ""}`}
+                    label="📋 Copy"
+                    copiedLabel="✓ Copied"
+                    tooltip="Copy event details"
+                    className="btn-icon clickable"
+                  />
                   <button className="btn-icon clickable" data-tip="Delete event" onClick={async () => { await deleteCalendarEvent(e.id); refresh(); }}>
                     ×
                   </button>

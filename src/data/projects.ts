@@ -3,6 +3,7 @@ import { db, type Project, type ProjectStatus, type WorkspaceKind } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
+import { seedDefaultProjectResources } from "./resources";
 
 export type { Project, ProjectStatus, WorkspaceKind };
 
@@ -58,6 +59,11 @@ export async function createProject(input: {
   };
   await db.projects.add(project);
   void syncPushRecord("projects", project);
+  try {
+    await seedDefaultProjectResources(project.id);
+  } catch (e) {
+    console.warn("Failed to seed default project resources:", e);
+  }
   void logActivity({ entityType: "project", entityId: project.id, action: "created", description: `Created project "${project.name}"` });
   return project;
 }
