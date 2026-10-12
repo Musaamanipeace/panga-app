@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { setGuestMode, canUseApp, restoreSessionFromSnapshot } from "../auth/session";
-import { hasLocalData, importDbState } from "../data/db";
+import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession } from "../auth/session";
+import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
 import { signIn, signUp } from "../sync/sync";
 
 type Mode = "choose" | "login" | "signup" | "import";
@@ -15,6 +15,7 @@ export default function Landing() {
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [confirmStartAfresh, setConfirmStartAfresh] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function reset() {
@@ -22,29 +23,53 @@ export default function Landing() {
     setSuccessNotice(null);
   }
 
-  async function startGuest() {
-    setLoading(true);
+  async function handleStartAfreshClick() {
     reset();
     try {
-      setGuestMode();
-      // If no local data, seed will run on next load
+      const has = await hasLocalData();
+      if (has) {
+        setConfirmStartAfresh(true);
+      } else {
+        await performStartAfresh();
+      }
+    } catch {
+      await performStartAfresh();
+    }
+  }
+
+  async function performStartAfresh() {
+    setLoading(true);
+    reset();
+    setConfirmStartAfresh(false);
+    try {
+      // Clear all local database tables so existing data is never resumed
+      await clearAllLocalData();
+      // Generate a brand new clean guest session ID
+      resetGuestSession();
+      // Clear local UI cached states
+      try {
+        localStorage.removeItem("panga_home_expanded");
+        localStorage.removeItem("panga_last_sync_info");
+      } catch {}
       navigate("/home");
     } catch (e: any) {
-      setError(e?.message || "Could not start offline mode.");
+      setError(e?.message || "Could not start fresh offline workspace.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function continueIfLocal() {
+  async function handleResumeLocal() {
     setLoading(true);
+    reset();
+    setConfirmStartAfresh(false);
     try {
       const has = await hasLocalData();
       if (has || canUseApp()) {
         if (!canUseApp()) setGuestMode();
         navigate("/home");
       } else {
-        setError("No local data found. Start fresh or import a JSON backup.");
+        setError("No saved local data found on this device. Click 'Start Afresh' to begin a new workspace, or import a JSON backup.");
       }
     } finally {
       setLoading(false);
@@ -132,24 +157,78 @@ export default function Landing() {
 
       {mode === "choose" && (
         <div className="landing-actions">
-          <button
-            type="button"
-            className="btn-primary btn-large blade-glint clickable"
-            disabled={loading}
-            onClick={() => void startGuest()}
-            data-tip="Use the app offline. Data stays on this device until you export or connect cloud."
-          >
-            {loading ? "Starting…" : "Continue offline / Start fresh"}
-          </button>
+          {/* Section: Continue Offline (Title, not a button) */}
+          <div className="landing-offline-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ textAlign: "center", marginBottom: 2 }}>
+              <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700, color: "var(--color-text)" }}>
+                Continue Offline
+              </h2>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
+                Work locally without an account. Data stays on this device.
+              </p>
+            </div>
 
-          <button
-            type="button"
-            className="btn-secondary btn-large clickable"
-            disabled={loading}
-            onClick={() => void continueIfLocal()}
-          >
-            Resume local data (if any)
-          </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                type="button"
+                className="btn-primary btn-large blade-glint clickable"
+                disabled={loading}
+                onClick={() => void handleStartAfreshClick()}
+                data-tip="Start with a completely blank workspace. Clears existing local data so you begin fresh."
+              >
+                {loading ? "Starting…" : "Start Afresh"}
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary btn-large clickable"
+                disabled={loading}
+                onClick={() => void handleResumeLocal()}
+                data-tip="Continue working with the existing data saved on this browser."
+              >
+                {loading ? "Checking…" : "Resume Local"}
+              </button>
+            </div>
+
+            {confirmStartAfresh && (
+              <div
+                style={{
+                  background: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  borderRadius: "var(--radius)",
+                  padding: "14px",
+                  fontSize: "13px",
+                  color: "#92400e",
+                  textAlign: "left",
+                  marginTop: 4,
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  ⚠️ Confirm Start Afresh
+                </div>
+                <p style={{ margin: "0 0 10px 0", lineHeight: 1.45 }}>
+                  Existing local data was found on this device. Starting afresh will erase all current local projects, tasks, and notes so you begin with a blank workspace.
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-small clickable"
+                    onClick={() => setConfirmStartAfresh(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary btn-small clickable"
+                    style={{ background: "#dc2626", borderColor: "#dc2626" }}
+                    onClick={() => void performStartAfresh()}
+                  >
+                    Yes, Clear &amp; Start Afresh
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div
             className={`dropzone ${dragOver ? "dropzone-active" : ""}`}

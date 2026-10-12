@@ -10,7 +10,7 @@ import {
   deleteRecord,
   pushSetting,
   getUserCloudData,
-} from "./server/cloudDb.js";
+} from "./server/cloudDb.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

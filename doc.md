@@ -5,11 +5,14 @@ Follow this implementation spec strictly:
 ---
 
 ### ENVIRONMENT & CREDENTIAL SPECIFICATION
-The app relies on client-side Google API configuration stored in environment variables (e.g., `.env.local`):
-- `VITE_GOOGLE_CLIENT_ID` (or `REACT_APP_GOOGLE_CLIENT_ID`): Registered in Google Cloud Console.
-- `VITE_GOOGLE_API_KEY`: Configured with the Google Drive API enabled.
+The app is strictly local-first and requires **NO environment variables** to run.
+All keys, OAuth Client IDs, and cloud sync credentials are configured client-side directly by the user in the Settings interface (stored securely in browser IndexedDB):
+- **Google Client ID**: Entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; Google Drive.
+- **Gemini API Key**: Entered directly in Settings &rarr; Gemini API Key.
+- **GitHub Gist Token**: Entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist.
+- **Nextcloud WebDAV**: Server URL, Username, and App Password entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; Nextcloud.
 
-The exported user snapshot files must strictly contain application state and version metadata ONLY—never include app credentials, client IDs, or session tokens in user backup files.
+The exported user snapshot files strictly contain application state and version metadata ONLY—never include app credentials, client IDs, or session tokens in user backup files.
 
 ---
 

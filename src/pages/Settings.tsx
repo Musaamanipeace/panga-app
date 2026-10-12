@@ -1046,17 +1046,119 @@ export default function Settings() {
                 )}
               </div>
 
-              <p className="settings-help">
-                Upload and download <code>data.json</code> directly to your Nextcloud instance via WebDAV (<code>/remote.php/dav/files/user/data.json</code>).
+              <p className="settings-help" style={{ marginBottom: 10 }}>
+                Store and sync your encrypted <code>data.json</code> backup directly on your private Nextcloud storage using standard WebDAV. No intermediate proxy — your browser communicates directly with your Nextcloud.
               </p>
+
+              {/* Nextcloud Direct Signup Card */}
+              <div
+                style={{
+                  background: "#f0f9ff",
+                  border: "1px solid #bae6fd",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "12px 14px",
+                  marginBottom: 16,
+                  fontSize: "13px",
+                  lineHeight: 1.5,
+                }}
+              >
+                <div style={{ fontWeight: 600, color: "#0369a1", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  🌐 Need a Nextcloud Account? (Sign Up Links)
+                </div>
+                <p style={{ margin: "0 0 8px 0", color: "#0c4a6e" }}>
+                  You can use your own self-hosted Nextcloud server or register a free account with any official Nextcloud provider:
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <a
+                    href="https://nextcloud.com/sign-up/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="chip clickable"
+                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc", fontWeight: 600 }}
+                  >
+                    🚀 Nextcloud Official Sign-Up Directory →
+                  </a>
+                  <a
+                    href="https://thegood.cloud/en/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="chip clickable"
+                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
+                  >
+                    The Good Cloud (Free Tier) →
+                  </a>
+                  <a
+                    href="https://murena.io/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="chip clickable"
+                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
+                  >
+                    Murena.io (Free 1GB) →
+                  </a>
+                  <a
+                    href="https://tab.digital/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="chip clickable"
+                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
+                  >
+                    Tab.Digital (Free) →
+                  </a>
+                </div>
+              </div>
+
+              {/* Nextcloud Credentials Guide */}
+              <div
+                style={{
+                  background: "#fafaf9",
+                  border: "1px solid #e7e5e4",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "12px 14px",
+                  marginBottom: 16,
+                  fontSize: "13px",
+                  lineHeight: 1.5,
+                }}
+              >
+                <div style={{ fontWeight: 600, color: "#44403c", marginBottom: 6 }}>
+                  🔑 How to get your credentials:
+                </div>
+                <ol style={{ margin: 0, paddingLeft: 18, color: "#57534e" }}>
+                  <li style={{ marginBottom: 4 }}>
+                    <strong>Server URL:</strong> The address in your browser when using Nextcloud (e.g. <code>https://use01.thegood.cloud</code> or <code>https://cloud.yourdomain.com</code>).
+                  </li>
+                  <li style={{ marginBottom: 4 }}>
+                    <strong>Username:</strong> Your Nextcloud account username (visible in the top-right user menu).
+                  </li>
+                  <li style={{ marginBottom: 4 }}>
+                    <strong>App Password:</strong> Open Nextcloud &rarr; <strong>Personal Settings</strong> &rarr; <strong>Security</strong> &rarr; scroll to <strong>Devices &amp; client credentials</strong>. Type <code>Panga</code> and click <em>Create new app password</em>.
+                  </li>
+                </ol>
+
+                {nextcloudServerUrl.trim() && (
+                  <div style={{ marginTop: 10 }}>
+                    <a
+                      href={`${nextcloudServerUrl.trim().replace(/\/+$/, "")}/settings/user/security`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-secondary btn-small clickable"
+                      style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}
+                    >
+                      🔗 Open Security Settings directly on your Nextcloud instance ({nextcloudServerUrl.trim().replace(/^https?:\/\//, "").slice(0, 30)}) ↗
+                    </a>
+                  </div>
+                )}
+              </div>
 
               <form onSubmit={handleSaveNextcloudConfig}>
                 <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-url">Nextcloud Server URL</label>
+                  <label htmlFor="nextcloud-url">
+                    Nextcloud Server URL <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
                   <input
                     id="nextcloud-url"
                     type="url"
-                    placeholder="https://your-instance.com"
+                    placeholder="https://use01.thegood.cloud or https://cloud.example.com"
                     value={nextcloudServerUrl}
                     onChange={(e) => setNextcloudServerUrl(e.target.value)}
                     data-tip="Your Nextcloud root URL (e.g. https://cloud.example.com)"
@@ -1064,7 +1166,9 @@ export default function Settings() {
                 </div>
 
                 <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-username">Username</label>
+                  <label htmlFor="nextcloud-username">
+                    Username <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
                   <input
                     id="nextcloud-username"
                     type="text"
@@ -1076,11 +1180,13 @@ export default function Settings() {
                 </div>
 
                 <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-password">App Password</label>
+                  <label htmlFor="nextcloud-password">
+                    App Password <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
                   <input
                     id="nextcloud-password"
                     type="password"
-                    placeholder="App-specific password from Security settings"
+                    placeholder="App password generated under Settings > Security"
                     value={nextcloudPassword}
                     onChange={(e) => setNextcloudPassword(e.target.value)}
                     data-tip="App password generated in Nextcloud Settings > Security"
@@ -1115,10 +1221,6 @@ export default function Settings() {
                     </span>
                   )}
                 </div>
-
-                <p className="settings-help" style={{ marginTop: 6, fontSize: 12 }}>
-                  Tip: In your Nextcloud account, go to <strong>Personal Settings &gt; Security &gt; Devices &amp; credentials</strong> to generate an App Password.
-                </p>
               </form>
             </div>
           )}

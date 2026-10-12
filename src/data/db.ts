@@ -642,3 +642,43 @@ export async function hasLocalData(): Promise<boolean> {
   );
   return counts.some((c: number) => c > 0);
 }
+
+/**
+ * Permanently clears all local database tables.
+ * Used when a user chooses to "Start Afresh" so no previous local data is resumed.
+ */
+export async function clearAllLocalData(): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const tables = [
+    "projects",
+    "tasks",
+    "resources",
+    "docEntries",
+    "milestones",
+    "issues",
+    "contacts",
+    "reminders",
+    "calendarEvents",
+    "scheduleItems",
+    "conversations",
+    "messages",
+    "insights",
+    "settings",
+    "drafts",
+    "activityLog",
+    "trainOfThought",
+  ];
+
+  await db.transaction("rw", tables, async () => {
+    for (const name of tables) {
+      const table = (db as any)[name];
+      if (table) {
+        await table.clear();
+      }
+    }
+  });
+
+  // Re-seed essential initial settings
+  await ensureSeedData();
+}
+

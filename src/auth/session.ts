@@ -42,6 +42,18 @@ export function setGuestMode(): void {
   }
 }
 
+/** Resets any existing session and creates a fresh guest session ID for starting afresh. */
+export function resetGuestSession(): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  localStorage.removeItem(SESSION_EMAIL_KEY);
+  localStorage.removeItem(SESSION_USER_ID_KEY);
+  localStorage.setItem("panga_guest", "1");
+  const id = "guest_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  localStorage.setItem(SESSION_USER_ID_KEY, id);
+  localStorage.setItem(SESSION_EMAIL_KEY, "guest@local");
+}
+
+
 export function clearGuestMode(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.removeItem("panga_guest");

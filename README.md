@@ -51,6 +51,8 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 
 ### Local Development
 
+No `.env` file or environment variables are required! All features run out of the box.
+
 ```bash
 # Install dependencies
 npm install
@@ -65,29 +67,17 @@ npm run build
 npm start
 ```
 
-### Environment Variables
+### Zero-Config Environment & Client-Side Keys
 
-Create a `.env` file from the example:
+Panga is strictly local-first and **requires no `.env` variables to run**. All keys, tokens, and credentials are configured directly in your browser via the **Settings** menu:
 
-```bash
-cp .env.example .env
-```
+- **Gemini API Key**: Configure in **Settings &rarr; Gemini API Key** (free from [Google AI Studio](https://aistudio.google.com/apikey)). The key is passed directly client-side.
+- **Google Drive Sync**: Enter your **Google Client ID** in **Settings &rarr; Cloud Backup &amp; Sync &rarr; Google Drive**.
+- **GitHub Gist Sync**: Enter your **Personal Access Token** directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist**.
+- **Nextcloud WebDAV**: Enter your **Server URL, Username, and App Password** directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; Nextcloud**.
+- **Email Backup**: Configure your free **Resend** or **SendGrid** API key in **Settings &rarr; Email Dispatch Key**.
 
-Required variables:
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GEMINI_API_KEY` | Server-side Gemini API key for AI Assistant | Yes (for AI features) |
-| `VITE_GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID (Web app) for Google Drive sync | No (optional sync) |
-| `VITE_GOOGLE_API_KEY` | Google API Key with Drive API enabled | No (optional sync) |
-
-**Google Cloud Console Setup** (for Drive sync):
-1. Create a project at https://console.cloud.google.com
-2. Enable **Google Drive API**
-3. Create **OAuth 2.0 Client ID** (Web application type)
-4. Add authorized redirect URIs: `http://localhost:3000` (dev), your production domain
-5. Copy Client ID to `VITE_GOOGLE_CLIENT_ID`
-6. Create **API Key** with Drive API restriction, copy to `VITE_GOOGLE_API_KEY`
+*(Optional: If you are self-hosting a shared backend, optional environment variables like `PORT`, `DATA_DIR`, or fallback server keys may be placed in `.env.example`, but none are required).*
 
 ---
 
@@ -117,48 +107,43 @@ Click **Deploy**. Vercel will:
 
 ## Usage Guide
 
-### First Launch — Quick Upload
+### Offline Mode & Starting Options
 
-1. Open the app — if no local data exists, you'll see the **Quick Upload / Restore Snapshot** dropzone
-2. Drag a `.json` snapshot file (from a previous backup) or click "Choose Snapshot File"
-3. Enter an email address to associate with this data
-4. The snapshot is validated, imported to IndexedDB, and you're redirected to the dashboard
+From the Landing page, choose how you want to work:
 
-### Normal Sign Up / Login
+1. **Continue Offline**:
+   - **Start Afresh**: Clears any previous local database data on this browser, creates a clean guest session, and starts with an empty planner. (If local projects already exist, it prompts for confirmation before clearing).
+   - **Resume Local**: Continues working with the existing data stored in your browser's IndexedDB. If no saved data is found, it prompts you to either Start Afresh or import a JSON backup.
+2. **Import JSON Backup**:
+   - Drag and drop any previously exported `panga-backup-*.json` or snapshot file directly into the dropzone to restore your full workspace instantly.
+3. **Optional Account**:
+   - Create a local account or log in with email/password if you want multi-profile management.
 
-1. Click "Sign Up" to create an account with email + password
-2. Your data is stored locally in IndexedDB (per-user database)
-3. No server-side database required — everything stays in your browser
+### Cloud Backup & Multi-Sync (Settings)
 
-### Connect Google Drive (Optional)
+Panga gives you full control over how and where your backups are stored:
 
-1. Open **Settings** → **Data Persistence & Storage**
-2. Enter your **Google OAuth Client ID** (from Google Cloud Console)
-3. Click **"Connect Google Drive"** — completes OAuth consent flow
-4. Your local snapshot is uploaded to the private `appDataFolder`
-5. Auto-sync runs every 30 seconds after changes
+#### 1. Nextcloud (WebDAV)
+- **Direct Sign-Up URLs**:
+  - [Nextcloud Official Sign-Up Directory](https://nextcloud.com/sign-up/) — Free accounts with certified providers
+  - [The Good Cloud](https://thegood.cloud/en/) — Free tier available
+  - [Murena.io](https://murena.io/) — 1 GB free Nextcloud storage
+  - [Tab.Digital](https://tab.digital/) — Free tier Nextcloud hosting
+- **How to Get Your Credentials**:
+  - **Server URL**: Your Nextcloud web domain, e.g. `https://use01.thegood.cloud` or `https://cloud.yourdomain.com`.
+  - **Username**: Your Nextcloud account username.
+  - **App Password**: Go to **Personal Settings &rarr; Security &rarr; Devices & client credentials** (direct URL: `https://<your-instance>/settings/user/security`). Enter `Panga` as the app name, click **Create new app password**, and paste the generated token into Panga.
+- **Direct Link in UI**: Entering your Server URL in Panga Settings reveals a direct one-click link to open the security credentials page on your instance!
 
-### Connect WebDAV Cloud Backup (Optional)
+#### 2. Google Drive
+- Connect using your own **Google Client ID** in Settings. Backups sync automatically to your hidden Google Drive `appDataFolder`.
 
-1. Open **Settings** → **Cloud Backup & Sync (WebDAV)**
-2. Enter your WebDAV endpoint URL (e.g. `https://your-id.teracloud.jp/dav/`)
-3. Enter your **User ID / Username**
-4. Enter your **App Password** (app-specific password, not your regular login password)
-5. Set a **Backup File Path** (defaults to `app_backup.json`, or use a folder like `backups/my-backup.json`)
-6. Click **"Test Connection"** — verifies credentials via a WebDAV `PROPFIND` request
-7. Once verified, use **"Upload Backup"** to export your database, or **"Download Backup"** to restore
+#### 3. GitHub Gist
+- Sync private backups to a personal GitHub Gist using a GitHub Personal Access Token (`gist` scope).
 
-> **Need free cloud storage?** Sign up at [InfiniCLOUD (20GB Free)](https://infini-cloud.net/en/) → Go to Account Settings → Enable "Apps Connection" to get your WebDAV URL and App Password.
-
-**Recommended free providers:**
-- **InfiniCLOUD** — 20 GB free, WebDAV access
-- **Nextcloud providers** — many offer free WebDAV accounts
-
-### Manual Backup/Restore
-
-- **Download Backup (.json)**: Exports full local database to a versioned JSON file
-- **Upload Snapshot (.json)**: Restores from a local backup file
-- **Sync Now**: Forces immediate upload to Google Drive
+#### 4. Instant Snapshot & Email Backups
+- **Download Snapshot**: Instant `.json` file download containing your full workspace.
+- **Email Backup**: Send automated backup JSON files directly to your inbox via Resend or SendGrid.
 
 ### Sync Status Badge
 
