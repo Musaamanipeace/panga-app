@@ -250,6 +250,7 @@ export default function Home() {
             className="btn-primary clickable"
             onClick={() => setQuickAddOpen(true)}
             data-tip="Quickly save a note, link, list, or resource"
+            data-tip-pos="bottom"
           >
             ⚡ Quick add
           </button>
@@ -257,6 +258,8 @@ export default function Home() {
             type="button"
             className="btn-secondary btn-small clickable"
             onClick={() => openCreate("project")}
+            data-tip="Create a new project workspace"
+            data-tip-pos="bottom"
           >
             + Project
           </button>
@@ -264,6 +267,8 @@ export default function Home() {
             type="button"
             className="btn-secondary btn-small clickable"
             onClick={() => openCreate("activity")}
+            data-tip="Start a focused activity session"
+            data-tip-pos="bottom"
           >
             + Activity
           </button>
@@ -271,6 +276,8 @@ export default function Home() {
             type="button"
             className="btn-secondary btn-small clickable"
             onClick={() => openCreate("idea")}
+            data-tip="Capture a quick spark or idea"
+            data-tip-pos="bottom"
           >
             + Idea
           </button>

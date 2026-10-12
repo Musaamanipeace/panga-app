@@ -52,6 +52,7 @@ export default function Dashboard() {
           type="button"
           className="btn-primary clickable"
           data-tip="Create a new project container with dedicated resources and tasks"
+          data-tip-pos="bottom"
           onClick={() => setDrawerOpen(true)}
         >
           + Add project

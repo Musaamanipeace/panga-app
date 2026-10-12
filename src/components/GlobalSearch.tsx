@@ -62,6 +62,7 @@ export default function GlobalSearch() {
       <button
         className="global-search-trigger clickable"
         data-tip="Global search: query settings, platform features, or open saved files"
+        data-tip-pos="bottom"
         onClick={() => setOpen(true)}
       >
         <span>[ Search ]</span>

@@ -181,6 +181,7 @@ export default function ProjectView() {
             style={{ color: "#ef4444" }}
             onClick={() => setShowDeleteModal(true)}
             data-tip="Delete this project and all its tasks, docs, and resources"
+            data-tip-pos="bottom"
           >
             🗑️ Delete Project
           </button>

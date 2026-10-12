@@ -46,7 +46,7 @@ export default function AppShell() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/home" className="app-logo clickable" data-tip="Home">
+        <Link to="/home" className="app-logo clickable" data-tip="Home" data-tip-pos="bottom" data-tip-align="left">
           Panga
         </Link>
         <GlobalSearch />
@@ -55,6 +55,7 @@ export default function AppShell() {
           className="btn-secondary btn-small clickable"
           onClick={() => setThoughtsOpen(true)}
           data-tip="Thought train — capture notes quickly"
+          data-tip-pos="bottom"
         >
           💭 Thoughts
         </button>
@@ -62,6 +63,7 @@ export default function AppShell() {
           to="/settings"
           className="btn-secondary btn-small clickable"
           data-tip="Settings: API keys, backup & sync (Google Drive, GitHub Gist)"
+          data-tip-pos="bottom"
         >
           Settings
         </Link>
@@ -76,6 +78,7 @@ export default function AppShell() {
           onClick={handleManualSync}
           disabled={syncState.status === "syncing"}
           data-tip={syncState.message || "Save progress on this device"}
+          data-tip-pos="bottom"
         >
           {syncState.status === "syncing" ? "⟳ Saving…" : "💾 Save"}
         </button>
@@ -96,6 +99,8 @@ export default function AppShell() {
         <button
           className="btn-secondary btn-small clickable logout-btn"
           data-tip={guest ? "Exit guest mode" : "Log out"}
+          data-tip-pos="bottom"
+          data-tip-align="right"
           onClick={handleLogout}
         >
           {guest ? "Exit" : "Logout"}

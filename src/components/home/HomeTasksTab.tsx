@@ -114,6 +114,7 @@ export default function HomeTasksTab() {
           className={`chip ${!quickAdd ? "chip-active" : ""}`}
           onClick={() => setQuickAdd(false)}
           data-tip="Show all tasks"
+          data-tip-pos="bottom"
         >
           All Tasks
         </button>
@@ -122,6 +123,7 @@ export default function HomeTasksTab() {
           className={`chip ${quickAdd ? "chip-active" : ""}`}
           onClick={() => setQuickAdd(true)}
           data-tip="Quick add a new task from here"
+          data-tip-pos="bottom"
         >
           + Add
         </button>
@@ -134,11 +136,13 @@ export default function HomeTasksTab() {
               onChange={(e) => setTitle(e.target.value)}
               autoFocus
               data-tip="Enter task title"
+              data-tip-pos="bottom"
             />
             <select
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
               data-tip="Link this task to a project (optional)"
+              data-tip-pos="bottom"
             >
               <option value="">Standalone (no project)</option>
               {(data?.projects ?? []).map((p: any) => (

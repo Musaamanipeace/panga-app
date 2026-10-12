@@ -899,27 +899,34 @@ body {
 [data-tip] {
   position: relative;
 }
+[data-tip=""]::after {
+  display: none !important;
+}
 [data-tip]::after {
   content: attr(data-tip);
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
+  top: auto;
   transform: translateX(-50%) translateY(4px);
-  background: #1e293b;
-  color: #f1f5f9;
-  border: 1px solid #475569;
-  border-radius: 4px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 11px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  box-shadow: 0 4px 16px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   line-height: 1.4;
-  padding: 5px 9px;
-  max-width: 260px;
+  padding: 6px 10px;
+  max-width: 280px;
   width: max-content;
   white-space: normal;
   text-align: left;
   opacity: 0;
   pointer-events: none;
-  z-index: 300;
+  z-index: 10000;
   transition: opacity 0.12s ease, transform 0.12s ease;
   transition-delay: 0s;
 }
@@ -927,7 +934,76 @@ body {
 [data-tip]:focus-visible::after {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-  transition-delay: 150ms;
+  transition-delay: 120ms;
+}
+
+/* Tooltips positioned downwards:
+   1. All top menu bar buttons (.app-header): prevents clipping by the browser URL bar/tabs.
+   2. Page headers (.page-header, .home-page-header, .header-actions): prevents being hidden under the sticky menu bar overlay.
+   3. Quick add buttons / bars (.quick-add-bar, [data-tip-pos="bottom"]): ensures complete visibility below the button. */
+.app-header [data-tip]::after,
+.page-header [data-tip]::after,
+.home-page-header [data-tip]::after,
+.header-actions [data-tip]::after,
+.quick-add-bar [data-tip]::after,
+[data-tip-pos="bottom"]::after {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-4px);
+}
+.app-header [data-tip]:hover::after,
+.app-header [data-tip]:focus-visible::after,
+.page-header [data-tip]:hover::after,
+.page-header [data-tip]:focus-visible::after,
+.home-page-header [data-tip]:hover::after,
+.home-page-header [data-tip]:focus-visible::after,
+.header-actions [data-tip]:hover::after,
+.header-actions [data-tip]:focus-visible::after,
+.quick-add-bar [data-tip]:hover::after,
+.quick-add-bar [data-tip]:focus-visible::after,
+[data-tip-pos="bottom"]:hover::after,
+[data-tip-pos="bottom"]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Viewport edge alignments: prevent tooltips from overflowing screen edges */
+[data-tip-align="left"]::after,
+.app-logo[data-tip]::after,
+.app-header > :first-child[data-tip]::after {
+  left: 0;
+  right: auto;
+  transform: translateY(-4px);
+}
+[data-tip-align="left"]:hover::after,
+[data-tip-align="left"]:focus-visible::after,
+.app-logo[data-tip]:hover::after,
+.app-logo[data-tip]:focus-visible::after,
+.app-header > :first-child[data-tip]:hover::after,
+.app-header > :first-child[data-tip]:focus-visible::after {
+  transform: translateY(0);
+}
+
+[data-tip-align="right"]::after,
+.logout-btn[data-tip]::after,
+.app-header > :last-child[data-tip]::after {
+  left: auto;
+  right: 0;
+  transform: translateY(-4px);
+}
+[data-tip-align="right"]:hover::after,
+[data-tip-align="right"]:focus-visible::after,
+.logout-btn[data-tip]:hover::after,
+.logout-btn[data-tip]:focus-visible::after,
+.app-header > :last-child[data-tip]:hover::after,
+.app-header > :last-child[data-tip]:focus-visible::after {
+  transform: translateY(0);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ---- 2A. Global micro-interaction standard ---- */
