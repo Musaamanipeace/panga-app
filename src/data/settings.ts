@@ -106,7 +106,7 @@ export async function setEmailBackupProvider(provider: string): Promise<void> {
 }
 
 // Multi-cloud Sync Provider Settings
-export type CloudSyncProvider = "google_drive" | "github_gist" | "nextcloud";
+export type CloudSyncProvider = "google_drive" | "github_gist";
 
 export async function getActiveSyncProvider(): Promise<CloudSyncProvider> {
   return (await getSetting<CloudSyncProvider>("activeSyncProvider")) ?? "google_drive";
@@ -117,39 +117,57 @@ export async function setActiveSyncProvider(provider: CloudSyncProvider): Promis
 }
 
 // GitHub Gist settings
+const GIST_TOKEN_STORAGE_KEY = "panga_github_gist_token";
+const GIST_ID_STORAGE_KEY = "panga_github_gist_id";
+
 export async function getGithubGistToken(): Promise<string | null> {
-  return (await getSetting<string>("githubGistToken")) ?? null;
+  // Check localStorage first
+  if (typeof window !== "undefined" && window.localStorage) {
+    const fromStorage = localStorage.getItem(GIST_TOKEN_STORAGE_KEY);
+    if (fromStorage && fromStorage.trim()) return fromStorage.trim();
+  }
+  const fromDb = await getSetting<string>("githubGistToken");
+  if (fromDb && fromDb.trim() && typeof window !== "undefined" && window.localStorage) {
+    localStorage.setItem(GIST_TOKEN_STORAGE_KEY, fromDb.trim());
+  }
+  return fromDb ? fromDb.trim() : null;
 }
 
 export async function setGithubGistToken(token: string): Promise<void> {
-  await setSetting("githubGistToken", token);
+  const clean = token ? token.trim() : "";
+  if (typeof window !== "undefined" && window.localStorage) {
+    if (clean) {
+      localStorage.setItem(GIST_TOKEN_STORAGE_KEY, clean);
+    } else {
+      localStorage.removeItem(GIST_TOKEN_STORAGE_KEY);
+    }
+  }
+  await setSetting("githubGistToken", clean);
 }
 
 export async function getGithubGistId(): Promise<string | null> {
-  return (await getSetting<string>("githubGistId")) ?? null;
+  if (typeof window !== "undefined" && window.localStorage) {
+    const fromStorage = localStorage.getItem(GIST_ID_STORAGE_KEY);
+    if (fromStorage && fromStorage.trim()) return fromStorage.trim();
+  }
+  const fromDb = await getSetting<string>("githubGistId");
+  if (fromDb && fromDb.trim() && typeof window !== "undefined" && window.localStorage) {
+    localStorage.setItem(GIST_ID_STORAGE_KEY, fromDb.trim());
+  }
+  return fromDb ? fromDb.trim() : null;
 }
 
 export async function setGithubGistId(gistId: string): Promise<void> {
-  await setSetting("githubGistId", gistId);
-}
-
-// Nextcloud (WebDAV) settings
-export interface NextcloudConfig {
-  serverUrl: string;
-  username: string;
-  password?: string;
-}
-
-export async function getNextcloudConfig(): Promise<NextcloudConfig | null> {
-  return (await getSetting<NextcloudConfig>("nextcloudConfig")) ?? null;
-}
-
-export async function setNextcloudConfig(config: NextcloudConfig): Promise<void> {
-  await setSetting("nextcloudConfig", config);
-}
-
-export async function clearNextcloudConfig(): Promise<void> {
-  await setSetting("nextcloudConfig", null);
+  const clean = gistId ? gistId.trim() : "";
+  // CRITICAL: Only updates GIST_ID_STORAGE_KEY, never touches GIST_TOKEN_STORAGE_KEY!
+  if (typeof window !== "undefined" && window.localStorage) {
+    if (clean) {
+      localStorage.setItem(GIST_ID_STORAGE_KEY, clean);
+    } else {
+      localStorage.removeItem(GIST_ID_STORAGE_KEY);
+    }
+  }
+  await setSetting("githubGistId", clean);
 }
 
 // Last Cloud Sync Metadata

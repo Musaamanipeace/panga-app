@@ -6,8 +6,8 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 
 - **Frontend**: React 19 SPA with Vite, TypeScript, and offline-first IndexedDB (Dexie)
 - **Backend**: Express on Node.js 22 providing secure server-side Gemini AI processing (`/api/assistant/chat`) and health monitoring (`/health`)
-- **Storage**: Local IndexedDB as primary source of truth; optional encrypted sync via Google Drive AppData folder or provider-agnostic WebDAV
-- **Hosting**: Configured for **Vercel** with Vite SPA frontend and serverless API routes.
+- **Storage**: Local IndexedDB as primary source of truth; optional cloud sync via Google Drive AppData folder or private GitHub Gist
+- **Hosting**: Configured for Vite SPA frontend and serverless API routes.
 
 ---
 
@@ -26,13 +26,11 @@ Personal, offline-first project and resource planner with Gemini AI integration 
 - **Cross-device Restore**: On new device, connect Google Drive and offer to restore existing snapshot
 - **Manual Controls**: "Download Backup" / "Upload Snapshot" buttons in Settings
 
-### WebDAV Cloud Backup & Sync (Optional)
-- **Provider-agnostic**: Works with any standard WebDAV server — InfiniCLOUD, Nextcloud, ownCloud, pCloud, etc.
-- **Encrypted credentials**: Your WebDAV app password is encrypted locally (AES-256-GCM) before being stored in IndexedDB — never persisted plaintext.
-- **Test Connection**: Verifies credentials and endpoint reachability via a WebDAV `PROPFIND` request before saving.
-- **Manual Export / Import**: "Upload Backup" (PUT) serialises your full database to a single `app_backup.json` on your WebDAV server; "Download Backup" (GET) retrieves, validates, and prompts before restoring.
-- **Custom backup path**: Save your backup to a custom folder on the WebDAV server, e.g. `backups/my-backup.json`.
-- **No vendor lock-in**: Use your own self-hosted WebDAV/Nextcloud endpoint or a free provider — nothing is routed through Panga's servers.
+### GitHub Gist Sync (Optional)
+- **Zero Server Setup**: Pure client-side backup and restore to a private GitHub Gist using the GitHub REST API.
+- **Automatic Gist Provisioning**: Leave the Gist ID blank to automatically create a private Gist on first sync.
+- **Secret Scanning Protection**: Built-in credential redaction ensures Personal Access Tokens are never accidentally included in the Gist content.
+- **One-Click Restore**: Pull and restore your entire database from your GitHub Gist at any time.
 
 ### AI Integration
 - **Gemini API Proxy**: Server-side `/api/assistant/chat` endpoint keeps your API key secure
@@ -73,11 +71,10 @@ Panga is strictly local-first and **requires no `.env` variables to run**. All k
 
 - **Gemini API Key**: Configure in **Settings &rarr; Gemini API Key** (free from [Google AI Studio](https://aistudio.google.com/apikey)). The key is passed directly client-side.
 - **Google Drive Sync**: Enter your **Google Client ID** in **Settings &rarr; Cloud Backup &amp; Sync &rarr; Google Drive**.
-- **GitHub Gist Sync**: Enter your **Personal Access Token** directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist**.
-- **Nextcloud WebDAV**: Enter your **Server URL, Username, and App Password** directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; Nextcloud**.
+- **GitHub Gist Sync**: Enter your **Personal Access Token** (classic or fine-grained with `gist` scope) directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist**.
 - **Email Backup**: Configure your free **Resend** or **SendGrid** API key in **Settings &rarr; Email Dispatch Key**.
 
-*(Optional: If you are self-hosting a shared backend, optional environment variables like `PORT`, `DATA_DIR`, or fallback server keys may be placed in `.env.example`, but none are required).*
+*(Optional: If you are self-hosting a shared backend, optional environment variables like `PORT` or `DATA_DIR` may be configured, but none are required).*
 
 ---
 
@@ -123,35 +120,27 @@ From the Landing page, choose how you want to work:
 
 Panga gives you full control over how and where your backups are stored:
 
-#### 1. Nextcloud (WebDAV)
-- **Direct Sign-Up URLs**:
-  - [Nextcloud Official Sign-Up Directory](https://nextcloud.com/sign-up/) — Free accounts with certified providers
-  - [The Good Cloud](https://thegood.cloud/en/) — Free tier available
-  - [Murena.io](https://murena.io/) — 1 GB free Nextcloud storage
-  - [Tab.Digital](https://tab.digital/) — Free tier Nextcloud hosting
-- **How to Get Your Credentials**:
-  - **Server URL**: Your Nextcloud web domain, e.g. `https://use01.thegood.cloud` or `https://cloud.yourdomain.com`.
-  - **Username**: Your Nextcloud account username.
-  - **App Password**: Go to **Personal Settings &rarr; Security &rarr; Devices & client credentials** (direct URL: `https://<your-instance>/settings/user/security`). Enter `Panga` as the app name, click **Create new app password**, and paste the generated token into Panga.
-- **Direct Link in UI**: Entering your Server URL in Panga Settings reveals a direct one-click link to open the security credentials page on your instance!
-
-#### 2. Google Drive
+#### 1. Google Drive
 - Connect using your own **Google Client ID** in Settings. Backups sync automatically to your hidden Google Drive `appDataFolder`.
 
-#### 3. GitHub Gist
+#### 2. GitHub Gist
 - Sync private backups to a personal GitHub Gist using a GitHub Personal Access Token (`gist` scope).
+- Works with classic PAT (`ghp_...`) or fine-grained tokens.
+- All tokens are sent exclusively via standard authorization headers (`Authorization: Bearer <token>`) and scrubbed from payloads, preventing token exposure or revocation.
+- Leave Gist ID empty to auto-create a private Gist on first sync, or provide an existing Gist ID.
 
-#### 4. Instant Snapshot & Email Backups
+#### 3. Instant Snapshot & Email Backups
 - **Download Snapshot**: Instant `.json` file download containing your full workspace.
 - **Email Backup**: Send automated backup JSON files directly to your inbox via Resend or SendGrid.
 
 ### Sync Status Badge
 
 The header shows your sync state:
-- `📱 Offline Only` — No cloud sync connection configured
+- `· local` — Offline / on-device storage
 - `☁️ Google Drive` — Connected, auto-sync active
-- `☁️ WebDAV` — Connected, manual backup/restore available
-- `⟳ Syncing...` — Background sync in progress
+- `🐙 GitHub Gist` — Connected, gist backup active
+- `⟳ Saving…` — Sync in progress
+- `✓ saved` — Synced successfully
 - `✗` — Sync error (check Settings for details)
 
 ---
@@ -211,9 +200,9 @@ Exported snapshots follow this structure:
 }
 ```
 
-**Security**: Snapshots contain **only application state** — never credentials, API keys, or OAuth tokens. WebDAV app passwords are encrypted locally (AES-256-GCM) in IndexedDB via the `crypto.ts` module before storage; plaintext passwords are discarded from memory after connection verification.
+**Security**: Snapshots contain **only application state** — never credentials, API keys, or OAuth tokens. All client-side secrets and access tokens stored in IndexedDB are isolated from export files and scrubbed before upload.
 
-> **WebDAV backup file**: Uploaded backups are stored as `app_backup.json` (or a custom path you specify) at your WebDAV endpoint using HTTP `PUT` with Basic Auth. Downloads use `GET` and are validated against the snapshot schema before restoring.
+> **GitHub Gist backup file**: Backups are stored as `data.json` inside your private Gist using the GitHub REST API with Authorization Bearer headers. Downloads use the GitHub API and are validated against the snapshot schema before restoring.
 
 ---
 
@@ -234,10 +223,10 @@ src/
 │   └── utils.ts        # ID generation, timestamps
 ├── sync/
 │   ├── snapshot.ts     # Export/import utilities
-│   ├── webdav.ts       # WebDAV cloud backup client (PUT/GET/PROPFIND)
-│   ├── crypto.ts       # AES-256-GCM credential encryption
-│   ├── driveSync.ts    # Google Drive AppData sync
+│   ├── githubGistSync.ts # GitHub Gist backup & sync
+│   ├── googleDriveSync.ts # Google Drive AppData sync
 │   ├── googleCalendar.ts # Google Calendar import
+│   ├── crypto.ts       # Web Crypto API credential encryption
 │   └── sync.ts         # Local sync coordination
 ├── auth/
 │   └── session.ts      # Email/password + snapshot session
@@ -283,13 +272,10 @@ npx playwright test test-*.mjs
 lsof -ti:3000 | xargs kill -9
 ```
 
-### "WebDAV: Unauthorized / Not Found / Connection failed"
-- Verify the endpoint URL — it must end with a trailing slash and include the correct path (e.g. `https://your-id.teracloud.jp/dav/`)
-- Use an **App Password**, not your regular login password
-- Ensure "Apps Connection" (or equivalent WebDAV/app access) is enabled in your provider's settings
-- Check the **Backup File Path** — it must point to a file, not a collection (folder)
-- For Nextcloud, the URL typically looks like `https://your-server.com/remote.php/dav/files/username/`
-- Ensure your server supports WebDAV over HTTPS; some providers require whitelisting your app
+### GitHub Gist Sync Issues
+- Ensure your Personal Access Token has the `gist` permission scope.
+- In Panga, tokens are transmitted purely via Authorization headers (`Bearer <token>`) and are automatically scrubbed from backup contents to avoid GitHub secret scanning auto-revocation.
+- If you see "Gist ID not found", click "Clear Gist ID" in Settings to automatically create a fresh private Gist on the next sync.
 
 ---
 
@@ -307,6 +293,4 @@ MIT License — feel free to use, modify, and distribute.
 - **Google Drive API** — AppData folder sync
 - **Google Identity Services** — OAuth flow
 - **@google/genai** — Gemini AI SDK
-- **WebDAV** — Provider-agnostic cloud backup protocol
-- **InfiniCLOUD** — Recommended free WebDAV provider (20 GB)
 - **Web Crypto API** — AES-256-GCM credential encryption

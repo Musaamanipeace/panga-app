@@ -14,9 +14,6 @@ import {
   setGithubGistToken,
   getGithubGistId,
   setGithubGistId,
-  getNextcloudConfig,
-  setNextcloudConfig,
-  clearNextcloudConfig,
   getLastSyncInfo,
   setLastSyncInfo,
   type CloudSyncProvider,
@@ -42,16 +39,10 @@ import {
   syncNowToGithubGist,
   fetchGithubGistForRestore,
 } from "../sync/githubGistSync";
-import {
-  syncNowToNextcloud,
-  fetchNextcloudForRestore,
-  testNextcloudConnection,
-} from "../sync/nextcloudSync";
 
 const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
   google_drive: "Google Drive",
   github_gist: "GitHub Gist",
-  nextcloud: "Nextcloud (WebDAV)",
 };
 
 export default function Settings() {
@@ -92,14 +83,6 @@ export default function Settings() {
   const [gistConfigSaved, setGistConfigSaved] = useState(false);
   const [showGistToken, setShowGistToken] = useState(false);
 
-  // Nextcloud state
-  const [nextcloudServerUrl, setNextcloudServerUrl] = useState("");
-  const [nextcloudUsername, setNextcloudUsername] = useState("");
-  const [nextcloudPassword, setNextcloudPassword] = useState("");
-  const [nextcloudConfigSaved, setNextcloudConfigSaved] = useState(false);
-  const [nextcloudTestStatus, setNextcloudTestStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
-  const [nextcloudTestMessage, setNextcloudTestMessage] = useState("");
-
   // Restore confirmation modal
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [restoreData, setRestoreData] = useState<Snapshot | null>(null);
@@ -139,14 +122,6 @@ export default function Settings() {
     const savedGistId = await getGithubGistId();
     setGistToken(savedGistToken ?? "");
     setGistId(savedGistId ?? "");
-
-    // Nextcloud state
-    const nc = await getNextcloudConfig();
-    if (nc) {
-      setNextcloudServerUrl(nc.serverUrl ?? "");
-      setNextcloudUsername(nc.username ?? "");
-      setNextcloudPassword(nc.password ?? "");
-    }
   }, []);
 
   useEffect(() => {
@@ -315,39 +290,6 @@ export default function Settings() {
     await setGithubGistId("");
   }
 
-  // Nextcloud
-  async function handleSaveNextcloudConfig(e: React.FormEvent) {
-    e.preventDefault();
-    await setNextcloudConfig({
-      serverUrl: nextcloudServerUrl.trim(),
-      username: nextcloudUsername.trim(),
-      password: nextcloudPassword.trim(),
-    });
-    setNextcloudConfigSaved(true);
-    setTimeout(() => setNextcloudConfigSaved(false), 2500);
-  }
-
-  async function handleTestNextcloud() {
-    setNextcloudTestStatus("loading");
-    setNextcloudTestMessage("Testing Nextcloud WebDAV endpoint...");
-    const res = await testNextcloudConnection({
-      serverUrl: nextcloudServerUrl.trim(),
-      username: nextcloudUsername.trim(),
-      password: nextcloudPassword.trim(),
-    });
-    setNextcloudTestStatus(res.ok ? "ok" : "error");
-    setNextcloudTestMessage(res.message);
-  }
-
-  async function handleClearNextcloud() {
-    await clearNextcloudConfig();
-    setNextcloudServerUrl("");
-    setNextcloudUsername("");
-    setNextcloudPassword("");
-    setNextcloudTestStatus("idle");
-    setNextcloudTestMessage("");
-  }
-
   // --- Primary Sync & Restore Pipeline ---
 
   async function handleSyncNow() {
@@ -363,18 +305,12 @@ export default function Settings() {
         if (res.ok) {
           setIsDriveConnected(true);
         }
-      } else if (activeProvider === "github_gist") {
+      } else {
+        // GitHub Gist
         res = await syncNowToGithubGist(gistToken.trim(), gistId.trim());
         if (res.ok && res.gistId) {
           setGistId(res.gistId);
         }
-      } else {
-        // Nextcloud
-        res = await syncNowToNextcloud({
-          serverUrl: nextcloudServerUrl.trim(),
-          username: nextcloudUsername.trim(),
-          password: nextcloudPassword.trim(),
-        });
       }
 
       setCloudSyncStatus(res.ok ? "ok" : "error");
@@ -407,14 +343,9 @@ export default function Settings() {
       if (activeProvider === "google_drive") {
         res = await fetchDriveBackupForRestore();
         if (res.ok) setIsDriveConnected(true);
-      } else if (activeProvider === "github_gist") {
-        res = await fetchGithubGistForRestore(gistToken.trim(), gistId.trim());
       } else {
-        res = await fetchNextcloudForRestore({
-          serverUrl: nextcloudServerUrl.trim(),
-          username: nextcloudUsername.trim(),
-          password: nextcloudPassword.trim(),
-        });
+        // GitHub Gist
+        res = await fetchGithubGistForRestore(gistToken.trim(), gistId.trim());
       }
 
       if (!res.ok || !res.data) {
@@ -683,11 +614,7 @@ export default function Settings() {
         className="settings-section"
         style={{
           borderLeft: `4px solid ${
-            activeProvider === "google_drive"
-              ? "#4285f4"
-              : activeProvider === "github_gist"
-                ? "#24292f"
-                : "#0082c9"
+            activeProvider === "google_drive" ? "#4285f4" : "#24292f"
           }`,
         }}
       >
@@ -756,18 +683,6 @@ export default function Settings() {
               }}
             >
               🐙 GitHub Gist {activeProvider === "github_gist" && "✓"}
-            </button>
-            <button
-              type="button"
-              className={`chip ${selectedProviderTab === "nextcloud" ? "chip-active" : ""}`}
-              onClick={() => handleSelectProvider("nextcloud")}
-              data-tip="Use Nextcloud WebDAV (standard HTTPS WebDAV)"
-              style={{
-                borderColor: selectedProviderTab === "nextcloud" ? "#0082c9" : undefined,
-                fontWeight: selectedProviderTab === "nextcloud" ? 600 : 400,
-              }}
-            >
-              ☁️ Nextcloud (WebDAV) {activeProvider === "nextcloud" && "✓"}
             </button>
           </div>
         </div>
@@ -877,7 +792,7 @@ export default function Settings() {
               </p>
 
               <form onSubmit={handleSaveGoogleClientId} style={{ marginBottom: 12 }}>
-                <div className="webdav-form-row">
+                <div className="provider-form-row">
                   <label htmlFor="google-client-id">
                     Google OAuth Web Client ID <span className="faint">(public, stored locally)</span>
                   </label>
@@ -959,7 +874,7 @@ export default function Settings() {
               </p>
 
               <form onSubmit={handleSaveGistConfig}>
-                <div className="webdav-form-row">
+                <div className="provider-form-row">
                   <label htmlFor="gist-token">
                     Personal Access Token (classic or fine-grained with <code>gist</code> scope)
                   </label>
@@ -984,7 +899,7 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="webdav-form-row">
+                <div className="provider-form-row">
                   <label htmlFor="gist-id">
                     Gist ID <span className="faint">(optional — leave blank to auto-create private Gist)</span>
                   </label>
@@ -1010,216 +925,6 @@ export default function Settings() {
                   >
                     Generate GitHub Token (with gist scope) →
                   </a>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 3: Nextcloud */}
-          {selectedProviderTab === "nextcloud" && (
-            <div className="provider-config-pane">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
-                  Nextcloud (WebDAV) Settings
-                  <span
-                    className="chip-small"
-                    style={{
-                      background: nextcloudServerUrl && nextcloudUsername ? "#ecfdf5" : "#f3f4f6",
-                      color: nextcloudServerUrl && nextcloudUsername ? "#065f46" : "#6b7280",
-                      border: nextcloudServerUrl && nextcloudUsername ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
-                      fontSize: 11,
-                    }}
-                  >
-                    {nextcloudServerUrl && nextcloudUsername ? "● Configured" : "○ Needs Info"}
-                  </span>
-                </h3>
-
-                {nextcloudServerUrl && (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-small clickable"
-                    onClick={handleClearNextcloud}
-                    data-tip="Clear saved Nextcloud configuration"
-                  >
-                    Clear Config
-                  </button>
-                )}
-              </div>
-
-              <p className="settings-help" style={{ marginBottom: 10 }}>
-                Store and sync your encrypted <code>data.json</code> backup directly on your private Nextcloud storage using standard WebDAV. No intermediate proxy — your browser communicates directly with your Nextcloud.
-              </p>
-
-              {/* Nextcloud Direct Signup Card */}
-              <div
-                style={{
-                  background: "#f0f9ff",
-                  border: "1px solid #bae6fd",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "12px 14px",
-                  marginBottom: 16,
-                  fontSize: "13px",
-                  lineHeight: 1.5,
-                }}
-              >
-                <div style={{ fontWeight: 600, color: "#0369a1", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                  🌐 Need a Nextcloud Account? (Sign Up Links)
-                </div>
-                <p style={{ margin: "0 0 8px 0", color: "#0c4a6e" }}>
-                  You can use your own self-hosted Nextcloud server or register a free account with any official Nextcloud provider:
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <a
-                    href="https://nextcloud.com/sign-up/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="chip clickable"
-                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc", fontWeight: 600 }}
-                  >
-                    🚀 Nextcloud Official Sign-Up Directory →
-                  </a>
-                  <a
-                    href="https://thegood.cloud/en/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="chip clickable"
-                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
-                  >
-                    The Good Cloud (Free Tier) →
-                  </a>
-                  <a
-                    href="https://murena.io/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="chip clickable"
-                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
-                  >
-                    Murena.io (Free 1GB) →
-                  </a>
-                  <a
-                    href="https://tab.digital/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="chip clickable"
-                    style={{ textDecoration: "none", color: "#0369a1", borderColor: "#7dd3fc" }}
-                  >
-                    Tab.Digital (Free) →
-                  </a>
-                </div>
-              </div>
-
-              {/* Nextcloud Credentials Guide */}
-              <div
-                style={{
-                  background: "#fafaf9",
-                  border: "1px solid #e7e5e4",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "12px 14px",
-                  marginBottom: 16,
-                  fontSize: "13px",
-                  lineHeight: 1.5,
-                }}
-              >
-                <div style={{ fontWeight: 600, color: "#44403c", marginBottom: 6 }}>
-                  🔑 How to get your credentials:
-                </div>
-                <ol style={{ margin: 0, paddingLeft: 18, color: "#57534e" }}>
-                  <li style={{ marginBottom: 4 }}>
-                    <strong>Server URL:</strong> The address in your browser when using Nextcloud (e.g. <code>https://use01.thegood.cloud</code> or <code>https://cloud.yourdomain.com</code>).
-                  </li>
-                  <li style={{ marginBottom: 4 }}>
-                    <strong>Username:</strong> Your Nextcloud account username (visible in the top-right user menu).
-                  </li>
-                  <li style={{ marginBottom: 4 }}>
-                    <strong>App Password:</strong> Open Nextcloud &rarr; <strong>Personal Settings</strong> &rarr; <strong>Security</strong> &rarr; scroll to <strong>Devices &amp; client credentials</strong>. Type <code>Panga</code> and click <em>Create new app password</em>.
-                  </li>
-                </ol>
-
-                {nextcloudServerUrl.trim() && (
-                  <div style={{ marginTop: 10 }}>
-                    <a
-                      href={`${nextcloudServerUrl.trim().replace(/\/+$/, "")}/settings/user/security`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-secondary btn-small clickable"
-                      style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}
-                    >
-                      🔗 Open Security Settings directly on your Nextcloud instance ({nextcloudServerUrl.trim().replace(/^https?:\/\//, "").slice(0, 30)}) ↗
-                    </a>
-                  </div>
-                )}
-              </div>
-
-              <form onSubmit={handleSaveNextcloudConfig}>
-                <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-url">
-                    Nextcloud Server URL <span style={{ color: "#ef4444" }}>*</span>
-                  </label>
-                  <input
-                    id="nextcloud-url"
-                    type="url"
-                    placeholder="https://use01.thegood.cloud or https://cloud.example.com"
-                    value={nextcloudServerUrl}
-                    onChange={(e) => setNextcloudServerUrl(e.target.value)}
-                    data-tip="Your Nextcloud root URL (e.g. https://cloud.example.com)"
-                  />
-                </div>
-
-                <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-username">
-                    Username <span style={{ color: "#ef4444" }}>*</span>
-                  </label>
-                  <input
-                    id="nextcloud-username"
-                    type="text"
-                    placeholder="e.g. username"
-                    value={nextcloudUsername}
-                    onChange={(e) => setNextcloudUsername(e.target.value)}
-                    data-tip="Your Nextcloud account username"
-                  />
-                </div>
-
-                <div className="webdav-form-row">
-                  <label htmlFor="nextcloud-password">
-                    App Password <span style={{ color: "#ef4444" }}>*</span>
-                  </label>
-                  <input
-                    id="nextcloud-password"
-                    type="password"
-                    placeholder="App password generated under Settings > Security"
-                    value={nextcloudPassword}
-                    onChange={(e) => setNextcloudPassword(e.target.value)}
-                    data-tip="App password generated in Nextcloud Settings > Security"
-                  />
-                </div>
-
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-                  <button type="submit" className="btn-primary btn-small clickable">
-                    {nextcloudConfigSaved ? "Saved ✓" : "Save Config"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary btn-small clickable"
-                    onClick={handleTestNextcloud}
-                    disabled={nextcloudTestStatus === "loading"}
-                    data-tip="Verify WebDAV connectivity"
-                  >
-                    {nextcloudTestStatus === "loading" ? "Testing…" : "Test Connection"}
-                  </button>
-
-                  {nextcloudTestStatus !== "idle" && nextcloudTestMessage && (
-                    <span
-                      className="chip-small"
-                      style={{
-                        fontSize: 12,
-                        background: nextcloudTestStatus === "ok" ? "#ecfdf5" : "#fef2f2",
-                        color: nextcloudTestStatus === "ok" ? "#065f46" : "#991b1b",
-                        border: nextcloudTestStatus === "ok" ? "1px solid #bbf7d0" : "1px solid #fecaca",
-                      }}
-                    >
-                      {nextcloudTestStatus === "ok" ? "✓" : "✗"} {nextcloudTestMessage}
-                    </span>
-                  )}
                 </div>
               </form>
             </div>

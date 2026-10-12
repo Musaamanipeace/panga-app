@@ -4,6 +4,7 @@
 
 import {
   getGithubGistToken,
+  setGithubGistToken,
   getGithubGistId,
   setGithubGistId,
 } from "../data/settings";
@@ -31,7 +32,7 @@ export async function syncNowToGithubGist(
   customToken?: string,
   customGistId?: string
 ): Promise<GistSyncResult> {
-  const token = (customToken !== undefined ? customToken : (await getGithubGistToken()) ?? "").trim();
+  const token = (customToken !== undefined && customToken.trim() ? customToken : (await getGithubGistToken()) ?? "").trim();
   if (!token) {
     return {
       ok: false,
@@ -39,11 +40,24 @@ export async function syncNowToGithubGist(
     };
   }
 
-  let gistId = (customGistId !== undefined ? customGistId : (await getGithubGistId()) ?? "").trim();
+  // Ensure active token is stored safely
+  await setGithubGistToken(token);
+
+  let gistId = (customGistId !== undefined && customGistId.trim() ? customGistId : (await getGithubGistId()) ?? "").trim();
 
   try {
     const snapshot = await exportSnapshot();
-    const jsonString = JSON.stringify(snapshot, null, 2);
+    let jsonString = JSON.stringify(snapshot, null, 2);
+
+    // CRITICAL: Token Exposure Revocation Prevention.
+    // GitHub's Secret Scanning automatically scans file contents inside Gists.
+    // If the PAT appears anywhere inside files content, GitHub revokes it instantly.
+    if (token && jsonString.includes(token)) {
+      jsonString = jsonString.replaceAll(token, "[REDACTED_CREDENTIAL]");
+    }
+    // Scrub any PAT patterns (classic ghp_ or fine-grained github_pat_) from the payload
+    jsonString = jsonString.replace(/ghp_[A-Za-z0-9]{36}/g, "[REDACTED_PAT]");
+    jsonString = jsonString.replace(/github_pat_[A-Za-z0-9_]{82}/g, "[REDACTED_PAT]");
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
@@ -150,12 +164,13 @@ export async function fetchGithubGistForRestore(
   customToken?: string,
   customGistId?: string
 ): Promise<GistSyncResult> {
-  const token = (customToken !== undefined ? customToken : (await getGithubGistToken()) ?? "").trim();
-  const gistId = (customGistId !== undefined ? customGistId : (await getGithubGistId()) ?? "").trim();
+  const token = (customToken !== undefined && customToken.trim() ? customToken : (await getGithubGistToken()) ?? "").trim();
+  const gistId = (customGistId !== undefined && customGistId.trim() ? customGistId : (await getGithubGistId()) ?? "").trim();
 
   if (!token) {
     return { ok: false, message: "Please enter your GitHub Personal Access Token." };
   }
+  await setGithubGistToken(token);
   if (!gistId) {
     return {
       ok: false,

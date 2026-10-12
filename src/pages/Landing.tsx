@@ -151,7 +151,7 @@ export default function Landing() {
         Local-first project &amp; resource planner for focused work in distracting places.
       </p>
       <p className="landing-sub">
-        Save progress on this device. Optionally sync with Google Drive, GitHub Gist, or Nextcloud.
+        Save progress on this device. Optionally sync with Google Drive or GitHub Gist.
         No forced account — start offline and log in later.
       </p>
 
@@ -343,7 +343,7 @@ export default function Landing() {
 
       <footer className="landing-footer">
         <span>Data stays on your device by default.</span>
-        <span>Cloud sync uses your own Google Drive, GitHub Gist, or Nextcloud account.</span>
+        <span>Cloud sync uses your own Google Drive or GitHub Gist account.</span>
       </footer>
     </div>
   );

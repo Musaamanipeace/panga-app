@@ -546,10 +546,33 @@ export async function ensureSeedData() {
   }
 }
 
+export const SENSITIVE_SETTING_KEYS = new Set([
+  "githubGistToken",
+  "github_gist_token",
+  "geminiApiKey",
+  "emailBackupApiKey",
+  "googleAccessToken",
+  "googleCalendarToken",
+  "googlePickerKey",
+]);
+
+export function isSensitiveSettingKey(key: string): boolean {
+  if (!key) return false;
+  if (SENSITIVE_SETTING_KEYS.has(key)) return true;
+  const lower = key.toLowerCase();
+  return (
+    lower.includes("token") ||
+    lower.includes("password") ||
+    lower.includes("secret") ||
+    lower.includes("apikey") ||
+    lower.includes("api_key")
+  );
+}
+
 /**
  * Export the entire local database state as a plain serializable object.
- * Used by the snapshot/backup system. Excludes no credentials — this is
- * pure app data only.
+ * Used by the snapshot/backup system. Strictly excludes all tokens, passwords,
+ * and API keys to prevent secret exposure (e.g. GitHub PAT revocation).
  */
 export async function exportDbState(): Promise<Record<string, any[]>> {
   if (!db.isOpen()) await db.open();
@@ -577,7 +600,13 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
   const data: Record<string, any[]> = {};
   for (const name of tables) {
     try {
-      data[name] = await (db as any)[name].toArray();
+      if (name === "settings") {
+        // Strip out any secret tokens or passwords from export
+        const rows = await db.settings.toArray();
+        data[name] = rows.filter((r) => !isSensitiveSettingKey(r.key));
+      } else {
+        data[name] = await (db as any)[name].toArray();
+      }
     } catch {
       data[name] = [];
     }
@@ -589,6 +618,8 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
  * Replace all user-table contents with the provided data.
  * Clears each table first, then bulk-loads. Call within a write transaction
  * for atomicity.
+ * Preserves the user's existing local credentials (tokens, API keys, passwords)
+ * so restoring data never erases or breaks cloud sync authentication.
  */
 export async function importDbState(data: Record<string, any[]>): Promise<void> {
   if (!db.isOpen()) await db.open();
@@ -613,15 +644,37 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
     "trainOfThought",
   ];
 
+  // Capture existing local credentials to preserve them
+  let localCredentialsToKeep: any[] = [];
+  try {
+    const currentSettings = await db.settings.toArray();
+    localCredentialsToKeep = currentSettings.filter((r) => isSensitiveSettingKey(r.key));
+  } catch {}
+
   // Use the array form of transaction to avoid argument limit
   await db.transaction("rw", tables, async () => {
     for (const name of tables) {
       const tableData = data[name] ?? [];
       const table = (db as any)[name];
       if (table) {
-        await table.clear();
-        if (tableData.length > 0) {
-          await table.bulkAdd(tableData);
+        if (name === "settings") {
+          await table.clear();
+          if (tableData.length > 0) {
+            // Filter incoming snapshot settings to prevent overwriting with old or empty keys
+            const safeIncoming = tableData.filter((r: any) => !isSensitiveSettingKey(r.key));
+            if (safeIncoming.length > 0) {
+              await table.bulkAdd(safeIncoming);
+            }
+          }
+          // Restore the user's local credentials intact
+          for (const cred of localCredentialsToKeep) {
+            await table.put(cred);
+          }
+        } else {
+          await table.clear();
+          if (tableData.length > 0) {
+            await table.bulkAdd(tableData);
+          }
         }
       }
     }

@@ -10,7 +10,6 @@ All keys, OAuth Client IDs, and cloud sync credentials are configured client-sid
 - **Google Client ID**: Entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; Google Drive.
 - **Gemini API Key**: Entered directly in Settings &rarr; Gemini API Key.
 - **GitHub Gist Token**: Entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist.
-- **Nextcloud WebDAV**: Server URL, Username, and App Password entered directly in Settings &rarr; Cloud Backup &amp; Sync &rarr; Nextcloud.
 
 The exported user snapshot files strictly contain application state and version metadata ONLY—never include app credentials, client IDs, or session tokens in user backup files.
 

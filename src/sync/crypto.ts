@@ -1,6 +1,6 @@
 // src/sync/crypto.ts
 // Lightweight credential encryption using the Web Crypto API (AES-GCM).
-// Protects WebDAV app passwords from being stored in plaintext in IndexedDB.
+// Protects sensitive client-side credentials from being stored in plaintext in IndexedDB.
 // The key is derived from a fixed application secret via PBKDF2 so it works
 // without any user-supplied passphrase. While not a replacement for a
 // hardware-backed keychain, it ensures credentials are never stored in
@@ -10,7 +10,7 @@ const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
 
 // A fixed application secret — combined with a salt to derive the AES key.
-const APP_SECRET = "panga-webdav-v1";
+const APP_SECRET = "panga-crypto-v1";
 const APP_SALT = "panga-salt-v1";
 const ITERATIONS = 100_000;
 
