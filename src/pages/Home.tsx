@@ -79,7 +79,6 @@ export default function Home() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerKind, setDrawerKind] = useState<WorkspaceKind>("project");
-  const [projectSearch, setProjectSearch] = useState("");
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
 
@@ -134,16 +133,6 @@ export default function Home() {
   const statsMap = data?.statsMap ?? {};
   const cards = useMemo(() => (summary ? summaryCards(summary) : []), [summary]);
 
-  function filterList(list: Project[]) {
-    if (!projectSearch.trim()) return list;
-    const q = projectSearch.toLowerCase();
-    return list.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q)
-    );
-  }
-
   async function handleCreateWorkspace(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
@@ -170,13 +159,12 @@ export default function Home() {
     list: Project[];
     emptyLabel: string;
   }) {
-    const filtered = filterList(list);
-    if (filtered.length === 0) {
+    if (list.length === 0) {
       return <p className="empty-state">{emptyLabel}</p>;
     }
     return (
       <div className="project-grid">
-        {filtered.map((p) => (
+        {list.map((p) => (
           <ProjectCard
             key={p.id}
             project={p}
@@ -353,13 +341,13 @@ export default function Home() {
           count={projects.length}
           defaultOpen
           actions={
-            <input
-              type="search"
-              className="project-search-input"
-              placeholder="Filter…"
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-            />
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => openCreate("project")}
+            >
+              + Add
+            </button>
           }
         >
           <p className="section-hint">

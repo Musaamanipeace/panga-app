@@ -148,7 +148,7 @@ Click **Deploy**. Vercel will:
 6. Click **"Test Connection"** — verifies credentials via a WebDAV `PROPFIND` request
 7. Once verified, use **"Upload Backup"** to export your database, or **"Download Backup"** to restore
 
-> **Need free cloud storage?** Sign up at [InfiniCLOUD (20GB Free)](https://www.infiniclouds.com/) → Go to Account Settings → Enable "Apps Connection" to get your WebDAV URL and App Password.
+> **Need free cloud storage?** Sign up at [InfiniCLOUD (20GB Free)](https://infini-cloud.net/en/) → Go to Account Settings → Enable "Apps Connection" to get your WebDAV URL and App Password.
 
 **Recommended free providers:**
 - **InfiniCLOUD** — 20 GB free, WebDAV access

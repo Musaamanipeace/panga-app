@@ -586,7 +586,7 @@ export default function Settings() {
         <p className="settings-help">
           Need free cloud storage? Sign up at{" "}
           <a
-            href="https://www.infiniclouds.com/"
+            href="https://infini-cloud.net/en/"
             target="_blank"
             rel="noreferrer"
           >
