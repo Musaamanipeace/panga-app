@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAsync } from "../../components/ui.tsx";
+import { useAsync, confirmDelete } from "../../components/ui.tsx";
 import { listInsights, createInsight, updateInsight, deleteInsight, type InsightType } from "../../data/insights.ts";
 import { ErrorNote, Loading, StatusLabel, Editable } from "../../components/ui.tsx";
 import MicButton from "../../components/MicButton.tsx";
@@ -67,7 +67,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this insight?")) return;
+    if (!(await confirmDelete({ kind: "insight" }))) return;
     await deleteInsight(id);
     insights.reload();
   }

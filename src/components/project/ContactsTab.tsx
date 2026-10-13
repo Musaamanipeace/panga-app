@@ -11,7 +11,7 @@ import {
   type Contact,
 } from "../../data/contacts";
 import MicButton from "../../components/MicButton";
-import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
+import { Editable, ErrorNote, Loading, StatusLabel, useAsync, confirmDelete } from "../../components/ui";
 
 export default function ContactsTab({ projectId }: { projectId: string }) {
   const contacts = useAsync(() => listAllContacts(), []);
@@ -171,6 +171,7 @@ function ContactRow({
           type="button"
           className="btn-icon btn-icon-danger"
           onClick={async () => {
+            if (!(await confirmDelete({ kind: "contact", name: contact.name, detail: "It will be removed from every project." }))) return;
             await deleteContact(contact.id);
             await onChange();
           }}

@@ -3,43 +3,27 @@ import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
 import ThoughtTrain from "./ThoughtTrain";
-import { ToastContainer } from "./ui";
+import { ToastContainer, ConfirmDialogHost } from "./ui";
+import { SyncMenu, AutoSyncIndicator } from "./SyncMenu";
+import { subscribeAutoSync, startAutoSync, type AutoSyncState } from "../sync/autoSync";
 import StashPanel from "./Stash";
 import { getSessionEmail, isGuest } from "../auth/session";
-import { signOut, subscribeSyncStatus, syncAll } from "../sync/sync";
+import { signOut } from "../sync/sync";
 
 export default function AppShell() {
   const email = getSessionEmail();
   const guest = isGuest();
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
-  const [syncState, setSyncState] = useState<{ status: string; message: string; timestamp: number }>({
-    status: "idle",
-    message: "",
-    timestamp: 0,
-  });
+  const [autoState, setAutoState] = useState<AutoSyncState>({ phase: "off", provider: null, at: null, message: "" });
 
   useEffect(() => {
-    const unsubscribe = subscribeSyncStatus((status, message) => {
-      setSyncState({ status, message: message || "", timestamp: Date.now() });
-    });
-    return unsubscribe;
+    startAutoSync();
+    return subscribeAutoSync(setAutoState);
   }, []);
 
   async function handleLogout() {
     await signOut();
   }
-
-  async function handleManualSync() {
-    const result = await syncAll();
-    setSyncState({ status: result.ok ? "synced" : "error", message: result.message, timestamp: Date.now() });
-  }
-
-  const statusColors: Record<string, string> = {
-    idle: "var(--color-text-muted)",
-    syncing: "#f59e0b",
-    synced: "#10b981",
-    error: "#ef4444",
-  };
 
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
 
@@ -73,22 +57,8 @@ export default function AppShell() {
         >
           {guest ? "Guest · offline" : email || "Local"}
         </span>
-        <button
-          className="btn-secondary btn-small clickable"
-          onClick={handleManualSync}
-          disabled={syncState.status === "syncing"}
-          data-tip={syncState.message || "Save progress on this device"}
-          data-tip-pos="bottom"
-        >
-          {syncState.status === "syncing" ? "⟳ Saving…" : "💾 Save"}
-        </button>
-        <span
-          className="sync-status"
-          style={{ color: statusColors[syncState.status] || "var(--color-text-muted)" }}
-          title={syncState.message || "Local storage"}
-        >
-          {syncState.status === "synced" ? "✓ saved" : syncState.status === "syncing" ? "⟳" : syncState.status === "error" ? "✗" : "·"}
-        </span>
+        <SyncMenu />
+        <AutoSyncIndicator state={autoState} />
         <span
           className="offline-badge"
           style={{ color: online ? "var(--color-accent-resource)" : "var(--color-text-muted)" }}
@@ -112,6 +82,7 @@ export default function AppShell() {
       <AssistantPanel />
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
       <ToastContainer />
+      <ConfirmDialogHost />
       <StashPanel />
     </div>
   );

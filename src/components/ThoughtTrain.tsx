@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import MicButton from "./MicButton";
+import { confirmDelete } from "./ui";
 import { listThoughts, addThought, deleteThought, type ThoughtEntry } from "../data/thoughts";
 
 interface Props {
@@ -116,7 +117,11 @@ export default function ThoughtTrain({ open, onClose }: Props) {
                   className="btn-icon"
                   style={{ width: 22, height: 22, fontSize: 11 }}
                   title="Delete"
-                  onClick={() => void deleteThought(th.id).then(reload)}
+                  onClick={async () => {
+                    if (!(await confirmDelete({ kind: "thought" }))) return;
+                    await deleteThought(th.id);
+                    reload();
+                  }}
                 >
                   ×
                 </button>

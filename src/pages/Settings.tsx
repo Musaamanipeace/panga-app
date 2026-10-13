@@ -27,6 +27,7 @@ import {
   type Snapshot,
 } from "../sync/snapshot";
 import { syncAll } from "../sync/sync";
+import { enableAutoSync } from "../sync/autoSync";
 import {
   connectGoogleDrive,
   disconnectGoogleDrive,
@@ -324,6 +325,7 @@ export default function Settings() {
         };
         await setLastSyncInfo(info);
         setLastSync(info);
+        enableAutoSync(activeProvider);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -375,6 +377,7 @@ export default function Settings() {
     try {
       await importSnapshot(restoreData);
       await syncAll();
+      enableAutoSync(activeProvider);
       setCloudSyncStatus("ok");
       setCloudSyncMessage("Backup restored successfully. The page will reload to refresh data.");
       setTimeout(() => window.location.reload(), 1500);

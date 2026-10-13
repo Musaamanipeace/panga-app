@@ -13,7 +13,7 @@ import {
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
-import { copyToClipboard } from "../../components/ui";
+import { copyToClipboard, confirmDelete } from "../../components/ui";
 import { newId } from "../../data/utils";
 
 export default function HomeResourcesTab() {
@@ -91,8 +91,8 @@ export default function HomeResourcesTab() {
     setShowAddCategory(false);
   }
 
-  function handleRemoveCategory(catId: string) {
-    if (!confirm(`Delete custom category "${CATEGORY_LABELS[catId] || catId}"? Existing items will remain.`)) return;
+  async function handleRemoveCategory(catId: string) {
+    if (!(await confirmDelete({ kind: "category", name: CATEGORY_LABELS[catId] || catId, detail: "Existing items will remain." }))) return;
     const updated = customCategories.filter((c) => c.id !== catId);
     saveCustomCategories(updated);
     if (filter === catId) setFilter("all");
@@ -939,7 +939,7 @@ export default function HomeResourcesTab() {
                    className="task-delete-btn"
                    data-tip="Delete resource"
                    onClick={async () => {
-                     if (!confirm(`Delete resource "${r.title}"?`)) return;
+                     if (!(await confirmDelete({ kind: "resource", name: r.title }))) return;
                      await deleteResource(r.id);
                      refresh();
                    }}

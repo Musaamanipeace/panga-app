@@ -471,3 +471,170 @@ export function CopyButton({
   );
 }
 
+
+/* -------------------------------------------------------------------------
+   Confirm dialog — replaces the browser's native confirm()/alert popups.
+   Same look as the "Delete Project?" modal. Usage:
+
+     if (!(await confirmDelete({ kind: "resource", name: r.title }))) return;
+     if (!(await confirmAction({ title: "Replace data?", message: "…", confirmLabel: "Replace" }))) return;
+------------------------------------------------------------------------- */
+
+interface ConfirmRequest {
+  title: string;
+  message: ReactNode;
+  confirmLabel: string;
+  cancelLabel: string;
+  danger: boolean;
+  resolve: (ok: boolean) => void;
+}
+
+const confirmState: {
+  current: ConfirmRequest | null;
+  queue: ConfirmRequest[];
+  listeners: Array<() => void>;
+} = { current: null, queue: [], listeners: [] };
+
+function emitConfirm() {
+  confirmState.listeners.forEach((l) => l());
+}
+
+function pumpConfirm() {
+  if (!confirmState.current && confirmState.queue.length > 0) {
+    confirmState.current = confirmState.queue.shift()!;
+  }
+  emitConfirm();
+}
+
+export function confirmAction(opts: {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    confirmState.queue.push({
+      title: opts.title,
+      message: opts.message,
+      confirmLabel: opts.confirmLabel ?? "Confirm",
+      cancelLabel: opts.cancelLabel ?? "Cancel",
+      danger: opts.danger ?? false,
+      resolve,
+    });
+    pumpConfirm();
+  });
+}
+
+/** Standard "Delete <kind>?" confirmation. Resolves true only if the user confirms. */
+export function confirmDelete(opts: {
+  kind: string;
+  name?: string;
+  detail?: ReactNode;
+}): Promise<boolean> {
+  const label = opts.kind.charAt(0).toUpperCase() + opts.kind.slice(1);
+  return confirmAction({
+    title: `Delete ${label}?`,
+    message: (
+      <>
+        Are you sure you want to delete{" "}
+        {opts.name ? <strong>"{opts.name}"</strong> : `this ${opts.kind}`}?{" "}
+        {opts.detail ?? "This cannot be undone."}
+      </>
+    ),
+    confirmLabel: "Yes, Delete",
+    danger: true,
+  });
+}
+
+export function ConfirmDialogHost() {
+  const [, setTick] = useState(0);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const l = () => setTick((n) => n + 1);
+    confirmState.listeners.push(l);
+    return () => {
+      const i = confirmState.listeners.indexOf(l);
+      if (i >= 0) confirmState.listeners.splice(i, 1);
+    };
+  }, []);
+
+  const req = confirmState.current;
+
+  function close(ok: boolean) {
+    const r = confirmState.current;
+    if (!r) return;
+    confirmState.current = null;
+    r.resolve(ok);
+    pumpConfirm();
+  }
+
+  useEffect(() => {
+    if (!req) return;
+    confirmRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [req]);
+
+  if (!req) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={req.title}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        zIndex: 99999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={() => close(false)}
+    >
+      <div
+        style={{
+          background: "var(--color-bg-surface, #ffffff)",
+          borderRadius: 8,
+          padding: 24,
+          maxWidth: 420,
+          width: "100%",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ margin: "0 0 12px 0", color: req.danger ? "#dc2626" : "inherit" }}>{req.title}</h3>
+        <p style={{ margin: "0 0 20px 0", fontSize: 14, lineHeight: 1.5 }}>{req.message}</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => close(false)}>
+            {req.cancelLabel}
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            className={req.danger ? "btn-danger btn-small clickable" : "btn-primary btn-small clickable"}
+            onClick={() => close(true)}
+            style={
+              req.danger
+                ? { background: "#dc2626", color: "#fff", border: "none", padding: "4px 12px", borderRadius: 4 }
+                : undefined
+            }
+          >
+            {req.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

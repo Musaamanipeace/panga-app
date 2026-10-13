@@ -12,7 +12,7 @@ import {
 } from "../../data/contacts";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
-import { Editable, ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
+import { Editable, ErrorNote, Loading, StatusLabel, useAsync, confirmDelete } from "../../components/ui";
 
 export default function HomeContactsTab() {
   const [query, setQuery] = useState("");
@@ -75,7 +75,7 @@ export default function HomeContactsTab() {
   }
 
   async function remove(contact: Contact) {
-    if (!confirm(`Delete contact "${contact.name}"?`)) return;
+    if (!(await confirmDelete({ kind: "contact", name: contact.name }))) return;
     await deleteContact(contact.id);
     setData(await listAllContacts());
   }

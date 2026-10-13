@@ -534,6 +534,25 @@ class PangaDB extends Dexie {
 
 export const db = new PangaDB();
 
+/**
+ * While true, table change hooks (used by auto-sync) are ignored. Set during
+ * bulk restore/clear so an import never triggers an upload of half-loaded data.
+ */
+export let suppressChangeHooks = false;
+export function setSuppressChangeHooks(v: boolean) {
+  suppressChangeHooks = v;
+}
+
+const LEGACY_SEED_PURGED_KEY = "legacySeedPurged";
+
+/**
+ * Opens the DB and marks the app as initialised. It NEVER creates projects or
+ * resources: anything the user deletes must stay deleted across reloads.
+ *
+ * One-time cleanup: earlier builds seeded a hard-coded "Main Project" plus
+ * starter list/checklist resources (and re-created them whenever they were
+ * missing). Those test records are purged once here, then never touched again.
+ */
 export async function ensureSeedData() {
   try {
     if (!db.isOpen()) {
@@ -544,129 +563,51 @@ export async function ensureSeedData() {
       await db.settings.put({ key: SETTINGS_KEYS.appInitialized, value: true });
     }
 
-    // Ensure default project and the two resource types (list & checklist) are present
-    const projectCount = await db.projects.count();
-    const nowTs = Date.now();
-    if (projectCount === 0) {
-      const defaultProjId = "project_default";
-      await db.projects.add({
-        id: defaultProjId,
-        name: "Main Project",
-        description: "Default workspace with starter tasks, lists, and checklists.",
-        status: "active",
-        kind: "project",
-        createdAt: nowTs,
-        updatedAt: nowTs,
-        syncStatus: "pending",
-      });
-      await db.resources.bulkAdd([
-        {
-          id: "res_default_list",
-          projectId: defaultProjId,
-          category: "lists",
-          title: "Key Project Reference & Resources",
-          tags: ["reference", "default"],
-          url: null,
-          provider: null,
-          body: null,
-          listItems: [
-            { id: "item_1", text: "API Base URL: https://api.example.com/v1", checked: false, tags: ["api"] },
-            { id: "item_2", text: "Design Tokens: Primary #3b82f6, Accent #10b981", checked: false, tags: ["design"] },
-            { id: "item_3", text: "CLI Build Command: npm run build", checked: false, tags: ["cli"] },
-            { id: "item_4", text: "Documentation: https://docs.example.com", checked: false, tags: ["docs"] },
-          ],
-          customFields: {},
-          images: [],
-          files: [],
-          createdAt: nowTs,
-          updatedAt: nowTs,
-          syncStatus: "pending",
-        },
-        {
-          id: "res_default_checklist",
-          projectId: defaultProjId,
-          category: "checklists",
-          title: "Project Setup & Launch Checklist",
-          tags: ["checklist", "default"],
-          url: null,
-          provider: null,
-          body: null,
-          listItems: [
-            { id: "chk_1", text: "Define project objectives and requirements", checked: true, tags: ["planning"] },
-            { id: "chk_2", text: "Configure environment variables and local database", checked: true, tags: ["dev"] },
-            { id: "chk_3", text: "Verify sync status and credential security", checked: false, tags: ["security"] },
-            { id: "chk_4", text: "Conduct comprehensive QA and cross-device testing", checked: false, tags: ["qa"] },
-            { id: "chk_5", text: "Deploy production build and verify health endpoints", checked: false, tags: ["release"] },
-          ],
-          customFields: {},
-          images: [],
-          files: [],
-          createdAt: nowTs,
-          updatedAt: nowTs,
-          syncStatus: "pending",
-        },
-      ]);
-    } else {
-      // Ensure existing projects have list and checklist resources
-      const allProjects = await db.projects.toArray();
-      for (const p of allProjects) {
-        const pResources = await db.resources.where("projectId").equals(p.id).toArray();
-        const hasList = pResources.some((r) => r.category === "lists" || r.category === "list");
-        const hasChecklist = pResources.some((r) => r.category === "checklists" || r.category === "checklist" || r.category === "preset-list");
-        const toAdd = [];
-        if (!hasList) {
-          toAdd.push({
-            id: `res_list_${p.id}_${nowTs}`,
-            projectId: p.id,
-            category: "lists" as const,
-            title: "Key Project Reference & Resources",
-            tags: ["reference", "default"],
-            url: null,
-            provider: null,
-            body: null,
-            listItems: [
-              { id: `item_1_${nowTs}`, text: "API Base URL: https://api.example.com/v1", checked: false, tags: ["api"] },
-              { id: `item_2_${nowTs}`, text: "Design Tokens: Primary #3b82f6, Accent #10b981", checked: false, tags: ["design"] },
-              { id: `item_3_${nowTs}`, text: "CLI Build Command: npm run build", checked: false, tags: ["cli"] },
-              { id: `item_4_${nowTs}`, text: "Documentation: https://docs.example.com", checked: false, tags: ["docs"] },
-            ],
-            customFields: {},
-            images: [],
-            files: [],
-            createdAt: nowTs,
-            updatedAt: nowTs,
-            syncStatus: "pending" as const,
-          });
+    const purged = await db.settings.get(LEGACY_SEED_PURGED_KEY);
+    if (!purged) {
+      const legacyProjectId = "project_default";
+      const legacyResourceIds = new Set(["res_default_list", "res_default_checklist"]);
+      const isLegacyResource = (r: Resource) =>
+        legacyResourceIds.has(r.id) ||
+        ((r.id.startsWith("res_list_") || r.id.startsWith("res_chk_")) &&
+          (r.tags || []).includes("default"));
+
+      await db.transaction(
+        "rw",
+        [
+          db.projects,
+          db.tasks,
+          db.resources,
+          db.docEntries,
+          db.milestones,
+          db.issues,
+          db.reminders,
+          db.calendarEvents,
+          db.scheduleItems,
+          db.insights,
+          db.settings,
+        ],
+        async () => {
+          const resources = await db.resources.toArray();
+          const doomed = resources.filter(
+            (r) => r.projectId === legacyProjectId || isLegacyResource(r)
+          );
+          if (doomed.length) await db.resources.bulkDelete(doomed.map((r) => r.id));
+
+          if (await db.projects.get(legacyProjectId)) {
+            await db.tasks.where("projectId").equals(legacyProjectId).delete();
+            await db.docEntries.where("projectId").equals(legacyProjectId).delete();
+            await db.milestones.where("projectId").equals(legacyProjectId).delete();
+            await db.issues.where("projectId").equals(legacyProjectId).delete();
+            await db.reminders.where("projectId").equals(legacyProjectId).delete();
+            await db.calendarEvents.where("projectId").equals(legacyProjectId).delete();
+            await db.scheduleItems.where("projectId").equals(legacyProjectId).delete();
+            await db.insights.where("projectId").equals(legacyProjectId).delete();
+            await db.projects.delete(legacyProjectId);
+          }
+          await db.settings.put({ key: LEGACY_SEED_PURGED_KEY, value: true });
         }
-        if (!hasChecklist) {
-          toAdd.push({
-            id: `res_chk_${p.id}_${nowTs}`,
-            projectId: p.id,
-            category: "checklists" as const,
-            title: "Project Setup & Launch Checklist",
-            tags: ["checklist", "default"],
-            url: null,
-            provider: null,
-            body: null,
-            listItems: [
-              { id: `chk_1_${nowTs}`, text: "Define project objectives and requirements", checked: true, tags: ["planning"] },
-              { id: `chk_2_${nowTs}`, text: "Configure environment variables and local database", checked: true, tags: ["dev"] },
-              { id: `chk_3_${nowTs}`, text: "Verify sync status and credential security", checked: false, tags: ["security"] },
-              { id: `chk_4_${nowTs}`, text: "Conduct comprehensive QA and cross-device testing", checked: false, tags: ["qa"] },
-              { id: `chk_5_${nowTs}`, text: "Deploy production build and verify health endpoints", checked: false, tags: ["release"] },
-            ],
-            customFields: {},
-            images: [],
-            files: [],
-            createdAt: nowTs,
-            updatedAt: nowTs,
-            syncStatus: "pending" as const,
-          });
-        }
-        if (toAdd.length > 0) {
-          await db.resources.bulkAdd(toAdd);
-        }
-      }
+      );
     }
   } catch (e) {
     console.error("ensureSeedData error:", e);
@@ -779,6 +720,8 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
   } catch {}
 
   // Use the array form of transaction to avoid argument limit
+  suppressChangeHooks = true;
+  try {
   await db.transaction("rw", tables, async () => {
     for (const name of tables) {
       const tableData = data[name] ?? [];
@@ -806,6 +749,9 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
       }
     }
   });
+  } finally {
+    suppressChangeHooks = false;
+  }
 }
 
 /** Quick check: does any user data exist in the local database? */
@@ -849,16 +795,21 @@ export async function clearAllLocalData(): Promise<void> {
     "trainOfThought",
   ];
 
-  await db.transaction("rw", tables, async () => {
-    for (const name of tables) {
-      const table = (db as any)[name];
-      if (table) {
-        await table.clear();
+  suppressChangeHooks = true;
+  try {
+    await db.transaction("rw", tables, async () => {
+      for (const name of tables) {
+        const table = (db as any)[name];
+        if (table) {
+          await table.clear();
+        }
       }
-    }
-  });
+    });
+  } finally {
+    suppressChangeHooks = false;
+  }
 
-  // Re-seed essential initial settings
+  // Re-create only the essential initial settings (no sample data)
   await ensureSeedData();
 }
 

@@ -10,7 +10,7 @@ import {
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
-import { copyToClipboard } from "../../components/ui";
+import { copyToClipboard, confirmDelete } from "../../components/ui";
 
 export default function HomeLinksTab() {
   const [links, setLinks] = useState<Resource[]>([]);
@@ -148,7 +148,7 @@ export default function HomeLinksTab() {
   }
 
   async function handleDelete(id: string, linkTitle: string) {
-    if (!confirm(`Delete link "${linkTitle}"?`)) return;
+    if (!(await confirmDelete({ kind: "link", name: linkTitle }))) return;
     await deleteResource(id);
     if (editingId === id) resetForm();
     await refresh();

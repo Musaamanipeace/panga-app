@@ -9,7 +9,7 @@ import {
   type ReminderBucket,
 } from "../../data/reminders";
 import { listAllProjects } from "../../data/projects";
-import { ErrorNote, Loading, StatusLabel, useAsync, Editable } from "../../components/ui";
+import { ErrorNote, Loading, StatusLabel, useAsync, Editable, confirmDelete } from "../../components/ui";
 
 const BUCKET_ORDER: { id: ReminderBucket; label: string; hint: string }[] = [
   { id: "overdue", label: "Overdue", hint: "Reminders whose time has passed" },
@@ -125,6 +125,7 @@ export default function HomeRemindersTab() {
                         type="button"
                         className="btn-icon btn-icon-danger"
                         onClick={async () => {
+                          if (!(await confirmDelete({ kind: "reminder", name: reminder.message }))) return;
                           await deleteReminder(reminder.id);
                           await refresh();
                         }}

@@ -13,7 +13,7 @@ import { newId, now } from "../data/utils";
 import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
-import { showToast, CopyButton } from "../components/ui";
+import { showToast, CopyButton, confirmDelete } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
 
@@ -420,6 +420,7 @@ function DocumentationTab({ projectId }: { projectId: string }) {
   }
 
   async function onDelete(id: string) {
+    if (!(await confirmDelete({ kind: "documentation section" }))) return;
     await deleteDocEntry(id);
     showToast("Documentation section deleted", "info");
     refresh();
@@ -722,7 +723,11 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
               <button
                 className="task-delete-btn"
                 data-tip="Delete task"
-                onClick={async () => { await deleteTask(task.id); refresh(); }}
+                onClick={async () => {
+                  if (!(await confirmDelete({ kind: "task", name: task.title }))) return;
+                  await deleteTask(task.id);
+                  refresh();
+                }}
               >
                 ×
               </button>
@@ -800,8 +805,8 @@ function ResourcesTab({ projectId }: { projectId: string }) {
     setShowAddCategory(false);
   }
 
-  function handleRemoveCategory(catId: string) {
-    if (!confirm(`Delete custom category "${CATEGORY_LABELS[catId] || catId}"? Existing items will remain.`)) return;
+  async function handleRemoveCategory(catId: string) {
+    if (!(await confirmDelete({ kind: "category", name: CATEGORY_LABELS[catId] || catId, detail: "Existing items will remain." }))) return;
     const updated = customCategories.filter((c) => c.id !== catId);
     saveCustomCategories(updated);
     if (filter === catId) {
@@ -1663,7 +1668,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!confirm(`Delete resource "${r.title}"?`)) return;
+                    if (!(await confirmDelete({ kind: "resource", name: r.title }))) return;
                     await deleteResource(r.id);
                     refresh();
                   }}
@@ -1875,7 +1880,11 @@ function MilestonesTab({ projectId }: { projectId: string }) {
                   <button
                     className="task-delete-btn"
                     data-tip="Delete milestone"
-                    onClick={async () => { await deleteMilestone(m.id); refresh(); }}
+                    onClick={async () => {
+                      if (!(await confirmDelete({ kind: "milestone", name: m.title }))) return;
+                      await deleteMilestone(m.id);
+                      refresh();
+                    }}
                   >
                     ×
                   </button>
@@ -1959,6 +1968,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
   }
 
   async function deleteComment(issueId: string, commentId: string) {
+    if (!(await confirmDelete({ kind: "comment" }))) return;
     await deleteIssueComment(issueId, commentId);
     refresh();
   }
@@ -2121,7 +2131,11 @@ function IssuesTab({ projectId }: { projectId: string }) {
               <button
                 className="task-delete-btn"
                 data-tip="Delete issue"
-                onClick={async () => { await deleteIssue(i.id); refresh(); }}
+                onClick={async () => {
+                  if (!(await confirmDelete({ kind: "issue", name: i.title }))) return;
+                  await deleteIssue(i.id);
+                  refresh();
+                }}
               >
                 ×
               </button>
@@ -2254,7 +2268,11 @@ function RemindersTab({ projectId }: { projectId: string }) {
               <button
                 className="task-delete-btn"
                 data-tip="Delete reminder"
-                onClick={async () => { await deleteReminder(r.id); refresh(); }}
+                onClick={async () => {
+                  if (!(await confirmDelete({ kind: "reminder", name: r.message }))) return;
+                  await deleteReminder(r.id);
+                  refresh();
+                }}
               >
                 ×
               </button>

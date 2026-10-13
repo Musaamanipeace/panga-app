@@ -9,6 +9,7 @@ import {
 } from "../../data/calendar";
 import { listAllProjects } from "../../data/projects";
 import { db } from "../../data/db";
+import { confirmDelete } from "../../components/ui";
 import { newId, now } from "../../data/utils";
 
 export default function HomeCalendarTab() {
@@ -461,7 +462,7 @@ export default function HomeCalendarTab() {
                     className="btn-icon clickable"
                     data-tip="Delete event"
                     onClick={async () => {
-                      if (!confirm(`Delete event "${e.title}"?`)) return;
+                      if (!(await confirmDelete({ kind: "event", name: e.title }))) return;
                       await deleteCalendarEvent(e.id);
                       refresh();
                     }}
