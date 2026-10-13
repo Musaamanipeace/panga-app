@@ -57,6 +57,9 @@ export interface ResourceFile {
 
 export interface ResourceListItem {
   id: string;
+  /** Optional label that names/orders the item (e.g. "Production DB URL"). */
+  title?: string;
+  /** The actual element — this is what the Copy button copies. */
   text: string;
   checked: boolean;
   tags: string[];

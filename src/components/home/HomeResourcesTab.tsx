@@ -13,7 +13,7 @@ import {
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
-import { copyToClipboard, confirmDelete } from "../../components/ui";
+import { copyToClipboard, confirmDelete, CopyButton } from "../../components/ui";
 import { newId } from "../../data/utils";
 
 export default function HomeResourcesTab() {
@@ -477,13 +477,25 @@ export default function HomeResourcesTab() {
                        />
                        <input
                          type="text"
+                         value={item.title ?? ""}
+                         onChange={(e) => {
+                           const updated = [...listItems];
+                           updated[idx] = { ...item, title: e.target.value };
+                           setListItems(updated);
+                         }}
+                         placeholder="Title"
+                         style={{ width: 130, padding: "4px 8px", fontSize: 13, fontWeight: 600 }}
+                         data-tip="Label for this item"
+                       />
+                       <input
+                         type="text"
                          value={item.text}
                          onChange={(e) => {
                            const updated = [...listItems];
                            updated[idx] = { ...item, text: e.target.value };
                            setListItems(updated);
                          }}
-                         placeholder="Item text..."
+                         placeholder="Copyable text..."
                          style={{ flex: 1, padding: "4px 8px", fontSize: 13 }}
                        />
                        <input
@@ -852,9 +864,11 @@ export default function HomeResourcesTab() {
                        {r.listItems.map((item) => (
                          <li key={item.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
                            <input type="checkbox" checked={item.checked} readOnly style={{ pointerEvents: "none" }} />
-                           <span style={{ textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "var(--color-text-muted)" : "inherit" }}>
+                           <span style={{ textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "var(--color-text-muted)" : "inherit", flex: 1, minWidth: 0 }}>
+                             {item.title && <strong style={{ marginRight: 6 }}>{item.title}:</strong>}
                              {item.text}
                            </span>
+                           <CopyButton text={item.text} label="📋" copiedLabel="✓" tooltip="Copy item text" className="btn-icon btn-small clickable" />
                          </li>
                        ))}
                      </ul>

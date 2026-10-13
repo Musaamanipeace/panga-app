@@ -755,6 +755,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   const [pdfLink, setPdfLink] = useState("");
   const [listItems, setListItems] = useState<ResourceListItem[]>([]);
   const [newListItemText, setNewListItemText] = useState("");
+  const [newListItemTitle, setNewListItemTitle] = useState("");
 
   const DEFAULT_CATEGORIES: { id: string; label: string }[] = [
     { id: "notes", label: "Notes" },
@@ -1224,6 +1225,14 @@ function ResourcesTab({ projectId }: { projectId: string }) {
             <div className="inline-form" style={{ marginBottom: 6 }}>
               <input
                 type="text"
+                placeholder="Title (optional)"
+                value={newListItemTitle}
+                onChange={(e) => setNewListItemTitle(e.target.value)}
+                style={{ flex: "0 0 30%" }}
+                data-tip="Short label for this element, e.g. Production DB URL"
+              />
+              <input
+                type="text"
                 placeholder={activeCategory === "lists" ? "Add element to list (e.g. API URL, credential, command, note)..." : "Add checklist item (e.g. Verify sync, Complete QA)..."}
                 value={newListItemText}
                 onChange={(e) => setNewListItemText(e.target.value)}
@@ -1233,9 +1242,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                     if (!newListItemText.trim()) return;
                     setListItems((prev) => [
                       ...prev,
-                      { id: newId(), text: newListItemText.trim(), checked: false, tags: [] },
+                      { id: newId(), title: newListItemTitle.trim() || undefined, text: newListItemText.trim(), checked: false, tags: [] },
                     ]);
                     setNewListItemText("");
+                    setNewListItemTitle("");
                   }
                 }}
                 data-tip="Type element text and click + Add (or press Enter)"
@@ -1247,9 +1257,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                   if (!newListItemText.trim()) return;
                   setListItems((prev) => [
                     ...prev,
-                    { id: newId(), text: newListItemText.trim(), checked: false, tags: [] },
+                    { id: newId(), title: newListItemTitle.trim() || undefined, text: newListItemText.trim(), checked: false, tags: [] },
                   ]);
                   setNewListItemText("");
+                    setNewListItemTitle("");
                 }}
                 data-tip="Add item to list"
               >
@@ -1275,7 +1286,19 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                     <span style={{ fontSize: 12, color: "var(--color-text-muted)", minWidth: 20 }}>{idx + 1}.</span>
                     <input
                       type="text"
+                      value={item.title ?? ""}
+                      placeholder="Title"
+                      onChange={(e) => {
+                        const updated = [...listItems];
+                        updated[idx] = { ...item, title: e.target.value };
+                        setListItems(updated);
+                      }}
+                      style={{ flex: "0 0 30%", padding: "4px 8px", fontSize: 13, fontWeight: 600 }}
+                    />
+                    <input
+                      type="text"
                       value={item.text}
+                      placeholder="Copyable text"
                       onChange={(e) => {
                         const updated = [...listItems];
                         updated[idx] = { ...item, text: e.target.value };
@@ -1548,7 +1571,10 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                         >
                           <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
                             <span className="element-bullet" style={{ color: "var(--color-accent, #3b82f6)", fontWeight: "bold" }}>•</span>
-                            <span className="element-text" style={{ wordBreak: "break-word" }}>{item.text}</span>
+                            <span className="element-text" style={{ wordBreak: "break-word", display: "flex", flexDirection: "column", gap: 1 }}>
+                              {item.title && <strong style={{ fontSize: 12 }}>{item.title}</strong>}
+                              <span style={item.title ? { color: "var(--color-text-muted)" } : undefined}>{item.text}</span>
+                            </span>
                           </span>
                           <CopyButton
                             text={item.text}
@@ -1599,9 +1625,13 @@ function ResourcesTab({ projectId }: { projectId: string }) {
                                 textDecoration: item.checked ? "line-through" : "none",
                                 opacity: item.checked ? 0.6 : 1,
                                 wordBreak: "break-word",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 1,
                               }}
                             >
-                              {item.text}
+                              {item.title && <strong style={{ fontSize: 12 }}>{item.title}</strong>}
+                              <span style={item.title ? { color: "var(--color-text-muted)" } : undefined}>{item.text}</span>
                             </span>
                           </label>
                           <CopyButton

@@ -44,7 +44,7 @@ export default function QuickAddResourceModal({
   const [customTabName, setCustomTabName] = useState("");
   const [dateVal, setDateVal] = useState("");
   const [severity, setSeverity] = useState<IssueSeverity>("medium");
-  const [listItems, setListItems] = useState<{ id: string; text: string; checked: boolean }[]>([
+  const [listItems, setListItems] = useState<{ id: string; title?: string; text: string; checked: boolean }[]>([
     { id: newId(), text: "", checked: false },
   ]);
   const [submitting, setSubmitting] = useState(false);
@@ -124,6 +124,10 @@ export default function QuickAddResourceModal({
     setListItems((prev) => prev.map((item) => (item.id === id ? { ...item, text } : item)));
   }
 
+  function handleUpdateListItemTitle(id: string, itemTitle: string) {
+    setListItems((prev) => prev.map((item) => (item.id === id ? { ...item, title: itemTitle } : item)));
+  }
+
   function handleRemoveListItem(id: string) {
     setListItems((prev) => prev.filter((item) => item.id !== id));
   }
@@ -177,6 +181,7 @@ export default function QuickAddResourceModal({
             .filter((i) => i.text.trim().length > 0)
             .map((i) => ({
               id: i.id,
+              title: i.title?.trim() || undefined,
               text: i.text.trim(),
               checked: i.checked,
               tags: [],
@@ -470,7 +475,14 @@ export default function QuickAddResourceModal({
                     </span>
                     <input
                       type="text"
-                      placeholder={`Item ${index + 1}...`}
+                      placeholder="Title"
+                      value={item.title ?? ""}
+                      onChange={(e) => handleUpdateListItemTitle(item.id, e.target.value)}
+                      style={{ flex: "0 0 30%", padding: "6px 10px", borderRadius: "4px", border: "1px solid var(--color-border)", fontWeight: 600 }}
+                    />
+                    <input
+                      type="text"
+                      placeholder={`Copyable text ${index + 1}...`}
                       value={item.text}
                       onChange={(e) => handleUpdateListItem(item.id, e.target.value)}
                       style={{ flex: 1, padding: "6px 10px", borderRadius: "4px", border: "1px solid var(--color-border)" }}

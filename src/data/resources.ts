@@ -171,6 +171,11 @@ export async function deleteResourcesForProject(projectId: string): Promise<void
   }
 }
 
+/** "Title: text" when the item has a title, otherwise just the text (used in whole-resource exports). */
+export function itemLabel(item: ResourceListItem): string {
+  return item.title && item.title.trim() ? `${item.title.trim()}: ${item.text}` : item.text;
+}
+
 /** Formats resource as plain text */
 export function formatResourceAsText(resource: Resource, projectName?: string): string {
   let output = `${resource.title.toUpperCase()}\n`;
@@ -194,7 +199,7 @@ export function formatResourceAsText(resource: Resource, projectName?: string): 
     const isListOnly = resource.category === "lists" || resource.category === "list";
     output += isListOnly ? `LIST ITEMS:\n` : `ITEMS / CHECKLIST:\n`;
     for (const item of resource.listItems) {
-      output += isListOnly ? `• ${item.text}\n` : `${item.checked ? "[x]" : "[ ]"} ${item.text}\n`;
+      output += isListOnly ? `• ${itemLabel(item)}\n` : `${item.checked ? "[x]" : "[ ]"} ${itemLabel(item)}\n`;
     }
     output += `\n`;
   }
@@ -207,10 +212,10 @@ export function formatResourceForClipboard(resource: Resource): string {
   if (resource.title) parts.push(resource.title);
   if (resource.category === "lists" || resource.category === "list") {
     if (resource.listItems && resource.listItems.length > 0) {
-      parts.push(resource.listItems.map((item) => `• ${item.text}`).join("\n"));
+      parts.push(resource.listItems.map((item) => `• ${itemLabel(item)}`).join("\n"));
     }
   } else if (resource.listItems && resource.listItems.length > 0) {
-    parts.push(resource.listItems.map((item) => `[${item.checked ? "x" : " "}] ${item.text}`).join("\n"));
+    parts.push(resource.listItems.map((item) => `[${item.checked ? "x" : " "}] ${itemLabel(item)}`).join("\n"));
   }
   if (resource.url) parts.push(`URL: ${resource.url}`);
   if (resource.body) parts.push(resource.body);
@@ -245,7 +250,7 @@ export function formatResourceAsMarkdown(resource: Resource, projectName?: strin
     const isListOnly = resource.category === "lists" || resource.category === "list";
     output += isListOnly ? `### List Items\n` : `### Checklist\n`;
     for (const item of resource.listItems) {
-      output += isListOnly ? `- ${item.text}\n` : `- [${item.checked ? "x" : " "}] ${item.text}\n`;
+      output += isListOnly ? `- ${itemLabel(item)}\n` : `- [${item.checked ? "x" : " "}] ${itemLabel(item)}\n`;
     }
     output += `\n`;
   }
@@ -275,7 +280,7 @@ export function formatResourceAsHtml(resource: Resource, projectName?: string): 
     for (const item of resource.listItems) {
       bodyHtml += `<li style="padding:6px 0;display:flex;align-items:center;gap:8px;">
         <input type="checkbox" ${item.checked ? "checked" : ""} disabled />
-        <span style="${item.checked ? "text-decoration:line-through;color:#64748b;" : ""}">${item.text}</span>
+        <span style="${item.checked ? "text-decoration:line-through;color:#64748b;" : ""}">${itemLabel(item)}</span>
       </li>`;
     }
     bodyHtml += `</ul>`;
