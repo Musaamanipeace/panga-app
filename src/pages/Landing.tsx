@@ -227,6 +227,24 @@ export default function Landing() {
         </div>
 
         <p className="landing-or">or connect later in Settings → Backup &amp; Sync</p>
+
+        <a
+          href="/puter/index.html"
+          className="landing-puter-link"
+          style={{
+            display: "block",
+            textAlign: "center",
+            padding: "10px 14px",
+            fontSize: "13px",
+            color: "#4f46e5",
+            textDecoration: "none",
+            border: "1px solid #e2e8f0",
+            borderRadius: "var(--radius-sm)",
+            marginTop: 12,
+          }}
+        >
+          ↗ Try the Puter edition (sign in with Puter for cloud sync)
+        </a>
       </div>
 
       {error && (

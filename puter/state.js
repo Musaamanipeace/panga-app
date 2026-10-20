@@ -151,7 +151,7 @@ function makeBlankState() {
         Reminders: false,
       },
     },
-    meta: { lastWriteAt: 0, version: 1 },
+    meta: { lastWriteAt: now(), version: 1 },
   };
 }
 
@@ -671,6 +671,7 @@ export function getSetting(key) {
  */
 export async function startAfresh() {
   state = makeBlankState();
+  touchMeta();
   writeCache(state);
   if (isCloudAvailable()) {
     try {
@@ -679,7 +680,6 @@ export async function startAfresh() {
       console.warn("[panga/state] cloud clear failed:", e);
     }
   }
-  // Reset per-user cache key so a fresh id gets minted
   notify();
 }
 

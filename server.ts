@@ -19,7 +19,7 @@ app.use((_req, res, next) => {
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.google.com https://googleapis.com https://api.resend.com https://api.sendgrid.com; img-src 'self' data: https:; object-src 'none'; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://js.puter.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.google.com https://googleapis.com https://api.resend.com https://api.sendgrid.com https://api.puter.com https://accounts.puter.com; img-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; frame-src https://accounts.puter.com;"
   );
   next();
 });
@@ -193,6 +193,9 @@ app.post("/api/backup/email", rateLimit, async (req, res) => {
 });
 
 async function start() {
+  // Serve the Puter edition (vanilla JS + puter.js) on /puter/
+  app.use("/puter", express.static(path.resolve(__dirname, "puter")));
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
