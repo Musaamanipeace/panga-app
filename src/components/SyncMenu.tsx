@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { confirmAction, showToast } from "./ui";
 import {
   PROVIDER_LONG,
@@ -12,7 +11,6 @@ import {
   type AutoSyncState,
 } from "../sync/autoSync";
 import {
-  getActiveSyncProvider,
   setActiveSyncProvider,
   type CloudSyncProvider,
 } from "../data/settings";
@@ -21,7 +19,6 @@ const ALL_PROVIDERS: CloudSyncProvider[] = ["google_drive"];
 
 /** Header "Sync" dropdown: pick a method (preferred one first), then Export or Import. */
 export function SyncMenu() {
-  const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [preferred, setPreferred] = useState<CloudSyncProvider>("google_drive");

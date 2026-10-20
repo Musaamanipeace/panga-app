@@ -106,6 +106,8 @@ export async function setEmailBackupProvider(provider: string): Promise<void> {
 }
 
 // Multi-cloud Sync Provider Settings
+export type CloudSyncProvider = "google_drive";
+
 export async function getActiveSyncProvider(): Promise<CloudSyncProvider> {
   return (await getSetting<CloudSyncProvider>("activeSyncProvider")) ?? "google_drive";
 }

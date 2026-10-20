@@ -8,10 +8,10 @@ const USERS_STORE_KEY = "panga_users_registry";
 
 async function hashPassword(password: string, salt: string): Promise<string> {
   const enc = new TextEncoder();
-  const data = enc.encode(password + salt);
-  const key = await crypto.subtle.importKey("raw", enc.encode("panga-hash-key"), "PBKDF2", false, ["deriveBits"]);
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
   const derived = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode(salt), iterations: 100000, hash: "SHA-256" }, key, 512);
-  return Buffer.from(derived).toString("hex");
+  const bytes = new Uint8Array(derived);
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function verifyPassword(password: string, storedHash: string): Promise<boolean> {

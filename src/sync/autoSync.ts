@@ -146,7 +146,7 @@ interface PushResult {
   message: string;
 }
 
-async function pushToProvider(provider: CloudSyncProvider, interactive: boolean): Promise<PushResult> {
+async function pushToProvider(_provider: CloudSyncProvider, interactive: boolean): Promise<PushResult> {
   if (interactive) {
     const res = await syncNowToGoogleDrive();
     return { ok: res.ok, message: res.message };
@@ -291,7 +291,7 @@ export async function exportNow(provider: CloudSyncProvider): Promise<PushResult
 
 /** Sync → <provider> → Import, step 1: download and validate the remote snapshot. */
 export async function fetchRemoteSnapshot(
-  provider: CloudSyncProvider
+  _provider: CloudSyncProvider
 ): Promise<{ ok: boolean; message: string; data?: Snapshot }> {
   return fetchDriveBackupForRestore();
 }

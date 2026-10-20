@@ -103,8 +103,6 @@ export default function Settings() {
     if (storedToken) {
       setDriveTokenExpiresAt(storedToken.expires_at);
     }
-      setDriveTokenExpiresAt(storedToken.expires_at);
-    }
   }, []);
 
   useEffect(() => {
