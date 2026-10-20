@@ -194,6 +194,10 @@ body {
   animation: slideUp 0.25s ease both;
 }
 
+.home-section:not(.home-section-open) .home-section-body {
+  display: none;
+}
+
 @keyframes slideUp {
   0% { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: none; }
@@ -440,6 +444,38 @@ body {
   color: var(--color-text-muted);
 }
 
+.task-item {
+  align-items: flex-start;
+}
+
+.task-item .task-title {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.task-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-overdue {
+  border-color: var(--color-accent-issue);
+  background: #fef2f2;
+}
+
+.task-overdue .task-title {
+  color: var(--color-accent-issue);
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .text-tiny { font-size: 12px; }
 .text-tiny-dim {
   font-size: 11px;
@@ -535,6 +571,11 @@ body {
   padding: 2px 4px;
 }
 
+.project-name-editable:focus:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-muted);
+}
+
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -542,6 +583,25 @@ body {
 }
 
 .project-kind-badge { font-size: 11px; }
+
+.project-task-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-task-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-size: 12px;
+}
 
 .progress-track {
   width: 100%;

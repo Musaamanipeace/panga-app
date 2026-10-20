@@ -26,10 +26,10 @@ import {
   escAttr,
 } from "./lib.js";
 
-/** Top-level workspace tabs. */
 const TABS = [
   { id: "Overview", label: "Overview" },
   { id: "Projects", label: "Projects" },
+  { id: "Tasks", label: "Tasks" },
   { id: "Activity", label: "Activity" },
   { id: "Schedule", label: "Schedule" },
   { id: "Resources", label: "Resources" },
@@ -227,6 +227,8 @@ function renderView(tab, st) {
       return renderOverview(st);
     case "Projects":
       return renderProjects(st);
+    case "Tasks":
+      return renderTasks(st);
     case "Activity":
       return renderActivity(st);
     case "Schedule":
@@ -280,11 +282,13 @@ function renderOverview(st) {
   // Alerts
   const alerts = buildAlerts(st);
   const alertsBox = document.createElement("section");
-  alertsBox.className = "home-section home-section-open";
+  const collapsed = loadSectionStates().alerts === false;
+  alertsBox.className = `home-section ${collapsed ? "" : "home-section-open"}`;
+  alertsBox.setAttribute("data-section", "alerts");
   alertsBox.innerHTML = `
     <header class="home-section-header">
       <button type="button" class="home-section-toggle" data-action="toggle-section" data-target="alerts">
-        <span class="home-section-chevron">▼</span>
+        <span class="home-section-chevron">${collapsed ? "▶" : "▼"}</span>
         <h2>Alerts</h2>
       </button>
     </header>
@@ -408,19 +412,36 @@ function kindLabel(kind) {
 
 function renderProjectCard(p, st) {
   const progress = projectProgress(st, p.id);
-  const taskCount = st.tasks.filter((t) => t.projectId === p.id && t.status !== "completed").length;
+  const openTasks = st.tasks.filter((t) => t.projectId === p.id && t.status !== "completed");
+  const taskCount = openTasks.length;
   const color = kindColor(p.kind);
+  const taskItems = openTasks
+    .slice(0, 5)
+    .map((t) => {
+      const due = t.dueDate ? ` <span style="color:var(--color-accent-issue);font-size:11px;">⏰ ${formatRelativeDay(t.dueDate)}</span>` : "";
+      const tags = (t.tags || []).slice(0, 2).map((tag) => `<span class="chip-small">${escapeHTML(tag)}</span>`).join("");
+      return `
+        <li class="project-task-item">
+          <button type="button" class="task-status-btn" data-status="${t.status}" data-action="cycle-task-status" data-id="${t.id}" title="Mark as ${STATUS_LABEL[STATUS_CYCLE[t.status] || "active"].toLowerCase()}"></button>
+          <span class="task-title" style="font-size:13px;">${escapeHTML(t.title)}</span>
+          ${due}
+          ${tags}
+          <button type="button" class="btn-icon btn-icon-danger clickable" data-action="delete-task" data-id="${t.id}" title="Delete" style="margin-left:auto;">×</button>
+        </li>`;
+    })
+    .join("");
+  const hasMore = openTasks.length > 5;
   return `
     <div class="project-card" style="--kind-color:${color};border-left-color:${color};" data-tip="Open ${escAttr(p.name)}">
       <div class="project-card-top">
-        <div>
-          <div data-project-id="${p.id}" class="project-name-editable" style="font-weight:600;font-size:15px;cursor:text;">
+         <div>
+          <div data-project-id="${p.id}" class="project-name-editable" contenteditable="true" data-placeholder="Project name" style="font-weight:600;font-size:15px;cursor:text;">
             ${escapeHTML(p.name)}
           </div>
           <span class="project-kind-badge" style="font-size:11px;color:var(--color-text-muted);">
             ${escapeHTML(kindLabel(p.kind || "project"))}
           </span>
-        </div>
+         </div>
         <div class="project-card-actions">
           <button type="button" class="btn-icon clickable" data-action="edit-project" data-id="${p.id}" data-tip="Edit project">✏️</button>
           <button type="button" class="btn-icon btn-icon-danger clickable" data-action="delete-project" data-id="${p.id}" title="Delete project">🗑</button>
@@ -429,11 +450,14 @@ function renderProjectCard(p, st) {
       <p class="project-desc" style="font-size:12px;color:var(--color-text-muted);margin:6px 0;">
         ${escapeHTML(p.description || "No description…")}
       </p>
+      ${openTasks.length > 0
+        ? `<ul class="project-task-list">${taskItems}${hasMore ? `<li class="text-tiny-dim" style="padding:4px 0;">+${openTasks.length - 5} more</li>` : ""}</ul>`
+        : ""}
       <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
       <div class="progress-label" style="font-size:11px;color:var(--color-text-muted);">
         ${taskCount} open task(s) · ${progress}% complete
       </div>
-    </div>`;
+       </div>`;
 }
 
 function projectProgress(st, projectId) {
@@ -445,6 +469,87 @@ function projectProgress(st, projectId) {
 
 function kindColor(kind) {
   return { project: "var(--color-accent-primary)", activity: "var(--color-accent-task)", idea: "var(--color-accent-milestone)" }[kind] || "var(--color-text-muted)";
+}
+
+// ---- Tasks -------------------------------------------------------------------
+
+function getTaskFilter() {
+  try {
+    const raw = localStorage.getItem("panga:filter:tasks");
+    if (raw) return raw;
+  } catch {}
+  return "all";
+}
+
+function setTaskFilter(f) {
+  try { localStorage.setItem("panga:filter:tasks", f); } catch {}
+  renderApp();
+}
+
+function filterTasks(st, filter) {
+  let list = [...(st.tasks || [])].sort((a, b) => (b.dueDate ?? 0) - (a.dueDate ?? 0) || b.createdAt - a.createdAt);
+  if (filter === "active") list = list.filter((t) => t.status === "active");
+  else if (filter === "completed") list = list.filter((t) => t.status === "completed");
+  else if (filter === "overdue") list = list.filter((t) => isOverdue(t));
+  return list;
+}
+
+function renderTasks(st) {
+  const box = document.createElement("section");
+  box.className = "home-section home-section-open";
+  const filter = getTaskFilter();
+  const tasks = filterTasks(st, filter);
+  const activeCount = st.tasks.filter((t) => t.status === "active").length;
+  const completedCount = st.tasks.filter((t) => t.status === "completed").length;
+  const overdueCount = st.tasks.filter((t) => isOverdue(t)).length;
+
+  box.innerHTML = `
+    <header class="home-section-header">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <h2 style="margin:0;">Tasks</h2>
+        <button type="button" class="btn-secondary btn-small clickable" data-action="quick-add-task">+ Task</button>
+      </div>
+      <div class="chip-row" style="margin:0;">
+        <button type="button" class="chip ${filter === "all" ? "chip-active" : ""}" data-action="filter-tasks" data-filter="all">All (${st.tasks.length})</button>
+        <button type="button" class="chip ${filter === "active" ? "chip-active" : ""}" data-action="filter-tasks" data-filter="active">Active (${activeCount})</button>
+        <button type="button" class="chip ${filter === "completed" ? "chip-active" : ""}" data-action="filter-tasks" data-filter="completed">Done (${completedCount})</button>
+        <button type="button" class="chip ${filter === "overdue" ? "chip-active" : ""}" data-action="filter-tasks" data-filter="overdue">Overdue (${overdueCount})</button>
+      </div>
+    </header>
+    <div class="home-section-body">
+      ${tasks.length === 0
+        ? `<p class="empty-state">No tasks here. Create one with “+ Task” above.</p>`
+        : `<ul class="task-list">${tasks.map((t) => renderTaskItem(t, st)).join("")}</ul>`}
+    </div>`;
+  return box;
+}
+
+function renderTaskItem(t, st) {
+  const proj = t.projectId ? projectName(st, t.projectId) : null;
+  const statusLabel = STATUS_LABEL[t.status] || "Active";
+  const overdue = isOverdue(t);
+  const overdueClass = overdue ? "task-overdue" : "";
+  const dueStr = t.dueDate ? formatRelativeDay(t.dueDate) : "";
+  const scheduledStr = t.scheduledAt ? ` · scheduled ${formatRelativeDay(t.scheduledAt)}` : "";
+  const tags = (t.tags || []).map((tag) => `<span class="chip-small">${escapeHTML(tag)}</span>`).join("");
+  const est = t.estimatedMinutes ? ` · ~${t.estimatedMinutes} min` : "";
+
+  return `
+    <li class="task-item ${overdueClass}" data-id="${t.id}">
+      <button type="button" class="task-status-btn" data-status="${t.status}" data-action="cycle-task-status" data-id="${t.id}" title="Change status to ${STATUS_LABEL[STATUS_CYCLE[t.status] || "active"]}">
+        ${statusLabel}
+      </button>
+      <span class="task-title">${escapeHTML(t.title)}</span>
+      <span class="task-meta" style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--color-text-muted);margin-top:4px;">
+        ${proj ? `<span>📁 ${escapeHTML(proj)}</span>` : ""}
+        ${(dueStr || scheduledStr || est) ? `<span>${escapeHTML(dueStr + scheduledStr + est)}</span>` : ""}
+        ${tags ? `<span>${tags}</span>` : ""}
+      </span>
+      <span class="item-actions">
+        <button type="button" class="btn-icon clickable" data-action="edit-task" data-id="${t.id}" title="Edit task">✏️</button>
+        <button type="button" class="btn-icon btn-icon-danger clickable" data-action="delete-task" data-id="${t.id}" title="Delete task">🗑</button>
+      </span>
+    </li>`;
 }
 
 // ---- Activity --------------------------------------------------------------
@@ -732,6 +837,36 @@ function emitRefresh() {
   renderApp();
 }
 
+/** Toggle the collapsed/expanded state of a home-section. */
+function toggleSection(target) {
+  if (!target) return;
+  const section = appEl.querySelector(`.home-section[data-section="${target}"]`);
+  if (!section) return;
+  const isOpen = section.classList.contains("home-section-open");
+  section.classList.toggle("home-section-open", !isOpen);
+  const chevron = section.querySelector(".home-section-chevron");
+  if (chevron) chevron.textContent = isOpen ? "▼" : "▶";
+  saveSectionState(target, !isOpen);
+}
+
+/** Persist per-section open/collapsed state so it survives reloads. */
+function saveSectionState(target, open) {
+  try {
+    const key = "panga:sections";
+    const saved = JSON.parse(localStorage.getItem(key) || "{}");
+    saved[target] = open;
+    localStorage.setItem(key, JSON.stringify(saved));
+  } catch {}
+}
+
+function loadSectionStates() {
+  try {
+    return JSON.parse(localStorage.getItem("panga:sections") || "{}");
+  } catch {
+    return {};
+  }
+}
+
 // ---- centralized event delegation ------------------------------------------
 
 appEl.addEventListener("click", delegate);
@@ -748,6 +883,19 @@ appEl.addEventListener("blur", (e) => {
     commitInlineRename(e.target);
   }
 }, true);
+appEl.addEventListener("keydown", (e) => {
+  // Commit inline project rename on Enter, or cancel on Escape.
+  if (e.target && e.target.classList.contains("project-name-editable")) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.target.blur();
+      commitInlineRename(e.target);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.target.blur();
+    }
+  }
+});
 
 function delegate(e) {
   const trigger = e.target.closest("[data-action]");
@@ -820,14 +968,34 @@ async function handleAction(action, id, payload, el) {
       State.deleteScheduleItem(id);
       showToast("Block removed", "success");
       break;
-    case "toggle-task": {
-      const task = st.tasks.find((t) => t.id === id);
-      State.cycleTaskStatus(id);
-      if (task && STATUS_CYCLE[task.status] === "completed") {
-        showToast(`Marked "${task.title}" done`, "success");
-      }
-      break;
-    }
+     case "toggle-task": {
+       const task = st.tasks.find((t) => t.id === id);
+       State.cycleTaskStatus(id);
+       if (task && STATUS_CYCLE[task.status] === "completed") {
+         showToast(`Marked "${task.title}" done`, "success");
+       }
+       break;
+     }
+     case "cycle-task-status": {
+       const task = st.tasks.find((t) => t.id === id);
+       State.cycleTaskStatus(id);
+       if (task && STATUS_CYCLE[task.status] === "completed") {
+         showToast(`Marked "${task.title}" done`, "success");
+       }
+       break;
+     }
+     case "filter-tasks":
+       setTaskFilter(payload);
+       break;
+     case "edit-task":
+       openCreateTask(id);
+       break;
+     case "delete-task":
+       if (confirm("Delete this task? This cannot be undone.")) {
+         State.deleteTask(id);
+         showToast("Task deleted", "success");
+       }
+       break;
     case "toggle-list-item":
       State.toggleListItem(el.dataset.rid, el.dataset.iid);
       break;
@@ -843,8 +1011,11 @@ async function handleAction(action, id, payload, el) {
       State.updateProject(id, { status: "archived" });
       showToast("Project archived", "success");
       break;
-    case "toggle-project-status":
+     case "toggle-project-status":
       State.updateProject(id, { status: st.projects.find((p) => p.id === id)?.status === "active" ? "archived" : "active" });
+      break;
+     case "toggle-section":
+      toggleSection(payload || el.dataset.target);
       break;
   }
 }
@@ -865,8 +1036,8 @@ function handleSubmit(form, action) {
       break;
     case "edit-project":
       State.updateProject(data.id, {
-        name: data.name,
-        description: data.description,
+        name: data.name || "Untitled project",
+        description: data.description || "",
         kind: data.kind,
       });
       closeDrawer();
@@ -883,6 +1054,19 @@ function handleSubmit(form, action) {
       });
       closeDrawer();
       showToast("Task added", "success");
+      break;
+    case "edit-task":
+      State.updateTask(data.id, {
+        projectId: data.projectId || null,
+        title: data.title || "Untitled task",
+        notes: data.notes || "",
+        dueDate: data.dueDate ? new Date(data.dueDate).getTime() : null,
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt).getTime() : null,
+        estimatedMinutes: data.estimatedMinutes ? Number(data.estimatedMinutes) : null,
+        tags: parseTags(data.tags),
+      });
+      closeDrawer();
+      showToast("Task updated", "success");
       break;
     case "create-resource":
       State.createResource({
@@ -952,10 +1136,9 @@ function handleSubmit(form, action) {
 
 function openCreateProject(kind, id) {
   const existing = id ? State.getProject(id) : null;
-  const projects = State.getState().projects;
-  const field = "project";
+  const isEdit = !!id;
   const fields = `
-    <form data-action="create-project" style="display:flex;flex-direction:column;gap:12px;">
+    <form data-action="${isEdit ? "edit-project" : "create-project"}" style="display:flex;flex-direction:column;gap:12px;">
       <input type="hidden" name="id" value="${id ? escAttr(id) : ""}">
       <input type="hidden" name="kind" value="${escAttr(kind)}">
       <label><span style="font-size:12px;color:var(--color-text-muted);">Name</span>
@@ -1052,6 +1235,34 @@ function openQuickAddTask() {
         <input type="text" name="tags" placeholder="urgent, backend"></label>
     </form>`;
   openDrawer("Quick task", fields);
+}
+
+function openCreateTask(id) {
+  const existing = id ? State.getTask(id) : null;
+  const projects = State.getState().projects;
+  const projOptions = ['<option value="">No project</option>']
+    .concat(projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? "selected" : ""}>${escapeHTML(p.name)}</option>`));
+  const fmtDate = (ts) => ts ? new Date(ts).toISOString().slice(0, 16) : "";
+  const fields = `
+    <form data-action="edit-task">
+      <input type="hidden" name="id" value="${escAttr(id || "")}">
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Title</span>
+        <input type="text" name="title" required placeholder="Task title"
+               value="${existing ? escAttr(existing.title) : ""}" style="width:100%;"></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Notes</span>
+        <textarea name="notes" rows="3" placeholder="Optional details…" style="width:100%;">${existing ? escAttr(existing.notes) : ""}</textarea></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Project</span>
+        <select name="projectId">${projOptions.join("")}</select></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Due date</span>
+        <input type="datetime-local" name="dueDate" value="${fmtDate(existing?.dueDate)}"></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Scheduled at</span>
+        <input type="datetime-local" name="scheduledAt" value="${fmtDate(existing?.scheduledAt)}"></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Estimated minutes</span>
+        <input type="number" name="estimatedMinutes" placeholder="60" min="0" value="${existing?.estimatedMinutes ?? ""}" style="width:100%;"></label>
+      <label><span style="font-size:12px;color:var(--color-text-muted);">Tags (comma separated)</span>
+        <input type="text" name="tags" placeholder="urgent, backend" value="${(existing?.tags || []).join(", ")}"></label>
+    </form>`;
+  openDrawer("Edit task", fields);
 }
 
 // Inline project rename: editable div → commit on blur/Enter
