@@ -6,6 +6,7 @@
 import { getGoogleClientId, setGoogleClientId } from "../data/settings";
 import { exportSnapshot, validateSnapshot, importSnapshot, type Snapshot } from "./snapshot";
 import { syncAll } from "./sync";
+import { encryptText, decryptText } from "./crypto";
 
 export const DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 export const DRIVE_DATA_FILENAME = "data.json";
@@ -64,7 +65,7 @@ function loadGisScript(): Promise<void> {
 }
 
 /** Retrieve current token from localStorage if valid */
-export function getStoredToken(): StoredToken | null {
+export async function getStoredToken(): Promise<StoredToken | null> {
   if (typeof window === "undefined" || !window.localStorage) return null;
   try {
     const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -73,20 +74,22 @@ export function getStoredToken(): StoredToken | null {
     if (!parsed?.access_token || typeof parsed.expires_at !== "number") {
       return null;
     }
-    // Token considered expired if less than 30s remaining
-    if (parsed.expires_at <= Date.now() + 30_000) {
-      return null;
-    }
-    return parsed;
+    const decrypted = await decryptText(parsed.access_token);
+    const token: StoredToken = { access_token: decrypted, expires_at: parsed.expires_at };
+    if (!token.access_token) return null;
+    if (token.expires_at <= Date.now() + 30_000) return null;
+    return token;
   } catch {
     return null;
   }
 }
 
 /** Save token to client storage */
-export function saveStoredToken(token: StoredToken): void {
+export async function saveStoredToken(token: StoredToken): Promise<void> {
   if (typeof window === "undefined" || !window.localStorage) return;
-  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(token));
+  const encrypted = await encryptText(token.access_token);
+  const toStore: StoredToken = { access_token: encrypted, expires_at: token.expires_at };
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(toStore));
 }
 
 /** Clear stored token */
@@ -96,13 +99,14 @@ export function clearStoredToken(): void {
 }
 
 /** Check if Google Drive is currently connected with a valid token */
-export function isGoogleDriveConnected(): boolean {
-  return getStoredToken() !== null;
+export async function isGoogleDriveConnected(): Promise<boolean> {
+  const token = await getStoredToken();
+  return token !== null;
 }
 
 /** Disconnect Google Drive */
 export async function disconnectGoogleDrive(): Promise<void> {
-  const token = getStoredToken();
+  const token = await getStoredToken();
   clearStoredToken();
   if (token?.access_token && (window as any).google?.accounts?.oauth2?.revoke) {
     try {
@@ -152,7 +156,7 @@ export async function connectGoogleDrive(customClientId?: string): Promise<Store
           access_token: response.access_token,
           expires_at: Date.now() + expiresIn * 1000,
         };
-        saveStoredToken(stored);
+        void saveStoredToken(stored);
         resolved = true;
         resolve(stored);
       },
@@ -173,7 +177,7 @@ export async function connectGoogleDrive(customClientId?: string): Promise<Store
  * If expired, triggers interactive re-auth prompt.
  */
 export async function requireDriveToken(interactive = true): Promise<string> {
-  const existing = getStoredToken();
+  const existing = await getStoredToken();
   if (existing?.access_token) {
     return existing.access_token;
   }

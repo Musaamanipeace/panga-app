@@ -46,7 +46,7 @@ export default function AppShell() {
         <Link
           to="/settings"
           className="btn-secondary btn-small clickable"
-          data-tip="Settings: API keys, backup & sync (Google Drive, GitHub Gist)"
+          data-tip="Settings: API keys, backup & sync (Google Drive)"
           data-tip-pos="bottom"
         >
           Settings

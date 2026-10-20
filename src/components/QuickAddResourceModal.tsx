@@ -400,9 +400,7 @@ export default function QuickAddResourceModal({
               />
               <MicButton
                 targetRef={titleInputRef}
-                onResult={(text) => {
-                  setTitle((prev) => (prev ? prev + " " + text : text));
-                }}
+                onResult={setTitle}
               />
             </div>
           </div>
@@ -529,9 +527,7 @@ export default function QuickAddResourceModal({
             <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end" }}>
               <MicButton
                 targetRef={bodyTextareaRef}
-                onResult={(text) => {
-                  setBody((prev) => (prev ? prev + " " + text : text));
-                }}
+                onResult={setBody}
               />
             </div>
           </div>

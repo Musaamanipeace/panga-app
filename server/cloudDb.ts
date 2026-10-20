@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { timingSafeEqual } from "crypto";
 
 const DATA_DIR =
   process.env.DATA_DIR ||
@@ -55,8 +56,19 @@ function atomicWrite(filePath: string, data: string) {
 }
 
 function hashPassword(password: string, salt: string): string {
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  return crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 }).toString("hex");
 }
+
+function verifyPassword(password: string, salt: string, expectedHash: string): boolean {
+  const calculated = hashPassword(password, salt);
+  const a = Buffer.from(calculated, "hex");
+  const b = Buffer.from(expectedHash, "hex");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function getUserIdForEmail(email: string): string {
   const clean = email.trim().toLowerCase();
@@ -121,7 +133,7 @@ export function authenticateUser(email: string, password: string): { user?: { id
   }
 
   const calculatedHash = hashPassword(password, user.salt);
-  if (calculatedHash !== user.hash) {
+  if (!verifyPassword(password, user.salt, user.hash)) {
     return { error: "Invalid password for this account." };
   }
 
@@ -413,3 +425,30 @@ function migrateLegacyUserFiles() {
 }
 
 migrateLegacyUserFiles();
+
+export interface SessionToken {
+  userId: string;
+  email: string;
+  exp: number;
+}
+
+export function createSessionToken(userId: string, email: string): string {
+  const payload = JSON.stringify({ userId, email, exp: Date.now() + TOKEN_TTL_MS });
+  const b64 = Buffer.from(payload).toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(b64).digest("base64url");
+  return `${b64}.${sig}`;
+}
+
+export function verifySessionToken(token: string): SessionToken | null {
+  try {
+    const [b64, sig] = token.split(".");
+    if (!b64 || !sig) return null;
+    const expected = crypto.createHmac("sha256", SESSION_SECRET).update(b64).digest("base64url");
+    if (!timingSafeEqual(Buffer.from(sig, "base64url"), Buffer.from(expected, "base64url"))) return null;
+    const payload = JSON.parse(Buffer.from(b64, "base64url").toString("utf8")) as SessionToken;
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}

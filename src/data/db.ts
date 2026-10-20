@@ -618,8 +618,6 @@ export async function ensureSeedData() {
 }
 
 export const SENSITIVE_SETTING_KEYS = new Set([
-  "githubGistToken",
-  "github_gist_token",
   "geminiApiKey",
   "emailBackupApiKey",
   "googleAccessToken",

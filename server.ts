@@ -5,11 +5,8 @@ import { fileURLToPath } from "url";
 import {
   authenticateUser,
   registerUser,
-  reconcileSync,
-  pushRecord,
-  deleteRecord,
-  pushSetting,
-  getUserCloudData,
+  createSessionToken,
+  verifySessionToken,
 } from "./server/cloudDb.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,113 +16,89 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({ limit: "10mb" }));
+
+// Basic security headers
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.google.com https://googleapis.com https://api.resend.com https://api.sendgrid.com; img-src 'self' data: https:; object-src 'none'; frame-ancestors 'none';"
+  );
+  next();
+});
+
+// Simple in-memory rate limiter (per IP)
+const rateLimitStore = new Map<string, { count: number; reset: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 20;
+
+function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+  if (!entry || now > entry.reset) {
+    rateLimitStore.set(ip, { count: 1, reset: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: "Too many requests. Please try again later." });
+  }
+  next();
+}
+
+// Session token verification middleware
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+  const token = auth.slice(7);
+  const payload = verifySessionToken(token);
+  if (!payload) {
+    return res.status(401).json({ error: "Invalid or expired session token." });
+  }
+  (req as any).session = payload;
+  next();
+}
 
 // Health check endpoint
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
 });
 
-// --- Cloud Authentication Routes ---
-app.post("/api/auth/signup", (req, res) => {
+// --- Authentication Routes ---
+app.post("/api/auth/signup", rateLimit, (req, res) => {
   const { email, password } = req.body;
   const result = registerUser(email, password);
   if (result.error) {
     return res.status(400).json({ error: result.error });
   }
-  res.json({ ok: true, user: result.user });
+  if (result.user) {
+    const token = createSessionToken(result.user.id, result.user.email);
+    return res.json({ ok: true, user: result.user, token });
+  }
+  return res.status(400).json({ error: "Registration failed." });
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", rateLimit, (req, res) => {
   const { email, password } = req.body;
   const result = authenticateUser(email, password);
   if (result.error) {
     return res.status(401).json({ error: result.error });
   }
-  res.json({ ok: true, user: result.user });
-});
-
-// --- Cloud Sync Routes ---
-app.post("/api/sync/sync-all", (req, res) => {
-  try {
-    const { userId, changes, deletions, lastSyncTime } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required for sync." });
-    }
-    const result = reconcileSync(userId, changes || {}, deletions || [], Number(lastSyncTime) || 0);
-    res.json({ ok: true, ...result });
-  } catch (err: any) {
-    console.error("Cloud sync-all error:", err);
-    res.status(500).json({ ok: false, error: err?.message || "Sync failed" });
+  if (result.user) {
+    const token = createSessionToken(result.user.id, result.user.email);
+    return res.json({ ok: true, user: result.user, token });
   }
+  return res.status(401).json({ error: "Authentication failed." });
 });
 
-app.post("/api/sync/push", (req, res) => {
-  try {
-    const { userId, table, record } = req.body;
-    if (!userId || !table || !record) {
-      return res.status(400).json({ error: "userId, table, and record are required." });
-    }
-    const success = pushRecord(userId, table, record);
-    res.json({ ok: success });
-  } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message });
-  }
-});
-
-app.post("/api/sync/delete", (req, res) => {
-  try {
-    const { userId, table, id } = req.body;
-    if (!userId || !table || !id) {
-      return res.status(400).json({ error: "userId, table, and id are required." });
-    }
-    const success = deleteRecord(userId, table, id);
-    res.json({ ok: success });
-  } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message });
-  }
-});
-
-app.post("/api/sync/setting", (req, res) => {
-  try {
-    const { userId, key, value } = req.body;
-    if (!userId || !key) {
-      return res.status(400).json({ error: "userId and key are required." });
-    }
-    const success = pushSetting(userId, key, value);
-    res.json({ ok: success });
-  } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message });
-  }
-});
-
-app.get("/api/sync/status", (req, res) => {
-  const userId = req.query.userId as string;
-  if (!userId) return res.status(400).json({ error: "userId is required." });
-  const data = getUserCloudData(userId);
-  const summary: Record<string, number> = {};
-  for (const [table, items] of Object.entries(data.tables)) {
-    summary[table] = Object.keys(items || {}).length;
-  }
-  res.json({
-    ok: true,
-    userId,
-    cloudUpdatedAt: data.updatedAt,
-    tableCounts: summary,
-  });
-});
-
-app.get("/api/sync/export", (req, res) => {
-  const userId = req.query.userId as string;
-  if (!userId) return res.status(400).json({ error: "userId is required." });
-  const data = getUserCloudData(userId);
-  res.setHeader("Content-Disposition", `attachment; filename="panga-cloud-backup-${Date.now()}.json"`);
-  res.setHeader("Content-Type", "application/json");
-  res.send(JSON.stringify(data, null, 2));
-});
-
-// Server-side Gemini API route
-app.post("/api/assistant/chat", async (req, res) => {
+// --- Server-side Gemini API route (requires auth) ---
+app.post("/api/assistant/chat", rateLimit, requireAuth, async (req, res) => {
   try {
     const { contents, systemInstruction, enableSearch, clientApiKey } = req.body;
     const apiKey = process.env.GEMINI_API_KEY || clientApiKey;
@@ -171,15 +144,22 @@ app.post("/api/assistant/chat", async (req, res) => {
   }
 });
 
-// Email backup route
-app.post("/api/backup/email", async (req, res) => {
+// Email backup route (requires auth + user email must match session)
+app.post("/api/backup/email", rateLimit, requireAuth, async (req, res) => {
   try {
     const { email, snapshot, apiKey: clientApiKey, provider = "resend" } = req.body;
+
     if (!email || !email.includes("@")) {
       return res.status(400).json({ error: "Valid email address is required" });
     }
+
     if (!snapshot) {
       return res.status(400).json({ error: "Snapshot data is required" });
+    }
+
+    const session = (req as any).session;
+    if (email !== session.email) {
+      return res.status(403).json({ error: "Email must match your authenticated session." });
     }
 
     const timestamp = new Date().toISOString().slice(0, 10);
@@ -196,7 +176,7 @@ app.post("/api/backup/email", async (req, res) => {
           <p>Exported on: ${new Date().toLocaleString()}</p>
           <p style="color: #6b7280; font-size: 14px;">
             This file contains all your projects, tasks, resources, notes, milestones, reminders, and settings.
-            Restore anytime in Panga Settings &rarr; <strong>Upload Snapshot</strong>.
+            Restore anytime in Panga Settings → <strong>Upload Snapshot</strong>.
           </p>
         </div>
       </div>

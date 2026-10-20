@@ -3,7 +3,29 @@
 
 const SESSION_EMAIL_KEY = "panga_session_email";
 const SESSION_USER_ID_KEY = "panga_session_user_id";
+const SESSION_TOKEN_KEY = "panga_session_token";
 const USERS_STORE_KEY = "panga_users_registry";
+
+async function hashPassword(password: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const data = enc.encode(password + salt);
+  const key = await crypto.subtle.importKey("raw", enc.encode("panga-hash-key"), "PBKDF2", false, ["deriveBits"]);
+  const derived = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode(salt), iterations: 100000, hash: "SHA-256" }, key, 512);
+  return Buffer.from(derived).toString("hex");
+}
+
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const salt = storedHash.slice(0, 32);
+  const expected = storedHash.slice(32);
+  const calculated = await hashPassword(password, salt);
+  return calculated === expected;
+}
+
+async function generateUserEntry(password: string): Promise<{ id: string; passwordHash: string }> {
+  const salt = Math.random().toString(36).slice(2, 34);
+  const hash = await hashPassword(password, salt);
+  return { id: "", passwordHash: salt + hash };
+}
 
 export interface AuthResult {
   error?: string;
@@ -64,16 +86,25 @@ export function canUseApp(): boolean {
   return isLoggedIn() || isGuest();
 }
 
-export function setSession(email: string, userId: string): void {
+export function setSession(email: string, userId: string, token?: string): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.setItem(SESSION_EMAIL_KEY, email);
   localStorage.setItem(SESSION_USER_ID_KEY, userId);
+  if (token) {
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+  }
+}
+
+export function getSessionToken(): string | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  return localStorage.getItem(SESSION_TOKEN_KEY);
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.removeItem(SESSION_EMAIL_KEY);
   localStorage.removeItem(SESSION_USER_ID_KEY);
+  localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
 function generateUserId(email: string): string {
@@ -97,35 +128,39 @@ export async function signIn(email: string, password: string): Promise<AuthResul
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: cleanEmail, password }),
     });
-    const data = await res.json();
-    if (res.ok && data.user) {
-      setSession(data.user.email, data.user.id);
-      return { user: data.user };
-    } else if (res.status === 401 || res.status === 400) {
-      return { error: data.error || "Invalid email or password." };
-    }
-  } catch (netErr) {
-    console.warn("Backend login network error, falling back to local session:", netErr);
-  }
+     const data = await res.json();
+     if (res.ok && data.user) {
+       setSession(data.user.email, data.user.id, data.token);
+       return { user: data.user };
+     } else if (res.status === 401 || res.status === 400) {
+       return { error: data.error || "Invalid email or password." };
+     }
+   } catch (netErr) {
+     console.warn("Backend login network error, falling back to local session:", netErr);
+   }
 
-  // Offline fallback
-  try {
-    const raw = localStorage.getItem(USERS_STORE_KEY);
-    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
+   // Offline fallback
+   try {
+     const raw = localStorage.getItem(USERS_STORE_KEY);
+     const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
 
-    if (users[cleanEmail]) {
-      const user = users[cleanEmail];
-      if (user.passwordHash && user.passwordHash !== password) {
-        return { error: "Invalid password for this account." };
-      }
-      setSession(cleanEmail, user.id);
-      return { user: { id: user.id, email: cleanEmail } };
-    }
+     if (users[cleanEmail]) {
+       const user = users[cleanEmail];
+       if (user.passwordHash) {
+         const valid = await verifyPassword(password, user.passwordHash);
+         if (!valid) {
+           return { error: "Invalid password for this account." };
+         }
+       }
+       setSession(cleanEmail, user.id);
+       return { user: { id: user.id, email: cleanEmail } };
+     }
 
-    const id = generateUserId(cleanEmail);
-    users[cleanEmail] = { id, passwordHash: password };
-    localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
-    setSession(cleanEmail, id);
+     const id = generateUserId(cleanEmail);
+     const entry = await generateUserEntry(password);
+     users[cleanEmail] = { id, passwordHash: entry.passwordHash };
+     localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
+     setSession(cleanEmail, id);
     return { user: { id, email: cleanEmail } };
   } catch (err: any) {
     return { error: err?.message || "Failed to sign in." };
@@ -171,29 +206,30 @@ export async function signUp(email: string, password: string): Promise<AuthResul
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: cleanEmail, password }),
     });
-    const data = await res.json();
-    if (res.ok && data.user) {
-      setSession(data.user.email, data.user.id);
-      return {
-        user: data.user,
-        successMessage: "Account created and connected to cloud!",
-      };
-    } else if (res.status === 400) {
-      return { error: data.error || "Registration failed." };
-    }
-  } catch (netErr) {
-    console.warn("Backend signup network error, falling back to local:", netErr);
-  }
+     const data = await res.json();
+     if (res.ok && data.user) {
+       setSession(data.user.email, data.user.id, data.token);
+       return {
+         user: data.user,
+         successMessage: "Account created and connected to cloud!",
+       };
+     } else if (res.status === 400) {
+       return { error: data.error || "Registration failed." };
+     }
+   } catch (netErr) {
+     console.warn("Backend signup network error, falling back to local:", netErr);
+   }
 
-  // Offline fallback
-  try {
-    const raw = localStorage.getItem(USERS_STORE_KEY);
-    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
+   // Offline fallback
+   try {
+     const raw = localStorage.getItem(USERS_STORE_KEY);
+     const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
 
-    const id = users[cleanEmail]?.id || generateUserId(cleanEmail);
-    users[cleanEmail] = { id, passwordHash: password };
-    localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
-    setSession(cleanEmail, id);
+     const id = users[cleanEmail]?.id || generateUserId(cleanEmail);
+     const entry = await generateUserEntry(password);
+     users[cleanEmail] = { id, passwordHash: entry.passwordHash };
+     localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
+     setSession(cleanEmail, id);
     return {
       user: { id, email: cleanEmail },
       successMessage: `Account created successfully!`,

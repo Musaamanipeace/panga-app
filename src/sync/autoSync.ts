@@ -2,9 +2,9 @@
 // Automatic background sync.
 //
 // Every create / update / delete on a user-data table schedules a debounced
-// push of the full snapshot to the chosen provider (GitHub Gist or Google
-// Drive). The user never has to press a save button; the header shows the
-// current state ("Synced to Gist", "Syncing…", …).
+// push of the full snapshot to the chosen provider (Google Drive).
+// The user never has to press a save button; the header shows the
+// current state ("Synced to Drive", "Syncing…", …).
 //
 // Safety rules:
 //  * Auto-sync is only switched on after the user explicitly runs
@@ -23,7 +23,6 @@ import {
   type CloudSyncProvider,
 } from "../data/settings";
 import { exportSnapshot, importSnapshot, type Snapshot } from "./snapshot";
-import { syncNowToGithubGist, fetchGithubGistForRestore } from "./githubGistSync";
 import {
   requireDriveToken,
   uploadJsonToDrive,
@@ -45,12 +44,10 @@ export interface AutoSyncState {
 
 export const PROVIDER_SHORT: Record<CloudSyncProvider, string> = {
   google_drive: "Drive",
-  github_gist: "Gist",
 };
 
 export const PROVIDER_LONG: Record<CloudSyncProvider, string> = {
   google_drive: "Google Drive",
-  github_gist: "GitHub Gist",
 };
 
 interface AutoSyncConfig {
@@ -66,7 +63,7 @@ function readConfig(): AutoSyncConfig | null {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return null;
     const c = JSON.parse(raw) as AutoSyncConfig;
-    if (c && (c.provider === "google_drive" || c.provider === "github_gist")) return c;
+    if (c && c.provider === "google_drive") return c;
   } catch {}
   return null;
 }
@@ -150,11 +147,6 @@ interface PushResult {
 }
 
 async function pushToProvider(provider: CloudSyncProvider, interactive: boolean): Promise<PushResult> {
-  if (provider === "github_gist") {
-    const res = await syncNowToGithubGist();
-    return { ok: res.ok, message: res.message };
-  }
-
   if (interactive) {
     const res = await syncNowToGoogleDrive();
     return { ok: res.ok, message: res.message };
@@ -301,7 +293,6 @@ export async function exportNow(provider: CloudSyncProvider): Promise<PushResult
 export async function fetchRemoteSnapshot(
   provider: CloudSyncProvider
 ): Promise<{ ok: boolean; message: string; data?: Snapshot }> {
-  if (provider === "github_gist") return fetchGithubGistForRestore();
   return fetchDriveBackupForRestore();
 }
 

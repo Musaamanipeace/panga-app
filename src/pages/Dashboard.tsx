@@ -175,7 +175,7 @@ export default function Dashboard() {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                 />
-                <MicButton onResult={(text) => setNewName(text)} />
+                <MicButton onResult={setNewName} />
               </div>
               <button type="submit" className="btn-primary clickable">+ Add project</button>
             </form>

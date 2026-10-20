@@ -1,24 +1,27 @@
-import { useRef } from "react";
+import { useRef, useEffect, useLayoutEffect } from "react";
 import { useVoiceInput } from "./useVoiceInput";
 
 interface Props {
-  onResult: (text: string) => void;
+  onResult: (newValue: string) => void;
   targetRef?: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
   className?: string;
   dataTip?: string;
+  lang?: string;
 }
 
-export default function MicButton({ onResult, targetRef, className = "", dataTip }: Props) {
-  const lastActiveElementRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+type InputEl = HTMLInputElement | HTMLTextAreaElement | null;
+
+export default function MicButton({ onResult, targetRef, className = "", dataTip, lang = "en-US" }: Props) {
+  const lastActiveElementRef = useRef<InputEl>(null);
   const cursorPositionRef = useRef<{ start: number; end: number } | null>(null);
+  const pendingCursorRef = useRef<{ el: InputEl; pos: number } | null>(null);
 
-  // Capture focused input/textarea before microphone button triggers
+  function getTarget(): InputEl {
+    return targetRef?.current || lastActiveElementRef.current;
+  }
+
   function captureCursor() {
-    const active = (targetRef?.current || document.activeElement) as
-      | HTMLInputElement
-      | HTMLTextAreaElement
-      | null;
-
+    const active = (targetRef?.current || document.activeElement) as InputEl;
     if (
       active &&
       (active.tagName === "INPUT" || active.tagName === "TEXTAREA") &&
@@ -32,8 +35,33 @@ export default function MicButton({ onResult, targetRef, className = "", dataTip
     }
   }
 
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const active = document.activeElement as InputEl;
+      if (
+        active &&
+        (active.tagName === "INPUT" || active.tagName === "TEXTAREA") &&
+        typeof active.selectionStart === "number"
+      ) {
+        lastActiveElementRef.current = active;
+        cursorPositionRef.current = {
+          start: active.selectionStart ?? active.value.length,
+          end: active.selectionEnd ?? active.value.length,
+        };
+      }
+    };
+    const handleFocusIn = () => captureCursor();
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    document.addEventListener("focusin", handleFocusIn);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      document.removeEventListener("focusin", handleFocusIn);
+    };
+  }, []);
+
   function handleVoiceResult(text: string) {
-    const input = targetRef?.current || lastActiveElementRef.current;
+    const input = getTarget();
     const cursor = cursorPositionRef.current;
 
     if (input && cursor && typeof input.selectionStart === "number") {
@@ -41,37 +69,36 @@ export default function MicButton({ onResult, targetRef, className = "", dataTip
       const before = original.slice(0, cursor.start);
       const after = original.slice(cursor.end);
 
-      // Add appropriate spacing
       const needsLeadingSpace = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
       const needsTrailingSpace = after.length > 0 && !after.startsWith(" ") && !after.startsWith("\n");
       const formattedInsert = (needsLeadingSpace ? " " : "") + text + (needsTrailingSpace ? " " : "");
-      const updatedValue = before + formattedInsert + after;
+      const newValue = before + formattedInsert + after;
+      const newCursorPos = cursor.start + formattedInsert.length;
 
-      // Update native value and trigger synthetic React input event
-      const proto = input.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-      if (setter) {
-        setter.call(input, updatedValue);
-      } else {
-        input.value = updatedValue;
-      }
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-
-      // Reposition cursor right after inserted text
-      const newPos = cursor.start + formattedInsert.length;
-      try {
-        input.focus();
-        input.setSelectionRange(newPos, newPos);
-      } catch {}
-
-      onResult(text);
+      pendingCursorRef.current = { el: input, pos: newCursorPos };
+      onResult(newValue);
     } else {
-      // Fallback: callback
-      onResult(text);
+      const newValue = text;
+      pendingCursorRef.current = { el: input, pos: newValue.length };
+      onResult(newValue);
     }
   }
 
-  const { listening, start, stop, supported } = useVoiceInput(handleVoiceResult);
+  useLayoutEffect(() => {
+    const pending = pendingCursorRef.current;
+    if (!pending) return;
+    pendingCursorRef.current = null;
+
+    const { el, pos } = pending;
+    if (el && typeof el.selectionStart === "number") {
+      try {
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      } catch {}
+    }
+  });
+
+  const { listening, start, stop, supported } = useVoiceInput(handleVoiceResult, { lang, continuous: true });
   if (!supported) return null;
 
   return (
@@ -79,7 +106,6 @@ export default function MicButton({ onResult, targetRef, className = "", dataTip
       type="button"
       className={`mic-btn ${listening ? "mic-btn-active" : ""} ${className}`.trim()}
       onMouseDown={(e) => {
-        // Prevent button from stealing focus and losing cursor position in the input
         captureCursor();
         e.preventDefault();
       }}

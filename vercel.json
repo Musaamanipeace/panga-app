@@ -4,14 +4,6 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/assistant/chat",
-      "destination": "/api/assistant/chat"
-    },
-    {
-      "source": "/api/backup/email",
-      "destination": "/api/backup/email"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -31,16 +23,12 @@
         {
           "key": "X-XSS-Protection",
           "value": "1; mode=block"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.resend.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.google.com https://googleapis.com https://api.github.com https://api.resend.com https://api.sendgrid.com; img-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; frame-src https://accounts.google.com;"
         }
       ]
     }
-  ],
-  "functions": {
-    "api/assistant/chat.js": {
-      "maxDuration": 30
-    },
-    "api/backup/email.js": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }

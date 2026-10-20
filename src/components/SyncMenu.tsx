@@ -12,20 +12,19 @@ import {
   type AutoSyncState,
 } from "../sync/autoSync";
 import {
-  getGithubGistToken,
-  getGithubGistId,
+  getActiveSyncProvider,
   setActiveSyncProvider,
   type CloudSyncProvider,
 } from "../data/settings";
 
-const ALL_PROVIDERS: CloudSyncProvider[] = ["github_gist", "google_drive"];
+const ALL_PROVIDERS: CloudSyncProvider[] = ["google_drive"];
 
 /** Header "Sync" dropdown: pick a method (preferred one first), then Export or Import. */
 export function SyncMenu() {
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [preferred, setPreferred] = useState<CloudSyncProvider>("github_gist");
+  const [preferred, setPreferred] = useState<CloudSyncProvider>("google_drive");
   const [expanded, setExpanded] = useState<CloudSyncProvider | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -59,28 +58,13 @@ export function SyncMenu() {
     await setActiveSyncProvider(p);
   }
 
-  /** Gist needs a token before anything can run. Returns false (and routes to Settings) if missing. */
-  async function ensureCredentials(p: CloudSyncProvider, needGistId: boolean): Promise<boolean> {
-    if (p !== "github_gist") return true;
-    const token = await getGithubGistToken();
-    if (!token) {
-      showToast("Add your GitHub token (gist scope) in Settings first.", "error", 4000);
-      setOpen(false);
-      navigate("/settings");
-      return false;
-    }
-    if (needGistId && !(await getGithubGistId())) {
-      showToast("No Gist ID saved on this device. Enter it in Settings, or Export once to create one.", "error", 5000);
-      setOpen(false);
-      navigate("/settings");
-      return false;
-    }
+  async function ensureCredentials(_p: CloudSyncProvider): Promise<boolean> {
     return true;
   }
 
   async function handleExport(p: CloudSyncProvider) {
     setOpen(false);
-    if (!(await ensureCredentials(p, false))) return;
+    if (!(await ensureCredentials(p))) return;
 
     if (await localDataIsEmpty()) {
       const ok = await confirmAction({
@@ -104,7 +88,7 @@ export function SyncMenu() {
 
   async function handleImport(p: CloudSyncProvider) {
     setOpen(false);
-    if (!(await ensureCredentials(p, true))) return;
+    if (!(await ensureCredentials(p))) return;
 
     setBusy(true);
     const res = await fetchRemoteSnapshot(p);
@@ -185,7 +169,7 @@ export function SyncMenu() {
 
 /** Header indicator that replaces the old "saved" status. */
 export function AutoSyncIndicator({ state }: { state: AutoSyncState }) {
-  const where = state.provider === "github_gist" ? "Gist" : state.provider === "google_drive" ? "Drive" : "";
+  const where = state.provider === "google_drive" ? "Drive" : "";
   let text = "";
   let color = "var(--color-text-muted)";
   let clickable = false;

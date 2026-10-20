@@ -87,9 +87,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
               Add
             </button>
             <MicButton
-              onResult={(text) => {
-                setDraft((d) => (d ? d + " " + text : text));
-              }}
+              onResult={setDraft}
             />
           </div>
         </div>

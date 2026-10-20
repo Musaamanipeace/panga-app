@@ -141,7 +141,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               />
-              <MicButton onResult={(text) => setFormData({ ...formData, title: text })} />
+              <MicButton onResult={(newValue) => setFormData((prev) => ({ ...prev, title: newValue }))} />
             </div>
           </div>
 

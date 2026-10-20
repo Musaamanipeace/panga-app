@@ -67,7 +67,7 @@ export default function AIAssistant() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
-            <MicButton onResult={(text) => setInput(text)} />
+            <MicButton onResult={setInput} />
             <button type="submit" className="btn-primary">Send</button>
           </form>
         </div>

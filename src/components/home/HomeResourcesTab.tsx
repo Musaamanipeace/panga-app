@@ -408,7 +408,7 @@ export default function HomeResourcesTab() {
                 required
                 autoFocus
               />
-              <MicButton onResult={(text) => setTitle(text)} />
+              <MicButton onResult={setTitle} />
             </div>
           </div>
 
@@ -448,7 +448,7 @@ export default function HomeResourcesTab() {
                 data-tip="Resource body"
               />
               <div style={{ marginTop: 4 }}>
-                <MicButton onResult={(text) => setBody((prev) => (prev ? prev + " " + text : text))} />
+                <MicButton onResult={setBody} />
               </div>
              </div>
            )}

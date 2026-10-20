@@ -10,10 +10,6 @@ import {
   setEmailBackupProvider,
   getActiveSyncProvider,
   setActiveSyncProvider,
-  getGithubGistToken,
-  setGithubGistToken,
-  getGithubGistId,
-  setGithubGistId,
   getLastSyncInfo,
   setLastSyncInfo,
   type CloudSyncProvider,
@@ -28,6 +24,7 @@ import {
 } from "../sync/snapshot";
 import { syncAll } from "../sync/sync";
 import { enableAutoSync } from "../sync/autoSync";
+import { getSessionToken } from "../auth/session";
 import {
   connectGoogleDrive,
   disconnectGoogleDrive,
@@ -35,15 +32,10 @@ import {
   getStoredToken,
   syncNowToGoogleDrive,
   fetchDriveBackupForRestore,
-} from "../sync/googleDriveSync";
-import {
-  syncNowToGithubGist,
-  fetchGithubGistForRestore,
-} from "../sync/githubGistSync";
+  } from "../sync/googleDriveSync";
 
 const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
   google_drive: "Google Drive",
-  github_gist: "GitHub Gist",
 };
 
 export default function Settings() {
@@ -78,12 +70,6 @@ export default function Settings() {
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [driveTokenExpiresAt, setDriveTokenExpiresAt] = useState<number | null>(null);
 
-  // GitHub Gist state
-  const [gistToken, setGistToken] = useState("");
-  const [gistId, setGistId] = useState("");
-  const [gistConfigSaved, setGistConfigSaved] = useState(false);
-  const [showGistToken, setShowGistToken] = useState(false);
-
   // Restore confirmation modal
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [restoreData, setRestoreData] = useState<Snapshot | null>(null);
@@ -111,18 +97,14 @@ export default function Settings() {
     const envClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
     setGoogleClientIdState(savedClientId || envClientId || "");
 
-    const connected = isGoogleDriveConnected();
+    const connected = await isGoogleDriveConnected();
     setIsDriveConnected(connected);
-    const storedToken = getStoredToken();
+    const storedToken = await getStoredToken();
     if (storedToken) {
       setDriveTokenExpiresAt(storedToken.expires_at);
     }
-
-    // GitHub Gist state
-    const savedGistToken = await getGithubGistToken();
-    const savedGistId = await getGithubGistId();
-    setGistToken(savedGistToken ?? "");
-    setGistId(savedGistId ?? "");
+      setDriveTokenExpiresAt(storedToken.expires_at);
+    }
   }, []);
 
   useEffect(() => {
@@ -199,16 +181,20 @@ export default function Settings() {
       const snapshot = await exportSnapshot();
 
       // Send to API with user's configured free credentials
-      const response = await fetch('/api/backup/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: emailBackupEmail.trim(),
-          snapshot,
-          apiKey: emailApiKey.trim() || undefined,
-          provider: emailProvider,
-        }),
-      });
+       const token = getSessionToken();
+       const response = await fetch('/api/backup/email', {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+         },
+         body: JSON.stringify({
+           email: emailBackupEmail.trim(),
+           snapshot,
+           apiKey: emailApiKey.trim() || undefined,
+           provider: emailProvider,
+         }),
+       });
 
       const rawText = await response.text();
       let data: any = {};
@@ -277,20 +263,6 @@ export default function Settings() {
     setTimeout(() => setGoogleClientIdSaved(false), 2500);
   }
 
-  // GitHub Gist
-  async function handleSaveGistConfig(e: React.FormEvent) {
-    e.preventDefault();
-    await setGithubGistToken(gistToken.trim());
-    await setGithubGistId(gistId.trim());
-    setGistConfigSaved(true);
-    setTimeout(() => setGistConfigSaved(false), 2500);
-  }
-
-  async function handleClearGistId() {
-    setGistId("");
-    await setGithubGistId("");
-  }
-
   // --- Primary Sync & Restore Pipeline ---
 
   async function handleSyncNow() {
@@ -299,25 +271,15 @@ export default function Settings() {
     setCloudSyncMessage(`Exporting database and syncing via ${providerName}...`);
 
     try {
-      let res: { ok: boolean; message: string; gistId?: string };
-
-      if (activeProvider === "google_drive") {
-        res = await syncNowToGoogleDrive();
-        if (res.ok) {
-          setIsDriveConnected(true);
-        }
-      } else {
-        // GitHub Gist
-        res = await syncNowToGithubGist(gistToken.trim(), gistId.trim());
-        if (res.ok && res.gistId) {
-          setGistId(res.gistId);
-        }
+      const res = await syncNowToGoogleDrive();
+      if (res.ok) {
+        setIsDriveConnected(true);
       }
 
       setCloudSyncStatus(res.ok ? "ok" : "error");
       setCloudSyncMessage(res.message);
 
-      if (res.ok) {
+      if (res?.ok) {
         const info: LastSyncInfo = {
           provider: activeProvider,
           timestamp: Date.now(),
@@ -340,15 +302,8 @@ export default function Settings() {
     setCloudSyncMessage(`Downloading backup from ${providerName}...`);
 
     try {
-      let res: { ok: boolean; message: string; data?: Snapshot };
-
-      if (activeProvider === "google_drive") {
-        res = await fetchDriveBackupForRestore();
-        if (res.ok) setIsDriveConnected(true);
-      } else {
-        // GitHub Gist
-        res = await fetchGithubGistForRestore(gistToken.trim(), gistId.trim());
-      }
+      const res = await fetchDriveBackupForRestore();
+      if (res.ok) setIsDriveConnected(true);
 
       if (!res.ok || !res.data) {
         setCloudSyncStatus("error");
@@ -657,11 +612,8 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Provider Selection Tabs */}
+        {/* Provider Selection */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-muted)", display: "block", marginBottom: 6 }}>
-            Select Cloud Sync Provider:
-          </label>
           <div className="tab-bar-chips" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="button"
@@ -674,18 +626,6 @@ export default function Settings() {
               }}
             >
               📁 Google Drive {activeProvider === "google_drive" && "✓"}
-            </button>
-            <button
-              type="button"
-              className={`chip ${selectedProviderTab === "github_gist" ? "chip-active" : ""}`}
-              onClick={() => handleSelectProvider("github_gist")}
-              data-tip="Use GitHub Gist (Private Gist with Personal Access Token)"
-              style={{
-                borderColor: selectedProviderTab === "github_gist" ? "#24292f" : undefined,
-                fontWeight: selectedProviderTab === "github_gist" ? 600 : 400,
-              }}
-            >
-              🐙 GitHub Gist {activeProvider === "github_gist" && "✓"}
             </button>
           </div>
         </div>
@@ -728,16 +668,6 @@ export default function Settings() {
               : `⬇ Restore from ${PROVIDER_NAMES[activeProvider]}`}
           </button>
 
-          {activeProvider !== selectedProviderTab && (
-            <button
-              type="button"
-              className="btn-secondary btn-small clickable"
-              onClick={() => handleSelectProvider(selectedProviderTab)}
-              data-tip={`Make ${PROVIDER_NAMES[selectedProviderTab]} the active sync target`}
-            >
-              Set {PROVIDER_NAMES[selectedProviderTab]} as Active
-            </button>
-          )}
         </div>
 
         {/* Provider Specific Configuration Card */}
@@ -829,109 +759,6 @@ export default function Settings() {
             </div>
           )}
 
-          {/* TAB 2: GitHub Gist */}
-          {selectedProviderTab === "github_gist" && (
-            <div className="provider-config-pane">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
-                  GitHub Gist Settings
-                  <span
-                    className="chip-small"
-                    style={{
-                      background: gistToken ? "#ecfdf5" : "#f3f4f6",
-                      color: gistToken ? "#065f46" : "#6b7280",
-                      border: gistToken ? "1px solid #bbf7d0" : "1px solid #e5e7eb",
-                      fontSize: 11,
-                    }}
-                  >
-                    {gistToken ? (gistId ? "● Gist Configured" : "● Token Ready") : "○ Needs Token"}
-                  </span>
-                </h3>
-
-                {gistId && (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <a
-                      href={`https://gist.github.com/${gistId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-secondary btn-small clickable"
-                      style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
-                    >
-                      🔗 Open Gist
-                    </a>
-                    <button
-                      type="button"
-                      className="btn-secondary btn-small clickable"
-                      onClick={handleClearGistId}
-                      data-tip="Clear Gist ID to create a fresh one on next sync"
-                    >
-                      Clear Gist ID
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <p className="settings-help">
-                Back up your entire database to a <strong>private GitHub Gist</strong> as <code>data.json</code> using
-                the GitHub REST API. Credentials stay safely in your local device storage.
-              </p>
-
-              <form onSubmit={handleSaveGistConfig}>
-                <div className="provider-form-row">
-                  <label htmlFor="gist-token">
-                    Personal Access Token (classic or fine-grained with <code>gist</code> scope)
-                  </label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      id="gist-token"
-                      type={showGistToken ? "text" : "password"}
-                      placeholder="ghp_... or github_pat_..."
-                      value={gistToken}
-                      onChange={(e) => setGistToken(e.target.value)}
-                      style={{ flex: 1 }}
-                      data-tip="GitHub Personal Access Token with 'gist' scope"
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary btn-small clickable"
-                      onClick={() => setShowGistToken((v) => !v)}
-                      data-tip={showGistToken ? "Hide token" : "Show token"}
-                    >
-                      {showGistToken ? "Hide" : "Show"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="provider-form-row">
-                  <label htmlFor="gist-id">
-                    Gist ID <span className="faint">(optional — leave blank to auto-create private Gist)</span>
-                  </label>
-                  <input
-                    id="gist-id"
-                    type="text"
-                    placeholder="e.g. 7f3a8b... (leave blank to create automatically)"
-                    value={gistId}
-                    onChange={(e) => setGistId(e.target.value)}
-                    data-tip="Existing Gist ID or leave empty to create a new private Gist on first sync"
-                  />
-                </div>
-
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                  <button type="submit" className="btn-primary btn-small clickable">
-                    {gistConfigSaved ? "Saved ✓" : "Save Gist Settings"}
-                  </button>
-                  <a
-                    href="https://github.com/settings/tokens/new?scopes=gist&description=Panga%20Planner%20Backup"
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontSize: 12, color: "var(--color-accent-primary)" }}
-                  >
-                    Generate GitHub Token (with gist scope) →
-                  </a>
-                </div>
-              </form>
-            </div>
-          )}
         </div>
 
         {/* Status message */}
