@@ -6,8 +6,8 @@ import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
-import { syncAll, restoreSession } from "./sync/sync";
-import { isLoggedIn, canUseApp, isGuest } from "./auth/session";
+import { syncAll } from "./sync/sync";
+import { restoreSession, canUseApp } from "./auth/session";
 import "./index.css";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -21,7 +21,7 @@ function App() {
   useEffect(() => {
     void restoreSession().then(async () => {
       await ensureSeedData();
-      if (isLoggedIn() || isGuest()) {
+      if (canUseApp()) {
         try {
           await syncAll();
         } catch (e) {
@@ -32,7 +32,7 @@ function App() {
     });
 
     const handleFocus = () => {
-      if (isLoggedIn() || isGuest()) {
+      if (canUseApp()) {
         void syncAll();
       }
     };
@@ -40,7 +40,7 @@ function App() {
     window.addEventListener("focus", handleFocus);
     // Periodically save/sync every 2 minutes if active
     const interval = setInterval(() => {
-      if (isLoggedIn() || isGuest()) {
+      if (canUseApp()) {
         void syncAll();
       }
     }, 120_000);

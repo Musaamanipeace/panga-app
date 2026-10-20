@@ -2,12 +2,6 @@ import express from "express";
 import { GoogleGenAI } from "@google/genai";
 import path from "path";
 import { fileURLToPath } from "url";
-import {
-  authenticateUser,
-  registerUser,
-  createSessionToken,
-  verifySessionToken,
-} from "./server/cloudDb.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,55 +44,13 @@ function rateLimit(req: express.Request, res: express.Response, next: express.Ne
   next();
 }
 
-// Session token verification middleware
-function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Authentication required." });
-  }
-  const token = auth.slice(7);
-  const payload = verifySessionToken(token);
-  if (!payload) {
-    return res.status(401).json({ error: "Invalid or expired session token." });
-  }
-  (req as any).session = payload;
-  next();
-}
-
 // Health check endpoint
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
 });
 
-// --- Authentication Routes ---
-app.post("/api/auth/signup", rateLimit, (req, res) => {
-  const { email, password } = req.body;
-  const result = registerUser(email, password);
-  if (result.error) {
-    return res.status(400).json({ error: result.error });
-  }
-  if (result.user) {
-    const token = createSessionToken(result.user.id, result.user.email);
-    return res.json({ ok: true, user: result.user, token });
-  }
-  return res.status(400).json({ error: "Registration failed." });
-});
-
-app.post("/api/auth/login", rateLimit, (req, res) => {
-  const { email, password } = req.body;
-  const result = authenticateUser(email, password);
-  if (result.error) {
-    return res.status(401).json({ error: result.error });
-  }
-  if (result.user) {
-    const token = createSessionToken(result.user.id, result.user.email);
-    return res.json({ ok: true, user: result.user, token });
-  }
-  return res.status(401).json({ error: "Authentication failed." });
-});
-
-// --- Server-side Gemini API route (requires auth) ---
-app.post("/api/assistant/chat", rateLimit, requireAuth, async (req, res) => {
+// --- Server-side Gemini API route ---
+app.post("/api/assistant/chat", rateLimit, async (req, res) => {
   try {
     const { contents, systemInstruction, enableSearch, clientApiKey } = req.body;
     const apiKey = process.env.GEMINI_API_KEY || clientApiKey;
@@ -144,8 +96,8 @@ app.post("/api/assistant/chat", rateLimit, requireAuth, async (req, res) => {
   }
 });
 
-// Email backup route (requires auth + user email must match session)
-app.post("/api/backup/email", rateLimit, requireAuth, async (req, res) => {
+// Email backup route (rate-limited, validates email format)
+app.post("/api/backup/email", rateLimit, async (req, res) => {
   try {
     const { email, snapshot, apiKey: clientApiKey, provider = "resend" } = req.body;
 
@@ -157,12 +109,7 @@ app.post("/api/backup/email", rateLimit, requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Snapshot data is required" });
     }
 
-    const session = (req as any).session;
-    if (email !== session.email) {
-      return res.status(403).json({ error: "Email must match your authenticated session." });
-    }
-
-    const timestamp = new Date().toISOString().slice(0, 10);
+    const timestamp = new Date().toISOString().slice(0, 12);
     const filename = `panga-backup-${timestamp}.json`;
     const jsonContent = JSON.stringify(snapshot, null, 2);
 

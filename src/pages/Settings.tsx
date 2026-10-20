@@ -24,7 +24,6 @@ import {
 } from "../sync/snapshot";
 import { syncAll } from "../sync/sync";
 import { enableAutoSync } from "../sync/autoSync";
-import { getSessionToken } from "../auth/session";
 import {
   connectGoogleDrive,
   disconnectGoogleDrive,
@@ -179,13 +178,9 @@ export default function Settings() {
       const snapshot = await exportSnapshot();
 
       // Send to API with user's configured free credentials
-       const token = getSessionToken();
        const response = await fetch('/api/backup/email', {
          method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-         },
+         headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
            email: emailBackupEmail.trim(),
            snapshot,

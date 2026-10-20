@@ -3,10 +3,7 @@
 // This is the primary sync module for the local-first architecture.
 
 import { db } from "../data/db";
-import { signIn, signUp, signOut, restoreSession, restoreSessionFromSnapshot, getSessionUserId, type AuthResult } from "../auth/session";
-
-export type { AuthResult };
-export { signIn, signUp, signOut, restoreSession, restoreSessionFromSnapshot };
+import { getSessionUserId } from "../auth/session";
 
 export type SyncStatusState = "idle" | "syncing" | "synced" | "error";
 
@@ -100,14 +97,14 @@ export async function syncPushRecord(
 /** Push of a deletion */
 export async function syncDeleteRecord(_tableName: string, _id: string) {
   lastSyncTimestamp = Date.now();
-   safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
+  safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
   updateStatus("synced", "Record removed");
 }
 
 /** Push of a setting */
 export async function syncPushSetting(_key: string, _value: any) {
   lastSyncTimestamp = Date.now();
-   safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
+  safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
   updateStatus("synced", "Settings saved");
 }
 
@@ -119,7 +116,7 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       await db.open();
     }
     lastSyncTimestamp = Date.now();
-     safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
+    safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
     updateStatus("synced", "All data saved locally.");
 
     return { ok: true, message: "All data saved locally." };

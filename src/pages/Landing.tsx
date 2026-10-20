@@ -2,15 +2,9 @@ import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession, getUserScopedKey, getSessionUserId } from "../auth/session";
 import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
-import { signIn, signUp } from "../sync/sync";
-
-type Mode = "choose" | "login" | "signup" | "import";
 
 export default function Landing() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>("choose");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
@@ -99,7 +93,6 @@ export default function Landing() {
         parsed.metadata?.userEmail ||
         "imported@local";
       await restoreSessionFromSnapshot(emailFromMeta);
-      setGuestMode(); // keep guest flag cleared by restore? ensure usable
       setSuccessNotice("Backup restored. Opening workspace…");
       setTimeout(() => navigate("/home"), 600);
     } catch (e: any) {
@@ -120,34 +113,6 @@ export default function Landing() {
     }
   }
 
-  async function handleEmailSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim()) return;
-    if (mode === "signup" && password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    setLoading(true);
-    reset();
-    if (mode === "signup") {
-      const result = await signUp(email.trim(), password);
-      setLoading(false);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      navigate("/home");
-      return;
-    }
-    const result = await signIn(email.trim(), password);
-    setLoading(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    navigate("/home");
-  }
-
   return (
     <div className="page landing">
       <div className="landing-mark" data-tip="Panga">P</div>
@@ -157,183 +122,112 @@ export default function Landing() {
       </p>
       <p className="landing-sub">
         Save progress on this device. Optionally sync with Google Drive.
-        No forced account — start offline and log in later.
+        No forced account — start offline and go.
       </p>
 
-      {mode === "choose" && (
-        <div className="landing-actions">
-          {/* Section: Continue Offline (Title, not a button) */}
-          <div className="landing-offline-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ textAlign: "center", marginBottom: 2 }}>
-              <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700, color: "var(--color-text)" }}>
-                Continue Offline
-              </h2>
-              <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
-                Work locally without an account. Data stays on this device.
-              </p>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button
-                type="button"
-                className="btn-primary btn-large blade-glint clickable"
-                disabled={loading}
-                onClick={() => void handleStartAfreshClick()}
-                data-tip="Start with a completely blank workspace. Clears existing local data so you begin fresh."
-              >
-                {loading ? "Starting…" : "Start Afresh"}
-              </button>
-
-              <button
-                type="button"
-                className="btn-secondary btn-large clickable"
-                disabled={loading}
-                onClick={() => void handleResumeLocal()}
-                data-tip="Continue working with the existing data saved on this browser."
-              >
-                {loading ? "Checking…" : "Resume Local"}
-              </button>
-            </div>
-
-            {confirmStartAfresh && (
-              <div
-                style={{
-                  background: "#fffbeb",
-                  border: "1px solid #fde68a",
-                  borderRadius: "var(--radius)",
-                  padding: "14px",
-                  fontSize: "13px",
-                  color: "#92400e",
-                  textAlign: "left",
-                  marginTop: 4,
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                  ⚠️ Confirm Start Afresh
-                </div>
-                <p style={{ margin: "0 0 10px 0", lineHeight: 1.45 }}>
-                  Existing local data was found on this device. Starting afresh will erase all current local projects, tasks, and notes so you begin with a blank workspace.
-                </p>
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    className="btn-secondary btn-small clickable"
-                    onClick={() => setConfirmStartAfresh(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary btn-small clickable"
-                    style={{ background: "#dc2626", borderColor: "#dc2626" }}
-                    onClick={() => void performStartAfresh()}
-                  >
-                    Yes, Clear &amp; Start Afresh
-                  </button>
-                </div>
-              </div>
-            )}
+      <div className="landing-actions">
+        {/* Section: Continue Offline */}
+        <div className="landing-offline-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ textAlign: "center", marginBottom: 2 }}>
+            <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700, color: "var(--color-text)" }}>
+              Continue Offline
+            </h2>
+            <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
+              Work locally without an account. Data stays on this device.
+            </p>
           </div>
 
-          <div
-            className={`dropzone ${dragOver ? "dropzone-active" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
-          >
-            <strong>Import JSON backup</strong>
-            <span>Drop a .json snapshot here or click to choose a file</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,application/json"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleJsonImport(f);
-              }}
-            />
-          </div>
-
-          <p className="landing-or">or connect later in Settings → Backup &amp; Sync</p>
-
-          <div className="landing-secondary-row">
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button
               type="button"
-              className="chip clickable"
-              onClick={() => {
-                setMode("login");
-                reset();
-              }}
-            >
-              Optional email login
-            </button>
-            <button
-              type="button"
-              className="chip clickable"
-              onClick={() => {
-                setMode("signup");
-                reset();
-              }}
-            >
-              Create local account
-            </button>
-          </div>
-        </div>
-      )}
-
-      {(mode === "login" || mode === "signup") && (
-        <div className="auth-panel">
-          <button
-            type="button"
-            className="btn-text clickable"
-            onClick={() => {
-              setMode("choose");
-              reset();
-            }}
-          >
-            ← Back
-          </button>
-          <form className="otp-overlay" onSubmit={handleEmailSubmit}>
-            <label htmlFor="email-input">
-              {mode === "signup" ? "Create a local account" : "Sign in (local or cloud if available)"}
-            </label>
-            <input
-              id="email-input"
-              autoFocus
-              type="email"
-              required
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              id="password-input"
-              type="password"
-              required
-              minLength={6}
-              placeholder="Password (min 6 characters)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{ marginTop: "8px" }}
-            />
-            <button
-              type="submit"
-              className="btn-primary btn-login blade-glint clickable"
+              className="btn-primary btn-large blade-glint clickable"
               disabled={loading}
+              onClick={() => void handleStartAfreshClick()}
+              data-tip="Start with a completely blank workspace. Clears existing local data so you begin fresh."
             >
-              {loading ? "Working…" : mode === "signup" ? "Create Account" : "Login"}
+              {loading ? "Starting…" : "Start Afresh"}
             </button>
-          </form>
+
+            <button
+              type="button"
+              className="btn-secondary btn-large clickable"
+              disabled={loading}
+              onClick={() => void handleResumeLocal()}
+              data-tip="Continue working with the existing data saved on this browser."
+            >
+              {loading ? "Checking…" : "Resume Local"}
+            </button>
+          </div>
+
+          {confirmStartAfresh && (
+            <div
+              style={{
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                borderRadius: "var(--radius)",
+                padding: "14px",
+                fontSize: "13px",
+                color: "#92400e",
+                textAlign: "left",
+                marginTop: 4,
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                ⚠️ Confirm Start Afresh
+              </div>
+              <p style={{ margin: "0 0 10px 0", lineHeight: 1.45 }}>
+                Existing local data was found on this device. Starting afresh will erase all current local projects, tasks, and notes so you begin with a blank workspace.
+              </p>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary btn-small clickable"
+                  onClick={() => setConfirmStartAfresh(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary btn-small clickable"
+                  style={{ background: "#dc2626", borderColor: "#dc2626" }}
+                  onClick={() => void performStartAfresh()}
+                >
+                  Yes, Clear &amp; Start Afresh
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        <div
+          className={`dropzone ${dragOver ? "dropzone-active" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+        >
+          <strong>Import JSON backup</strong>
+          <span>Drop a .json snapshot here or click to choose a file</span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleJsonImport(f);
+            }}
+          />
+        </div>
+
+        <p className="landing-or">or connect later in Settings → Backup &amp; Sync</p>
+      </div>
 
       {error && (
         <p className="otp-error" style={{ marginTop: 16 }}>

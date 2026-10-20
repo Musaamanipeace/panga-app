@@ -1,45 +1,18 @@
 // src/auth/session.ts
-// Manages the user session with cloud backend authentication and offline fallback.
+// Manages the user session — local-first offline with guest mode only.
+// No email/password authentication: data stays on the user's device.
 
 import { switchUserAccount } from "../data/db";
 
 const SESSION_EMAIL_KEY = "panga_session_email";
 const SESSION_USER_ID_KEY = "panga_session_user_id";
 const SESSION_TOKEN_KEY = "panga_session_token";
-const USERS_STORE_KEY = "panga_users_registry";
 
 /** Prefixes a localStorage key with the current user ID so data doesn't bleed between accounts. */
 export function getUserScopedKey(key: string): string {
   const userId = getSessionUserId();
   if (!userId) return `${key}_guest`;
   return `${key}_${userId}`;
-}
-
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const derived = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode(salt), iterations: 100000, hash: "SHA-256" }, key, 512);
-  const bytes = new Uint8Array(derived);
-  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
-  const salt = storedHash.slice(0, 32);
-  const expected = storedHash.slice(32);
-  const calculated = await hashPassword(password, salt);
-  return calculated === expected;
-}
-
-async function generateUserEntry(password: string): Promise<{ id: string; passwordHash: string }> {
-  const salt = Math.random().toString(36).slice(2, 34);
-  const hash = await hashPassword(password, salt);
-  return { id: "", passwordHash: salt + hash };
-}
-
-export interface AuthResult {
-  error?: string;
-  successMessage?: string;
-  user?: { id: string; email: string };
 }
 
 export function getSessionEmail(): string | null {
@@ -53,7 +26,7 @@ export function getSessionUserId(): string | null {
 }
 
 export function isLoggedIn(): boolean {
-  return !!getSessionEmail() && !!getSessionUserId();
+  return !!getSessionUserId();
 }
 
 /** Guest / unlogged mode: app usable offline with local IndexedDB only. */
@@ -65,7 +38,6 @@ export function isGuest(): boolean {
 export function setGuestMode(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.setItem("panga_guest", "1");
-  // Ensure a stable local user id for data ownership without email
   if (!getSessionUserId()) {
     const id = "guest_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
     localStorage.setItem(SESSION_USER_ID_KEY, id);
@@ -87,24 +59,20 @@ export function resetGuestSession(): void {
   void switchUserAccount();
 }
 
-
 export function clearGuestMode(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.removeItem("panga_guest");
 }
 
-/** True if the user can use the app (logged in or guest). */
+/** True if the user can use the app (has a session or is a guest). */
 export function canUseApp(): boolean {
   return isLoggedIn() || isGuest();
 }
 
-export function setSession(email: string, userId: string, token?: string): void {
+export function setSession(userId: string, email: string): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.setItem(SESSION_EMAIL_KEY, email);
   localStorage.setItem(SESSION_USER_ID_KEY, userId);
-  if (token) {
-    localStorage.setItem(SESSION_TOKEN_KEY, token);
-  }
   // Switch IndexedDB to this user's isolated database
   void switchUserAccount();
 }
@@ -121,61 +89,13 @@ export function clearSession(): void {
   localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
-function generateUserId(email: string): string {
+function generateUserId(seed: string): string {
   let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = (hash << 5) - hash + email.charCodeAt(i);
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
     hash |= 0;
   }
   return "usr_" + Math.abs(hash).toString(36) + "_" + Date.now().toString(36);
-}
-
-export async function signIn(email: string, password: string): Promise<AuthResult> {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail) return { error: "Email is required." };
-  if (!password) return { error: "Password is required." };
-
-  // Try backend cloud authentication first
-  try {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: cleanEmail, password }),
-    });
-    const data = await res.json();
-    if (res.ok && data.user) {
-      setSession(data.user.email, data.user.id, data.token);
-      return { user: data.user };
-    } else if (res.status === 401 || res.status === 400) {
-      return { error: data.error || "Invalid email or password." };
-    } else {
-      return { error: `Login failed (HTTP ${res.status})` };
-    }
-  } catch (netErr) {
-    console.warn("Backend login network error, falling back to local session:", netErr);
-  }
-
-  // Offline fallback: check against locally registered accounts only
-  try {
-    const raw = localStorage.getItem(USERS_STORE_KEY);
-    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
-
-    if (users[cleanEmail]) {
-      const user = users[cleanEmail];
-      if (user.passwordHash) {
-        const valid = await verifyPassword(password, user.passwordHash);
-        if (!valid) {
-          return { error: "Invalid password for this account." };
-        }
-      }
-      setSession(cleanEmail, user.id);
-      return { user: { id: user.id, email: cleanEmail } };
-    }
-
-    return { error: "No local account found for this email. Connect to the cloud to sign in." };
-  } catch (err: any) {
-    return { error: err?.message || "Failed to sign in." };
-  }
 }
 
 /**
@@ -184,88 +104,30 @@ export async function signIn(email: string, password: string): Promise<AuthResul
  * without password verification. Used when importing a snapshot
  * via the Quick Upload dropzone.
  */
-export async function restoreSessionFromSnapshot(email: string): Promise<AuthResult> {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail) return { error: "Email is required." };
+export async function restoreSessionFromSnapshot(email: string): Promise<{ error?: string; user?: { id: string; email: string } }> {
+  const cleanEmail = (email || "imported@local").trim().toLowerCase();
 
   try {
-    const raw = localStorage.getItem(USERS_STORE_KEY);
-    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
-
-    let id = users[cleanEmail]?.id;
-    if (!id) {
-      id = generateUserId(cleanEmail);
-      users[cleanEmail] = { id, passwordHash: "" }; // no password for snapshot restore
-      localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
-    }
-    setSession(cleanEmail, id);
+    const id = generateUserId(cleanEmail);
+    setSession(id, cleanEmail);
     return { user: { id, email: cleanEmail } };
   } catch (err: any) {
     return { error: err?.message || "Failed to restore session." };
   }
 }
 
-export async function signUp(email: string, password: string): Promise<AuthResult> {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail) return { error: "Email is required." };
-  if (password.length < 6) return { error: "Password must be at least 6 characters." };
-
-  // Try backend cloud registration first
-  try {
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: cleanEmail, password }),
-    });
-    const data = await res.json();
-    if (res.ok && data.user) {
-      setSession(data.user.email, data.user.id, data.token);
-      return {
-        user: data.user,
-        successMessage: "Account created and connected to cloud!",
-      };
-    } else if (res.status === 400) {
-      return { error: data.error || "Registration failed." };
-    } else {
-      return { error: `Registration failed (HTTP ${res.status})` };
-    }
-  } catch (netErr) {
-    console.warn("Backend signup network error, falling back to local:", netErr);
-  }
-
-  // Offline fallback: create a local account
-  try {
-    const raw = localStorage.getItem(USERS_STORE_KEY);
-    const users: Record<string, { id: string; passwordHash?: string }> = raw ? JSON.parse(raw) : {};
-
-    if (users[cleanEmail]) {
-      return { error: "An account with this email already exists locally. Try signing in instead." };
-    }
-
-    const id = generateUserId(cleanEmail);
-    const entry = await generateUserEntry(password);
-    users[cleanEmail] = { id, passwordHash: entry.passwordHash };
-    localStorage.setItem(USERS_STORE_KEY, JSON.stringify(users));
-    setSession(cleanEmail, id);
-    return {
-      user: { id, email: cleanEmail },
-      successMessage: `Account created successfully!`,
-    };
-  } catch (err: any) {
-    return { error: err?.message || "Failed to create account." };
-  }
-}
-
-export async function signOut(): Promise<void> {
+/**
+ * Exit the current session and return to the landing page.
+ * Clears session, guest mode, and Google Drive token from localStorage.
+ */
+export async function logout(): Promise<void> {
   const userId = getSessionUserId();
   clearSession();
   clearGuestMode();
   // Clear this user's Google Drive token from localStorage
   if (userId) {
-    // Clear per-user token key
     try {
-      const perUserKey = `panga_google_drive_token_${userId}`;
-      localStorage.removeItem(perUserKey);
+      localStorage.removeItem(`panga_google_drive_token_${userId}`);
     } catch {}
   }
   void switchUserAccount();
@@ -273,7 +135,7 @@ export async function signOut(): Promise<void> {
 }
 
 export async function restoreSession(): Promise<void> {
-  // If a session exists in localStorage, make sure the DB points to the right user database
+  // If a session exists in localStorage, ensure the DB points to the right user database
   if (getSessionUserId()) {
     void switchUserAccount();
   }

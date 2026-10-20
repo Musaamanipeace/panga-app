@@ -7,8 +7,7 @@ import { ToastContainer, ConfirmDialogHost } from "./ui";
 import { SyncMenu, AutoSyncIndicator } from "./SyncMenu";
 import { subscribeAutoSync, startAutoSync, type AutoSyncState } from "../sync/autoSync";
 import StashPanel from "./Stash";
-import { getSessionEmail, isGuest } from "../auth/session";
-import { signOut } from "../sync/sync";
+import { getSessionEmail, isGuest, logout } from "../auth/session";
 
 export default function AppShell() {
   const email = getSessionEmail();
@@ -22,7 +21,7 @@ export default function AppShell() {
   }, []);
 
   async function handleLogout() {
-    await signOut();
+    await logout();
   }
 
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
