@@ -26,6 +26,7 @@ import HomeCalendarTab from "../components/home/HomeCalendarTab";
 import HomeScheduleTab from "../components/home/HomeScheduleTab";
 import HomeRemindersTab from "../components/home/HomeRemindersTab";
 import HomeActivityTab from "../components/home/HomeActivityTab";
+import { getUserScopedKey } from "../auth/session";
 
 const SECTIONS = [
   "Overview",
@@ -54,7 +55,7 @@ type ExpandedMap = Record<string, boolean>;
 
 function loadExpanded(): ExpandedMap {
   try {
-    const raw = localStorage.getItem("panga_home_expanded");
+    const raw = localStorage.getItem(getUserScopedKey("panga_home_expanded"));
     if (raw) return JSON.parse(raw);
   } catch {}
   return {
@@ -90,7 +91,7 @@ export default function Home() {
     setExpanded((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       try {
-        localStorage.setItem("panga_home_expanded", JSON.stringify(next));
+         localStorage.setItem(getUserScopedKey("panga_home_expanded"), JSON.stringify(next));
       } catch {}
       return next;
     });

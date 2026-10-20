@@ -3,14 +3,17 @@
 // This is the primary sync module for the local-first architecture.
 
 import { db } from "../data/db";
-import { signIn, signUp, signOut, restoreSession, restoreSessionFromSnapshot, type AuthResult } from "../auth/session";
+import { signIn, signUp, signOut, restoreSession, restoreSessionFromSnapshot, getSessionUserId, type AuthResult } from "../auth/session";
 
 export type { AuthResult };
 export { signIn, signUp, signOut, restoreSession, restoreSessionFromSnapshot };
 
 export type SyncStatusState = "idle" | "syncing" | "synced" | "error";
 
-const LAST_SYNC_KEY = "panga_last_sync_time";
+function getLastSyncKey(): string {
+  const userId = getSessionUserId();
+  return `panga_last_sync_time_${userId || "guest"}`;
+}
 
 function safeGetStorage(key: string): string | null {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
@@ -30,7 +33,7 @@ function safeSetStorage(key: string, value: string | null) {
 }
 
 let currentStatus: SyncStatusState = "synced";
-let lastSyncTimestamp: number = Number(safeGetStorage(LAST_SYNC_KEY) || Date.now());
+let lastSyncTimestamp: number = Number(safeGetStorage(getLastSyncKey()) || Date.now());
 let statusListeners: Array<(status: SyncStatusState, message?: string) => void> = [];
 
 export function getSyncStatus(): SyncStatusState {
@@ -87,7 +90,7 @@ export async function syncPushRecord(
       await (db as any)[dexieTable]?.update(record.id, { syncStatus: "synced" });
     }
     lastSyncTimestamp = Date.now();
-    safeSetStorage(LAST_SYNC_KEY, String(lastSyncTimestamp));
+    safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
     updateStatus("synced", "Changes saved locally");
   } catch (err) {
     console.warn(`Sync push error (${tableName}):`, err);
@@ -97,14 +100,14 @@ export async function syncPushRecord(
 /** Push of a deletion */
 export async function syncDeleteRecord(_tableName: string, _id: string) {
   lastSyncTimestamp = Date.now();
-  safeSetStorage(LAST_SYNC_KEY, String(lastSyncTimestamp));
+   safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
   updateStatus("synced", "Record removed");
 }
 
 /** Push of a setting */
 export async function syncPushSetting(_key: string, _value: any) {
   lastSyncTimestamp = Date.now();
-  safeSetStorage(LAST_SYNC_KEY, String(lastSyncTimestamp));
+   safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
   updateStatus("synced", "Settings saved");
 }
 
@@ -116,7 +119,7 @@ export async function syncAll(): Promise<{ ok: boolean; message: string }> {
       await db.open();
     }
     lastSyncTimestamp = Date.now();
-    safeSetStorage(LAST_SYNC_KEY, String(lastSyncTimestamp));
+     safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
     updateStatus("synced", "All data saved locally.");
 
     return { ok: true, message: "All data saved locally." };

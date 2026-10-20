@@ -19,6 +19,7 @@ import { db } from "../data/db";
 import { newId } from "../data/utils";
 import MicButton from "../components/MicButton";
 import { useAsync } from "../components/ui";
+import { getUserScopedKey } from "../auth/session";
 
 interface ActionProposal {
   type:
@@ -339,10 +340,10 @@ ${milestoneList || "None"}
         const cat = data.category || "notes";
         const name = (data.name || "").trim().toLowerCase().replace(/\s+/g, "_");
         if (name) {
-          const stored = localStorage.getItem("panga-subcategories-global");
+          const stored = localStorage.getItem(getUserScopedKey("panga-subcategories-global"));
           const existing = stored ? JSON.parse(stored) : {};
           existing[cat] = [...(existing[cat] || []), name].filter((v, i, a) => a.indexOf(v) === i);
-          localStorage.setItem("panga-subcategories-global", JSON.stringify(existing));
+          localStorage.setItem(getUserScopedKey("panga-subcategories-global"), JSON.stringify(existing));
         }
         break;
       }

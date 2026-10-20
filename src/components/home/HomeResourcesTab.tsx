@@ -13,6 +13,7 @@ import {
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
 import MicButton from "../../components/MicButton";
+import { getUserScopedKey } from "../../auth/session";
 import { copyToClipboard, confirmDelete, CopyButton } from "../../components/ui";
 import { newId } from "../../data/utils";
 
@@ -61,17 +62,17 @@ export default function HomeResourcesTab() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("panga-categories-global");
-      if (stored) {
-        setCustomCategories(JSON.parse(stored));
-      }
-    } catch {}
-  }, []);
+       const stored = localStorage.getItem(getUserScopedKey("panga-categories-global"));
+       if (stored) {
+         setCustomCategories(JSON.parse(stored));
+       }
+     } catch {}
+   }, []);
 
-  function saveCustomCategories(cats: { id: string; label: string }[]) {
-    setCustomCategories(cats);
-    try {
-      localStorage.setItem("panga-categories-global", JSON.stringify(cats));
+   function saveCustomCategories(cats: { id: string; label: string }[]) {
+     setCustomCategories(cats);
+     try {
+       localStorage.setItem(getUserScopedKey("panga-categories-global"), JSON.stringify(cats));
     } catch {}
   }
 

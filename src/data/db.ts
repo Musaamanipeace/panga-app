@@ -255,7 +255,7 @@ export const SETTINGS_KEYS = {
 // This ensures each user gets their own isolated IndexedDB database.
 export function getUserDbName(): string {
   const userId = getSessionUserId();
-  if (!userId) return "panga-db";
+  if (!userId) return "panga-db-guest";
   return `panga-db-${userId}`;
 }
 
@@ -535,7 +535,30 @@ class PangaDB extends Dexie {
   }
 }
 
-export const db = new PangaDB();
+// Initialize the DB instance. The name is derived from the current session user ID.
+// Use switchUserAccount() to switch between user databases after sign-in.
+export let db: PangaDB = new PangaDB();
+
+/**
+ * Closes the current Dexie connection and creates a fresh instance with the
+ * correct per-user database name. Called after setSession() to switch DB
+ * between accounts.
+ */
+export async function switchUserAccount(): Promise<void> {
+  try {
+    if (db && db.isOpen()) {
+      await db.close();
+    }
+  } catch (e) {
+    console.warn("switchUserAccount close error:", e);
+  }
+  db = new PangaDB();
+  try {
+    await db.open();
+  } catch (e) {
+    console.warn("switchUserAccount open error:", e);
+  }
+}
 
 /**
  * While true, table change hooks (used by auto-sync) are ignored. Set during

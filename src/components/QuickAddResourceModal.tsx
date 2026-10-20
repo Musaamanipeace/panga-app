@@ -9,6 +9,7 @@ import { createLocalEvent } from "../data/calendar";
 import { showToast } from "./ui";
 import MicButton from "./MicButton";
 import { newId } from "../data/utils";
+import { getUserScopedKey } from "../auth/session";
 
 export type SavableResourceType =
   | "note"
@@ -68,7 +69,7 @@ export default function QuickAddResourceModal({
   useEffect(() => {
     if (open) {
       try {
-        const raw = localStorage.getItem(DRAFT_KEY);
+         const raw = localStorage.getItem(getUserScopedKey(DRAFT_KEY));
         if (raw) {
           const draft = JSON.parse(raw);
           if (draft.title && !title) setTitle(draft.title);
@@ -88,7 +89,7 @@ export default function QuickAddResourceModal({
       try {
         if (title.trim() || body.trim() || url.trim()) {
           localStorage.setItem(
-            DRAFT_KEY,
+            getUserScopedKey(DRAFT_KEY),
             JSON.stringify({
               resourceType,
               projectId,
@@ -106,7 +107,7 @@ export default function QuickAddResourceModal({
 
   function clearDraft() {
     try {
-      localStorage.removeItem(DRAFT_KEY);
+       localStorage.removeItem(getUserScopedKey(DRAFT_KEY));
     } catch {}
     setTitle("");
     setBody("");

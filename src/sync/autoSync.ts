@@ -16,6 +16,7 @@
 //    status turns to "error" and asks the user to re-run Sync → Export.
 
 import { db, suppressChangeHooks } from "../data/db";
+import { getSessionUserId } from "../auth/session";
 import {
   getActiveSyncProvider,
   setActiveSyncProvider,
@@ -31,7 +32,6 @@ import {
 } from "./googleDriveSync";
 
 export const DEBOUNCE_MS = 2000;
-const CONFIG_KEY = "panga_autosync";
 
 export type AutoSyncPhase = "off" | "idle" | "pending" | "syncing" | "synced" | "error";
 
@@ -56,11 +56,16 @@ interface AutoSyncConfig {
   lastSyncedAt?: number;
 }
 
-/* ----------------------------- config (per device) ----------------------------- */
+/* ----------------------------- config (per user) ----------------------------- */
+
+function getConfigKey(): string {
+  const userId = getSessionUserId();
+  return userId ? `panga_autosync_${userId}` : "panga_autosync";
+}
 
 function readConfig(): AutoSyncConfig | null {
   try {
-    const raw = localStorage.getItem(CONFIG_KEY);
+    const raw = localStorage.getItem(getConfigKey());
     if (!raw) return null;
     const c = JSON.parse(raw) as AutoSyncConfig;
     if (c && c.provider === "google_drive") return c;
@@ -70,8 +75,8 @@ function readConfig(): AutoSyncConfig | null {
 
 function writeConfig(c: AutoSyncConfig | null) {
   try {
-    if (c) localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
-    else localStorage.removeItem(CONFIG_KEY);
+    if (c) localStorage.setItem(getConfigKey(), JSON.stringify(c));
+    else localStorage.removeItem(getConfigKey());
   } catch {}
 }
 

@@ -2,6 +2,7 @@
 // Global drag-and-drop storage box — a floating panel for temporarily holding snippets, links, files, or text.
 import { useEffect, useState, useRef } from "react";
 import { showToast } from "./ui";
+import { getUserScopedKey } from "../auth/session";
 
 export interface StashItem {
   id: string;
@@ -11,11 +12,9 @@ export interface StashItem {
   createdAt: number;
 }
 
-const STORAGE_KEY = "panga-stash";
-
 export function loadStash(): StashItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getUserScopedKey("panga-stash"));
     if (raw) return JSON.parse(raw) as StashItem[];
   } catch {}
   return [];
@@ -23,7 +22,7 @@ export function loadStash(): StashItem[] {
 
 export function saveStash(items: StashItem[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    localStorage.setItem(getUserScopedKey("panga-stash"), JSON.stringify(items));
   } catch {}
 }
 

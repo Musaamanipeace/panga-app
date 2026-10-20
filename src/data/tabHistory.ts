@@ -1,6 +1,7 @@
 // src/data/tabHistory.ts
 // Tab navigation history tracker — back/forward navigation across tabs within a project workspace.
 import { useEffect, useState } from "react";
+import { getUserScopedKey } from "../auth/session";
 
 export interface TabEntry {
   tab: string;
@@ -10,7 +11,7 @@ export interface TabEntry {
 const STORAGE_KEY = "panga-tab-history";
 
 export function useTabHistory(projectId: string | undefined, currentTab: string, capacity = 20) {
-  const key = `${STORAGE_KEY}-${projectId ?? "global"}`;
+  const key = `${getUserScopedKey(STORAGE_KEY)}-${projectId ?? "global"}`;
   const [history, setHistory] = useState<TabEntry[]>([]);
   const [index, setIndex] = useState(-1);
 

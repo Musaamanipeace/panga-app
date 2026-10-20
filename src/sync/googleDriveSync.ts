@@ -4,6 +4,7 @@
 // Targets the hidden appDataFolder to keep application state private.
 
 import { getGoogleClientId, setGoogleClientId } from "../data/settings";
+import { getSessionUserId } from "../auth/session";
 import { exportSnapshot, validateSnapshot, importSnapshot, type Snapshot } from "./snapshot";
 import { syncAll } from "./sync";
 import { encryptText, decryptText } from "./crypto";
@@ -12,6 +13,11 @@ export const DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdat
 export const DRIVE_DATA_FILENAME = "data.json";
 
 const TOKEN_STORAGE_KEY = "panga_google_drive_token";
+
+function getTokenStorageKey(): string {
+  const userId = getSessionUserId();
+  return userId ? `${TOKEN_STORAGE_KEY}_${userId}` : TOKEN_STORAGE_KEY;
+}
 
 export interface StoredToken {
   access_token: string;
@@ -68,7 +74,7 @@ function loadGisScript(): Promise<void> {
 export async function getStoredToken(): Promise<StoredToken | null> {
   if (typeof window === "undefined" || !window.localStorage) return null;
   try {
-    const raw = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const raw = localStorage.getItem(getTokenStorageKey());
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredToken;
     if (!parsed?.access_token || typeof parsed.expires_at !== "number") {
@@ -89,13 +95,20 @@ export async function saveStoredToken(token: StoredToken): Promise<void> {
   if (typeof window === "undefined" || !window.localStorage) return;
   const encrypted = await encryptText(token.access_token);
   const toStore: StoredToken = { access_token: encrypted, expires_at: token.expires_at };
-  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(toStore));
+  localStorage.setItem(getTokenStorageKey(), JSON.stringify(toStore));
 }
 
-/** Clear stored token */
-export function clearStoredToken(): void {
+/** Remove access token from client storage for a specific user */
+export function clearStoredTokenForUser(userId?: string | null): void {
   if (typeof window === "undefined" || !window.localStorage) return;
+  if (userId) {
+    localStorage.removeItem(`${TOKEN_STORAGE_KEY}_${userId}`);
+  }
   localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function clearStoredToken(): void {
+  clearStoredTokenForUser(getSessionUserId());
 }
 
 /** Check if Google Drive is currently connected with a valid token */

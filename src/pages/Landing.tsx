@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession } from "../auth/session";
+import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession, getUserScopedKey, getSessionUserId } from "../auth/session";
 import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
 import { signIn, signUp } from "../sync/sync";
 
@@ -44,12 +44,14 @@ export default function Landing() {
     try {
       // Clear all local database tables so existing data is never resumed
       await clearAllLocalData();
-      // Generate a brand new clean guest session ID
+      // Generate a brand new clean guest session ID and switch DB
       resetGuestSession();
+      const { switchUserAccount } = await import("../data/db");
+      await switchUserAccount();
       // Clear local UI cached states
       try {
-        localStorage.removeItem("panga_home_expanded");
-        localStorage.removeItem("panga_last_sync_info");
+        localStorage.removeItem(getUserScopedKey("panga_home_expanded"));
+        localStorage.removeItem(`panga_last_sync_info_${getSessionUserId() || "guest"}`);
       } catch {}
       navigate("/home");
     } catch (e: any) {
@@ -67,6 +69,9 @@ export default function Landing() {
       const has = await hasLocalData();
       if (has || canUseApp()) {
         if (!canUseApp()) setGuestMode();
+        // Ensure DB is bound to the current session user
+        const { switchUserAccount } = await import("../data/db");
+        void switchUserAccount();
         navigate("/home");
       } else {
         setError("No saved local data found on this device. Click 'Start Afresh' to begin a new workspace, or import a JSON backup.");

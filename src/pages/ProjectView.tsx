@@ -13,6 +13,7 @@ import { newId, now } from "../data/utils";
 import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
 import MicButton from "../components/MicButton";
+import { getUserScopedKey } from "../auth/session";
 import { showToast, CopyButton, confirmDelete } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
 import ContactsTab from "../components/project/ContactsTab";
@@ -774,7 +775,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   // Load custom categories from global storage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("panga-categories-global");
+       const stored = localStorage.getItem(getUserScopedKey("panga-categories-global"));
       if (stored) {
         setCustomCategories(JSON.parse(stored));
       }
@@ -784,7 +785,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   function saveCustomCategories(cats: { id: string; label: string }[]) {
     setCustomCategories(cats);
     try {
-      localStorage.setItem("panga-categories-global", JSON.stringify(cats));
+       localStorage.setItem(getUserScopedKey("panga-categories-global"), JSON.stringify(cats));
     } catch {}
   }
 
@@ -878,15 +879,15 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   // Load custom subcategories from global storage on mount (migrating any legacy per-project ones)
   useEffect(() => {
     try {
-      const globalStored = localStorage.getItem("panga-subcategories-global");
-      if (globalStored) {
-        setCustomSubcategories(JSON.parse(globalStored));
-      } else {
-        const legacyStored = localStorage.getItem(`panga-subcategories-${projectId}`);
-        if (legacyStored) {
-          const parsed = JSON.parse(legacyStored);
-          setCustomSubcategories(parsed);
-          localStorage.setItem("panga-subcategories-global", JSON.stringify(parsed));
+       const globalStored = localStorage.getItem(getUserScopedKey("panga-subcategories-global"));
+       if (globalStored) {
+         setCustomSubcategories(JSON.parse(globalStored));
+       } else {
+         const legacyStored = localStorage.getItem(`panga-subcategories-${projectId}`);
+         if (legacyStored) {
+           const parsed = JSON.parse(legacyStored);
+           setCustomSubcategories(parsed);
+           localStorage.setItem(getUserScopedKey("panga-subcategories-global"), JSON.stringify(parsed));
         }
       }
     } catch {}
@@ -895,7 +896,7 @@ function ResourcesTab({ projectId }: { projectId: string }) {
   // Save custom subcategories to global storage
   useEffect(() => {
     if (Object.keys(customSubcategories).length > 0) {
-      localStorage.setItem("panga-subcategories-global", JSON.stringify(customSubcategories));
+       localStorage.setItem(getUserScopedKey("panga-subcategories-global"), JSON.stringify(customSubcategories));
     }
   }, [customSubcategories]);
 
