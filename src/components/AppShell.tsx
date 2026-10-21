@@ -5,6 +5,7 @@ import AssistantPanel from "./AssistantPanel";
 import ThoughtTrain from "./ThoughtTrain";
 import { ToastContainer, ConfirmDialogHost } from "./ui";
 import { SyncMenu, AutoSyncIndicator } from "./SyncMenu";
+import InstallButton from "./InstallButton";
 import { subscribeAutoSync, startAutoSync, type AutoSyncState } from "../sync/autoSync";
 import StashPanel from "./Stash";
 import { getSessionEmail, isGuest, logout } from "../auth/session";
@@ -58,6 +59,7 @@ export default function AppShell() {
         </span>
         <SyncMenu />
         <AutoSyncIndicator state={autoState} />
+        <InstallButton />
         <span
           className="offline-badge"
           style={{ color: online ? "var(--color-accent-resource)" : "var(--color-text-muted)" }}

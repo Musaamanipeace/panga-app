@@ -13,19 +13,30 @@ export default defineConfig({
         name: "Panga",
         short_name: "Panga",
         description: "Personal, offline-first project & resource planner.",
-        theme_color: "#1f2937",
+        theme_color: "#111111",
         background_color: "#ffffff",
         display: "standalone",
+        scope: "/",
         start_url: "/",
         icons: [
           { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "icons/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https?:\/\/([^/]+\.)*puter\.com(\/|$)/,
+            handler: "NetworkOnly",
+            options: {
+              cacheName: "puter-api",
+            },
+          },
+        ],
       },
-    }),
+    })
   ],
   server: {
     host: "0.0.0.0",
