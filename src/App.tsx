@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { registerSW } from "virtual:pwa-register";
 import Landing from "./pages/Landing";
 import Home from "./pages/Home";
 import ProjectView from "./pages/ProjectView";
@@ -36,23 +35,6 @@ function App() {
         }
       }
       setReady(true);
-    });
-
-    void registerSW({
-      onNeedRefresh() {
-        if (confirm("A new version is available. Reload to update?")) {
-          window.location.reload();
-        }
-      },
-      onOfflineReady() {
-        console.log("App ready for offline use");
-      },
-      onRegistered() {
-        console.log("PWA service worker registered");
-      },
-      onRegisterError(err) {
-        console.warn("PWA registration error:", err);
-      },
     });
 
     const handleFocus = () => {
