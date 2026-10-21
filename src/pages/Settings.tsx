@@ -25,6 +25,17 @@ import {
 import { syncAll } from "../sync/sync";
 import { enableAutoSync } from "../sync/autoSync";
 import {
+  isPuterAvailable,
+} from "../auth/puterAuth";
+import {
+  getPuterSyncState,
+  subscribePuterSync,
+  openPuterSignOut,
+  openPuterSignIn,
+  exportPuterCloud,
+  type PuterSyncState,
+} from "../sync/puterSync";
+import {
   connectGoogleDrive,
   disconnectGoogleDrive,
   isGoogleDriveConnected,
@@ -76,6 +87,11 @@ export default function Settings() {
   // File input ref for snapshot upload
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Puter auth state
+  const [puterState, setPuterState] = useState<PuterSyncState>(getPuterSyncState());
+  const [puterSigningOut, setPuterSigningOut] = useState(false);
+  const [puterError, setPuterError] = useState<string | null>(null);
+
   const loadSettings = useCallback(async () => {
     const key = await getGeminiApiKey();
     setGeminiKey(key ?? "");
@@ -106,6 +122,7 @@ export default function Settings() {
 
   useEffect(() => {
     void loadSettings();
+    return subscribePuterSync(setPuterState);
   }, [loadSettings]);
 
   async function saveGeminiKey(e: React.FormEvent) {
@@ -116,9 +133,28 @@ export default function Settings() {
     setTimeout(() => setGeminiStatus("idle"), 2500);
   }
 
+  async function handlePuterSignOut() {
+    setPuterSigningOut(true);
+    try {
+      await openPuterSignOut();
+      void window.location.reload();
+    } finally {
+      setPuterSigningOut(false);
+    }
+  }
+
+  // Sync all data to Puter cloud immediately
+  async function handlePuterSyncNow() {
+    const ok = await exportPuterCloud();
+    if (!ok) {
+      setPuterError("Sync failed. Check your Puter connection.");
+    }
+  }
+
   async function handleDownloadBackup() {
     setBackupLoading(true);
     setBackupStatus("saving");
+
     setBackupMessage("Preparing backup...");
     try {
       await downloadSnapshot();
@@ -781,6 +817,100 @@ export default function Settings() {
             {cloudSyncStatus === "error" && "✗ "}
             {cloudSyncMessage}
           </p>
+        )}
+      </section>
+
+      {/* § — Puter Cloud Sync */}
+      <section className="settings-section" style={{ borderLeft: "4px solid #6366f1" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Putter Cloud Sync</h2>
+            <p className="settings-help" style={{ margin: "4px 0 0 0" }}>
+              Save your workspace to your Puter cloud account. Access it on any device.
+            </p>
+          </div>
+          {puterState.phase === "unavailable" && (
+            <span className="chip-small" style={{ background: "#fee2e2", color: "#991b1b" }}>
+              SDK not loaded
+            </span>
+          )}
+          {puterState.phase === "signed-out" && (
+            <span className="chip-small" style={{ background: "#fef9c3", color: "#854d0e" }}>
+              Signed out
+            </span>
+          )}
+          {puterState.phase === "synced" && (
+            <span className="chip-small" style={{ background: "#dcfce7", color: "#166534", fontWeight: 600 }}>
+              Synced ✓
+            </span>
+          )}
+        </div>
+
+        {puterState.phase === "unavailable" && (
+          <p style={{ fontSize: "13px", color: "var(--color-text-muted)" }}>
+            The Puter.js SDK could not be loaded. Check your network connection or disable ad-blockers.
+          </p>
+        )}
+
+        {puterState.phase === "signed-out" && isPuterAvailable() && (
+          <button
+            type="button"
+            className="btn-primary btn-small clickable"
+            onClick={async () => {
+              const user = await openPuterSignIn();
+              if (user) window.location.reload();
+            }}
+          >
+            Sign in with Puter
+          </button>
+        )}
+
+        {puterState.user && puterState.phase !== "unavailable" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {puterState.user.avatar ? (
+                <img src={puterState.user.avatar} alt="" width={40} height={40} style={{ borderRadius: "50%" }} />
+              ) : (
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>
+                  {puterState.user.username?.slice(0, 2).toUpperCase() || "U"}
+                </div>
+              )}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: "14px" }}>{puterState.user.name || puterState.user.username}</div>
+                <div style={{ fontSize: "12px", color: "var(--color-text-muted)" }}>{puterState.user.email || puterState.user.username}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                disabled={puterState.phase === "syncing" || puterSigningOut}
+                onClick={() => void handlePuterSyncNow()}
+              >
+                {puterState.phase === "syncing" ? "Syncing…" : "Sync now"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                disabled={puterSigningOut}
+                style={{ color: "var(--color-accent-issue)" }}
+                onClick={() => void handlePuterSignOut()}
+              >
+                {puterSigningOut ? "Signing out…" : "Sign out"}
+              </button>
+            </div>
+            {puterState.lastSyncedAt && (
+              <p style={{ fontSize: "11px", color: "var(--color-text-muted)", margin: 0 }}>
+                Last synced: {new Date(puterState.lastSyncedAt).toLocaleString()}
+              </p>
+            )}
+            {puterState.phase === "error" && (
+              <p style={{ fontSize: "12px", color: "var(--color-accent-issue)", margin: 0 }}>{puterState.message}</p>
+            )}
+            {puterError && (
+              <p style={{ fontSize: "12px", color: "var(--color-accent-issue)", margin: 0 }}>{puterError}</p>
+            )}
+          </div>
         )}
       </section>
 

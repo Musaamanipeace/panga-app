@@ -8,6 +8,7 @@ import AppShell from "./components/AppShell";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
 import { restoreSession, canUseApp } from "./auth/session";
+import { initPuterSync } from "./sync/puterSync";
 import "./index.css";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -21,6 +22,11 @@ function App() {
   useEffect(() => {
     void restoreSession().then(async () => {
       await ensureSeedData();
+      try {
+        await initPuterSync();
+      } catch (e) {
+        console.warn("Puter sync init error:", e);
+      }
       if (canUseApp()) {
         try {
           await syncAll();

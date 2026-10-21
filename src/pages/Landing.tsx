@@ -2,12 +2,16 @@ import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession, getUserScopedKey, getSessionUserId } from "../auth/session";
 import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
+import { openPuterSignIn } from "../sync/puterSync";
+import { isPuterAvailable, getCachedPuterUser } from "../auth/puterAuth";
 
 export default function Landing() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [puterLoading, setPuterLoading] = useState(false);
+  const [puterError, setPuterError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [confirmStartAfresh, setConfirmStartAfresh] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -15,6 +19,22 @@ export default function Landing() {
   function reset() {
     setError(null);
     setSuccessNotice(null);
+  }
+
+  async function handlePuterSignIn() {
+    setPuterLoading(true);
+    setPuterError(null);
+    try {
+      const user = await openPuterSignIn();
+      if (user) {
+        setSuccessNotice("Signed in to Puter — syncing your workspace…");
+        setTimeout(() => navigate("/home"), 800);
+      }
+    } catch (e: any) {
+      setPuterError(e?.message || "Puter sign-in failed.");
+    } finally {
+      setPuterLoading(false);
+    }
   }
 
   async function handleStartAfreshClick() {
@@ -121,7 +141,7 @@ export default function Landing() {
         Local-first project &amp; resource planner for focused work in distracting places.
       </p>
       <p className="landing-sub">
-        Save progress on this device. Optionally sync with Google Drive.
+        Save progress on this device. Optionally sync with Puter or Google Drive.
         No forced account — start offline and go.
       </p>
 
@@ -197,7 +217,44 @@ export default function Landing() {
               </div>
             </div>
           )}
-        </div>
+         </div>
+
+        {/* --- Puter Cloud Sync --- */}
+        {isPuterAvailable() && !getCachedPuterUser() && (
+          <div
+            className="landing-puter-section"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              padding: "16px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700 }}>
+                Sync with Puter
+              </h2>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
+                Save your workspace to your Puter cloud account and access it on any device.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-primary btn-large blade-glint clickable"
+              disabled={puterLoading}
+              onClick={() => void handlePuterSignIn()}
+            >
+              {puterLoading ? "Signing in…" : "Sign in with Puter"}
+            </button>
+            {puterError && (
+              <p style={{ fontSize: "12px", color: "var(--color-accent-issue)", margin: 0 }}>
+                {puterError}
+              </p>
+            )}
+          </div>
+        )}
 
         <div
           className={`dropzone ${dragOver ? "dropzone-active" : ""}`}
@@ -226,25 +283,7 @@ export default function Landing() {
           />
         </div>
 
-        <p className="landing-or">or connect later in Settings → Backup &amp; Sync</p>
-
-        <a
-          href="/puter/index.html"
-          className="landing-puter-link"
-          style={{
-            display: "block",
-            textAlign: "center",
-            padding: "10px 14px",
-            fontSize: "13px",
-            color: "#4f46e5",
-            textDecoration: "none",
-            border: "1px solid #e2e8f0",
-            borderRadius: "var(--radius-sm)",
-            marginTop: 12,
-          }}
-        >
-          ↗ Try the Puter edition (sign in with Puter for cloud sync)
-        </a>
+        <p className="landing-or">or connect later in Settings → Cloud Sync</p>
       </div>
 
       {error && (
