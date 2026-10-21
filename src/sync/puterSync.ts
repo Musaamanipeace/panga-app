@@ -11,6 +11,7 @@ import { db, setSuppressChangeHooks } from "../data/db";
 import { exportDbState, importDbState } from "../data/db";
 import {
   isPuterAvailable,
+  waitForPuter,
   isPuterSignedIn,
   signInWithPuter,
   signOutOfPuter,
@@ -347,7 +348,8 @@ export function pollPuterAuth(intervalMs = 30_000): () => void {
  * Call once at app start. Detects existing Puter sign-in and sets up sync.
  */
 export async function initPuterSync() {
-  if (!isPuterAvailable()) {
+  const ready = await waitForPuter(3000);
+  if (!ready) {
     setState({ phase: "unavailable", message: "Puter SDK not loaded" });
     return;
   }

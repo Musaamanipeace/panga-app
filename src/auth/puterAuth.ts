@@ -14,6 +14,20 @@ export function isPuterAvailable(): boolean {
 }
 
 /**
+ * Wait for the Puter.js SDK to finish loading. Polls `window.puter` every 100ms.
+ * Resolves true if the SDK becomes available within `timeoutMs`, false otherwise.
+ */
+export async function waitForPuter(timeoutMs: number = 3000): Promise<boolean> {
+  if (isPuterAvailable()) return true;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (isPuterAvailable()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return isPuterAvailable();
+}
+
+/**
  * Is the user currently signed in to Puter *right now*?
  *
  * `puter.auth.isSignedIn()` is a cheap, synchronous check — it does NOT
