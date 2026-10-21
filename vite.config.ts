@@ -27,16 +27,12 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^https?:\/\/([^/]+\.)*puter\.com/],
-        runtimeCaching: [
-          {
-            urlPattern: /^https?:\/\/([^/]+\.)*puter\.com(\/|$)/,
-            handler: "NetworkOnly",
-            options: {
-              cacheName: "puter-api",
-            },
-          },
-        ],
+        // Never serve the SPA shell for the vanilla Puter edition or API routes.
+        navigateFallbackDenylist: [/^\/puter\//, /^\/api\//, /^\/health/],
+        // NOTE: no runtimeCaching for puter.com on purpose. Any route registered here
+        // makes the SW fetch() the request itself, and that fetch is governed by the
+        // SW's own CSP connect-src (not script-src) -> js.puter.com gets blocked.
+        // With no matching route, the browser loads cross-origin requests natively.
       },
     })
   ],
