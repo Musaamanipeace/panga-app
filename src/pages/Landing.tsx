@@ -12,6 +12,8 @@ export default function Landing() {
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [puterLoading, setPuterLoading] = useState(false);
   const [puterError, setPuterError] = useState<string | null>(null);
+  const [puterReady, setPuterReady] = useState<boolean>(() => isPuterAvailable());
+  const cachedPuterUser = getCachedPuterUser();
   const [dragOver, setDragOver] = useState(false);
   const [confirmStartAfresh, setConfirmStartAfresh] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -21,10 +23,32 @@ export default function Landing() {
     setSuccessNotice(null);
   }
 
+  // Re-inject the Puter SDK script if it failed to load (blocked, offline, stale SW...)
+  function loadPuterScript(): Promise<boolean> {
+    if (isPuterAvailable()) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const el = document.createElement("script");
+      el.src = "https://js.puter.com/v2/";
+      el.onload = () => resolve(isPuterAvailable());
+      el.onerror = () => resolve(false);
+      document.head.appendChild(el);
+    });
+  }
+
   async function handlePuterSignIn() {
     setPuterLoading(true);
     setPuterError(null);
     try {
+      if (!isPuterAvailable()) {
+        const ok = await loadPuterScript();
+        setPuterReady(ok);
+        if (!ok) {
+          setPuterError(
+            "Couldn't load the Puter SDK. Check your connection, disable ad-blockers for this site, then try again."
+          );
+          return;
+        }
+      }
       const user = await openPuterSignIn();
       if (user) {
         setSuccessNotice("Signed in to Puter — syncing your workspace…");
@@ -219,42 +243,51 @@ export default function Landing() {
           )}
          </div>
 
-        {/* --- Puter Cloud Sync --- */}
-        {isPuterAvailable() && !getCachedPuterUser() && (
-          <div
-            className="landing-puter-section"
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              padding: "16px",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius)",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700 }}>
-                Sync with Puter
-              </h2>
-              <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
-                Save your workspace to your Puter cloud account and access it on any device.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn-primary btn-large blade-glint clickable"
-              disabled={puterLoading}
-              onClick={() => void handlePuterSignIn()}
-            >
-              {puterLoading ? "Signing in…" : "Sign in with Puter"}
-            </button>
-            {puterError && (
-              <p style={{ fontSize: "12px", color: "var(--color-accent-issue)", margin: 0 }}>
-                {puterError}
-              </p>
-            )}
+        {/* --- Puter Cloud Sync (always visible) --- */}
+        <div
+          className="landing-puter-section"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            padding: "16px",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius)",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700 }}>
+              Sync with Puter
+            </h2>
+            <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
+              Save your workspace to your Puter cloud account and access it on any device.
+            </p>
           </div>
-        )}
+          <button
+            type="button"
+            className="btn-primary btn-large blade-glint clickable"
+            disabled={puterLoading}
+            onClick={() => void handlePuterSignIn()}
+          >
+            {puterLoading
+              ? "Signing in…"
+              : !puterReady
+              ? "Retry loading Puter"
+              : cachedPuterUser
+              ? `Continue as ${cachedPuterUser.name || cachedPuterUser.username}`
+              : "Sign in with Puter"}
+          </button>
+          {!puterReady && !puterError && (
+            <p style={{ fontSize: "12px", color: "var(--color-text-muted)", margin: 0, textAlign: "center" }}>
+              The Puter SDK hasn&apos;t loaded yet. Tap to retry.
+            </p>
+          )}
+          {puterError && (
+            <p style={{ fontSize: "12px", color: "var(--color-accent-issue)", margin: 0 }}>
+              {puterError}
+            </p>
+          )}
+        </div>
 
         <div
           className={`dropzone ${dragOver ? "dropzone-active" : ""}`}
