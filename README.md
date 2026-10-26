@@ -294,3 +294,63 @@ MIT License — feel free to use, modify, and distribute.
 - **Google Identity Services** — OAuth flow
 - **@google/genai** — Gemini AI SDK
 - **Web Crypto API** — AES-256-GCM credential encryption
+
+---
+
+## Voice Input
+
+Click into **any** text box or textarea and a small mic appears beside it (or press `Alt+Shift+M`). Speak, and the text is inserted **at your cursor**. It never replaces what you've already written: if text is selected, the dictation goes after it. Click into another field mid-dictation and it follows you. `Esc` stops.
+
+Choose how speech is recognised in **Settings → Voice Input**:
+
+| Engine | Works offline | Private | Notes |
+| --- | --- | --- | --- |
+| **On this device** (default) | Yes, after a one-time model download | Audio never leaves the device | Whisper runs in the browser. Text appears when you pause. Models: Tiny (English, ~40 MB), Base (~80 MB), Small (~260 MB, best for Swahili). |
+| **Browser speech recognition** | No | No: the browser vendor receives the audio | Live words as you speak. Chrome/Edge/Safari only. |
+| **Panga server** | No (needs the server) | Audio goes to *your* server | Appears only when `WHISPER_SERVER_URL` is set (see below). |
+
+Fields for passwords, e-mail, numbers, dates, and API keys/tokens are skipped automatically. Opt any field (or a whole section) out with a `data-no-voice` attribute.
+
+**How it works:** `src/voice/` contains one global `VoiceProvider` (mounted in `App.tsx`), caret-safe insertion (`insertText.ts`), a voice-activity detector (`audio.ts`), and three interchangeable engines (`engines/`). New inputs get dictation automatically; no per-field code is needed.
+
+**Model hosting:** model files download from huggingface.co the first time they are needed and are then cached by the browser. To use your own mirror, build with `VITE_MODEL_HOST=https://your-host/` (and allow it in the CSP `connect-src`). The WebAssembly runtime is self-hosted from `/ort/` (copied from `node_modules` by `scripts/copy-ort.mjs` before `dev`/`build`).
+
+**Optional self-hosted transcription:** set `WHISPER_SERVER_URL` (and optionally `WHISPER_SERVER_MODEL`) to any OpenAI-compatible `/v1/audio/transcriptions` server. The Express server exposes it to the app through `POST /api/transcribe`.
+
+---
+
+## Installing Panga as an app (PWA)
+
+Panga is an installable, offline-capable web app. An **Install app** button appears on the landing page, in the app header, and in **Settings → Install & Offline**. Where the browser supports one-tap install, the button triggers it; elsewhere it shows step-by-step instructions (iOS: Share → Add to Home Screen; Safari on Mac: File → Add to Dock; Firefox desktop cannot install web apps).
+
+Requirements and testing:
+
+- Production must be served over **HTTPS** (`http://localhost` also counts as secure).
+- `npm run dev` has the service worker off. To test installing locally use either `npm run build && npm start`, or `npm run dev:pwa`.
+- Installed apps run on the engine of the browser that installed them (WebKit on iOS).
+
+---
+
+## Docker
+
+```bash
+docker compose up --build     # http://localhost:3000
+```
+
+The `Dockerfile` is multi-stage (deps, build, production-only deps, runtime). The final image has no build tools or sources, runs as a non-root user, and has a `HEALTHCHECK` on `/health`. Your pipeline still just runs `docker build .`; BuildKit caches the dependency layers. Build with `--target test` to run the unit tests as part of the image build.
+
+Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `SENDGRID_API_KEY`, `WHISPER_SERVER_URL`, `WHISPER_SERVER_MODEL`.
+
+`.github/workflows/ci.yml` is a template that lints, tests, builds, and publishes the image to GHCR on pushes to `main`.
+
+> The speech library pulls in `onnxruntime-node`, whose install script downloads server binaries Panga never uses. Set `ONNXRUNTIME_NODE_INSTALL=skip` when installing (the Dockerfile, CI workflow, and `vercel.json` already do).
+
+### Deployment note
+
+`vercel.json` deploys only the static app. The Express routes (`/api/assistant/chat`, `/api/backup/email`, `/api/transcribe`, `/health`) need the Node server (e.g. the Docker image) and do not run on Vercel as configured, because this repo has no Vercel serverless functions.
+
+## Tests
+
+```bash
+npm test     # caret-safe insertion, voice-activity detection, provider behaviour, install logic
+```

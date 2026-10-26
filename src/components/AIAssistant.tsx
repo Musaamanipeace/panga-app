@@ -1,5 +1,4 @@
 import { useState } from "react";
-import MicButton from "./MicButton";
 import { newId } from "../data/utils";
 
 interface Message {
@@ -67,7 +66,6 @@ export default function AIAssistant() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
-            <MicButton onResult={setInput} />
             <button type="submit" className="btn-primary">Send</button>
           </form>
         </div>

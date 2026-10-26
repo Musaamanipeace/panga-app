@@ -17,7 +17,6 @@ import { createInsight } from "../data/insights";
 import { createResource } from "../data/resources";
 import { db } from "../data/db";
 import { newId } from "../data/utils";
-import MicButton from "../components/MicButton";
 import { useAsync } from "../components/ui";
 import { getUserScopedKey } from "../auth/session";
 
@@ -532,7 +531,6 @@ ${milestoneList || "None"}
                         disabled={composing}
                         aria-label="Your message"
                       />
-                      <MicButton onResult={setText} />
                     </div>
                     <button type="submit" className="btn-primary clickable" disabled={composing || !text.trim()}>
                       {composing ? "Thinking..." : "Send"}

@@ -23,6 +23,8 @@ import {
   type Snapshot,
 } from "../sync/snapshot";
 import { syncAll } from "../sync/sync";
+import VoiceSettings from "../voice/VoiceSettings";
+import InstallSettings from "../components/InstallSettings";
 import { enableAutoSync } from "../sync/autoSync";
 import {
   isPuterAvailable,
@@ -568,7 +570,7 @@ export default function Settings() {
       </section>
 
       {/* §2 — Gemini API key */}
-      <section className="settings-section">
+      <section className="settings-section" data-no-voice>
         <h2>Gemini API Key (AI Assistant & Scheduler)</h2>
         <p className="settings-help">
           Used by the AI Assistant chat and natural language planning. Get a free key from{" "}
@@ -596,8 +598,13 @@ export default function Settings() {
         )}
       </section>
 
+      {/* Voice input + install (new) */}
+      <VoiceSettings />
+      <InstallSettings />
+
       {/* §3 — Multi-Cloud Backup & Sync */}
       <section
+        data-no-voice
         className="settings-section"
         style={{
           borderLeft: `4px solid ${
@@ -821,7 +828,7 @@ export default function Settings() {
       </section>
 
       {/* § — Puter Cloud Sync */}
-      <section className="settings-section" style={{ borderLeft: "4px solid #6366f1" }}>
+      <section className="settings-section" data-no-voice style={{ borderLeft: "4px solid #6366f1" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <h2 style={{ margin: 0 }}>Putter Cloud Sync</h2>

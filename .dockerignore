@@ -1,0 +1,18 @@
+node_modules
+dist
+.git
+.github
+.env
+.env.*
+!.env.example
+.vscode
+.idea
+.DS_Store
+*.log
+# regenerated inside the image by `npm run build` (scripts/copy-ort.mjs)
+public/ort
+# local test scripts and notes are not part of the image
+test-*.mjs
+Dockerfile
+docker-compose.yml
+.dockerignore

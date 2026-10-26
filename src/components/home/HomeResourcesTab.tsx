@@ -12,7 +12,6 @@ import {
   type ResourceListItem,
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
-import MicButton from "../../components/MicButton";
 import { getUserScopedKey } from "../../auth/session";
 import { copyToClipboard, confirmDelete, CopyButton } from "../../components/ui";
 import { newId } from "../../data/utils";
@@ -409,7 +408,6 @@ export default function HomeResourcesTab() {
                 required
                 autoFocus
               />
-              <MicButton onResult={setTitle} />
             </div>
           </div>
 
@@ -448,9 +446,6 @@ export default function HomeResourcesTab() {
                 rows={4}
                 data-tip="Resource body"
               />
-              <div style={{ marginTop: 4 }}>
-                <MicButton onResult={setBody} />
-              </div>
              </div>
            )}
 

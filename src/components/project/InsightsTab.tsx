@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAsync, confirmDelete } from "../../components/ui.tsx";
 import { listInsights, createInsight, updateInsight, deleteInsight, type InsightType } from "../../data/insights.ts";
 import { ErrorNote, Loading, StatusLabel, Editable } from "../../components/ui.tsx";
-import MicButton from "../../components/MicButton.tsx";
 
 const INSIGHT_TYPES: { value: InsightType; label: string; placeholder: string }[] = [
   { value: "note", label: "Note", placeholder: "Write your insight..." },
@@ -141,7 +140,6 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               />
-              <MicButton onResult={(newValue) => setFormData((prev) => ({ ...prev, title: newValue }))} />
             </div>
           </div>
 

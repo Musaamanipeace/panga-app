@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import MicButton from "./MicButton";
 import { confirmDelete } from "./ui";
 import { listThoughts, addThought, deleteThought, type ThoughtEntry } from "../data/thoughts";
 
@@ -86,9 +85,6 @@ export default function ThoughtTrain({ open, onClose }: Props) {
             >
               Add
             </button>
-            <MicButton
-              onResult={setDraft}
-            />
           </div>
         </div>
 

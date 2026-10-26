@@ -4,7 +4,6 @@ import { listProjects, createProject, getProjectTaskStats } from "../data/projec
 import { getDashboardAlerts, getDashboardSummary, type Alert, type DashboardSummary } from "../data/dashboard";
 import type { Project } from "../data/db";
 import ProjectCard from "../components/ProjectCard";
-import MicButton from "../components/MicButton";
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -175,7 +174,6 @@ export default function Dashboard() {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                 />
-                <MicButton onResult={setNewName} />
               </div>
               <button type="submit" className="btn-primary clickable">+ Add project</button>
             </form>

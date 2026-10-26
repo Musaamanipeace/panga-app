@@ -11,7 +11,6 @@ import {
   type Contact,
 } from "../../data/contacts";
 import { listAllProjects } from "../../data/projects";
-import MicButton from "../../components/MicButton";
 import { Editable, ErrorNote, Loading, StatusLabel, useAsync, confirmDelete } from "../../components/ui";
 
 export default function HomeContactsTab() {
@@ -106,7 +105,6 @@ export default function HomeContactsTab() {
                 required
                 autoFocus
               />
-              <MicButton onResult={setNewName} />
             </div>
           </div>
 

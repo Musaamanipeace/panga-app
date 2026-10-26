@@ -7,7 +7,6 @@ import { createMilestone } from "../data/milestones";
 import { createIssue, type IssueSeverity } from "../data/issues";
 import { createLocalEvent } from "../data/calendar";
 import { showToast } from "./ui";
-import MicButton from "./MicButton";
 import { newId } from "../data/utils";
 import { getUserScopedKey } from "../auth/session";
 
@@ -399,10 +398,6 @@ export default function QuickAddResourceModal({
                 required
                 style={{ flex: 1, padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--color-border)" }}
               />
-              <MicButton
-                targetRef={titleInputRef}
-                onResult={setTitle}
-              />
             </div>
           </div>
 
@@ -525,12 +520,6 @@ export default function QuickAddResourceModal({
               onChange={(e) => setBody(e.target.value)}
               style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--color-border)", resize: "vertical" }}
             />
-            <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end" }}>
-              <MicButton
-                targetRef={bodyTextareaRef}
-                onResult={setBody}
-              />
-            </div>
           </div>
 
           {/* Action Buttons */}

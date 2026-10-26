@@ -5,6 +5,7 @@ import Home from "./pages/Home";
 import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
+import VoiceProvider from "./voice/VoiceProvider";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
 import { restoreSession, canUseApp } from "./auth/session";
@@ -69,6 +70,7 @@ function App() {
   }
 
   return (
+    <VoiceProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -86,6 +88,7 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </VoiceProvider>
   );
 }
 

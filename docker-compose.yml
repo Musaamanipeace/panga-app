@@ -1,0 +1,31 @@
+# Run Panga in a container:   docker compose up --build
+# Then open http://localhost:3000
+#
+# Note: browsers only offer "Install app" on https:// or http://localhost.
+# Behind a real domain, put a TLS-terminating proxy (Caddy, Traefik, nginx, or
+# your platform's built-in HTTPS) in front of this service.
+services:
+  panga:
+    build: .
+    image: panga-app:local
+    ports:
+      - "3000:3000"
+    environment:
+      # All optional. Users can also enter their own keys in Settings.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      # Optional self-hosted speech-to-text for the "Panga server" voice engine.
+      # Any OpenAI-compatible /v1/audio/transcriptions server works.
+      WHISPER_SERVER_URL: ${WHISPER_SERVER_URL:-}
+      WHISPER_SERVER_MODEL: ${WHISPER_SERVER_MODEL:-whisper-1}
+    restart: unless-stopped
+
+  # Example Whisper backend (disabled unless you run `--profile whisper`).
+  # Replace the image with the OpenAI-compatible Whisper server you prefer and
+  # check its docs for the right image name/tag and model settings, then set
+  # WHISPER_SERVER_URL=http://whisper:8000 for the panga service above.
+  # whisper:
+  #   profiles: ["whisper"]
+  #   image: <your-openai-compatible-whisper-server-image>
+  #   ports: ["8000:8000"]

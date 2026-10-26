@@ -12,7 +12,6 @@ import { db, type Project } from "../data/db";
 import { newId, now } from "../data/utils";
 import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
-import MicButton from "../components/MicButton";
 import { getUserScopedKey } from "../auth/session";
 import { showToast, CopyButton, confirmDelete } from "../components/ui";
 import InsightsTab from "../components/project/InsightsTab";
@@ -440,7 +439,6 @@ function DocumentationTab({ projectId }: { projectId: string }) {
               onChange={(e) => setNewTitle(e.target.value)}
               required
             />
-            <MicButton onResult={setNewTitle} />
           </div>
         </div>
 
@@ -452,9 +450,6 @@ function DocumentationTab({ projectId }: { projectId: string }) {
             onChange={(e) => setNewContent(e.target.value)}
             rows={4}
           />
-          <div style={{ marginTop: 4 }}>
-            <MicButton onResult={setNewContent} />
-          </div>
         </div>
 
         <div className="field" style={{ flexBasis: "100%" }}>
@@ -605,14 +600,6 @@ function DocEntryCard({
           triggerAutosave(title, e.target.value);
         }}
       />
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-        <MicButton
-          onResult={(newValue) => {
-            setContent(newValue);
-            triggerAutosave(title, newValue);
-          }}
-        />
-      </div>
     </div>
   );
 }
@@ -674,7 +661,6 @@ function TasksTab({ projectId, onChange }: { projectId: string; onChange: () => 
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
         />
-        <MicButton onResult={setNewTitle} />
         <button type="submit" className="btn-primary clickable">+ Add task</button>
       </form>
 
@@ -1188,7 +1174,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               required
               data-tip="Title"
             />
-            <MicButton onResult={setTitle} />
           </div>
         </div>
 
@@ -1334,9 +1319,6 @@ function ResourcesTab({ projectId }: { projectId: string }) {
               rows={3}
               data-tip="Resource body and notes"
             />
-            <div style={{ marginTop: 4 }}>
-              <MicButton onResult={setBody} />
-            </div>
           </div>
         )}
 
@@ -1800,7 +1782,6 @@ function MilestonesTab({ projectId }: { projectId: string }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
-          <MicButton onResult={setTitle} />
         </div>
         <div className="field" style={{ flexBasis: "100%" }}>
           <label>Description</label>
@@ -2009,7 +1990,6 @@ function IssuesTab({ projectId }: { projectId: string }) {
         <div className="field" style={{ flexBasis: "100%" }}>
           <label>Title</label>
           <input type="text" placeholder="New issue / setback..." value={title} onChange={(e) => setTitle(e.target.value)} />
-          <MicButton onResult={setTitle} />
         </div>
         <div className="field" style={{ flexBasis: "100%" }}>
           <label>Description</label>
@@ -2239,7 +2219,6 @@ function RemindersTab({ projectId }: { projectId: string }) {
     <div>
       <form className="resource-form" onSubmit={addReminder}>
         <input type="text" placeholder="Reminder message..." value={message} onChange={(e) => setMessage(e.target.value)} />
-        <MicButton onResult={setMessage} />
         <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} data-tip="When this reminder should fire" />
         <button type="submit" className="btn-primary clickable">+ Set reminder</button>
       </form>

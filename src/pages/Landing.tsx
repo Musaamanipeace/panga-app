@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import InstallButton from "../components/InstallButton";
 import { useNavigate } from "react-router-dom";
 import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession, getUserScopedKey, getSessionUserId } from "../auth/session";
 import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
@@ -168,6 +169,9 @@ export default function Landing() {
         Save progress on this device. Optionally sync with Puter or Google Drive.
         No forced account — start offline and go.
       </p>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+        <InstallButton variant="large" />
+      </div>
 
       <div className="landing-actions">
         {/* Section: Continue Offline */}

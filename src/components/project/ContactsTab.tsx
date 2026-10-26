@@ -10,7 +10,6 @@ import {
   linkedProjectIds,
   type Contact,
 } from "../../data/contacts";
-import MicButton from "../../components/MicButton";
 import { Editable, ErrorNote, Loading, StatusLabel, useAsync, confirmDelete } from "../../components/ui";
 
 export default function ContactsTab({ projectId }: { projectId: string }) {
@@ -219,7 +218,6 @@ function AddContactForm({ projectId, onCreated }: { projectId: string; onCreated
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <MicButton onResult={setName} />
         </div>
       </div>
       <div className="field">

@@ -9,7 +9,6 @@ import {
   type ResourceProvider,
 } from "../../data/resources";
 import { listAllProjects } from "../../data/projects";
-import MicButton from "../../components/MicButton";
 import { copyToClipboard, confirmDelete } from "../../components/ui";
 
 export default function HomeLinksTab() {
@@ -373,7 +372,6 @@ export default function HomeLinksTab() {
                 onChange={(e) => setTitle(e.target.value)}
                 style={{ padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
               />
-              <MicButton onResult={setTitle} />
             </div>
             <span style={{ fontSize: "11px", color: "var(--color-text-muted)", display: "block", marginTop: "3px" }}>
               Give the link a human-friendly name. If left blank, the website domain is used.
@@ -393,9 +391,6 @@ export default function HomeLinksTab() {
               onChange={(e) => setDescription(e.target.value)}
               style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
             />
-            <div style={{ marginTop: "4px" }}>
-              <MicButton onResult={setDescription} />
-            </div>
           </div>
 
           {/* Tags */}
