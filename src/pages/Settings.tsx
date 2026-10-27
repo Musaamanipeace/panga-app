@@ -46,10 +46,6 @@ import {
   isSupabaseConfigured,
 } from "../data/supabase";
 
-const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
-  google_drive: "Google Drive",
-};
-
 const AI_PROVIDER_OPTIONS: { id: AIProviderId; label: string; hint: string }[] = [
   { id: "openrouter", label: "OpenRouter", hint: "Best free + paid (live model list)" },
   { id: "gemini", label: "Google Gemini", hint: "Free tier available" },
@@ -64,7 +60,7 @@ export default function Settings() {
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
 
-  const [activeProvider, setActiveProviderState] = useState<CloudSyncProvider>("google_drive");
+  const [, setActiveProviderState] = useState<CloudSyncProvider>("google_drive");
   const [lastSync, setLastSync] = useState<LastSyncInfo | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [cloudSyncMessage, setCloudSyncMessage] = useState("");

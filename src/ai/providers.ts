@@ -43,7 +43,7 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderConfig> = {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     listModelsUrl: "https://generativelanguage.googleapis.com/v1beta/models",
     supportsFreeModels: true, // free tier models appear in the list
-    authHeader: (key) => ({}), // key is query param for Gemini
+    authHeader: (_key) => ({}), // key is query param for Gemini
     openaiCompatible: false,
   },
   openai: {

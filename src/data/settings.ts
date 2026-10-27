@@ -134,7 +134,7 @@ export async function setAIModel(provider: AIProviderId, model: string): Promise
 
 // Keep Gemini helpers for backward compatibility
 export async function getGeminiApiKey(): Promise<string | null> {
-  return (await getAIApiKey("gemini")) ?? (await getSetting<string>("geminiApiKey"));
+  return (await getAIApiKey("gemini")) ?? (await getSetting<string>("geminiApiKey")) ?? null;
 }
 export async function setGeminiApiKey(key: string): Promise<void> {
   await setAIApiKey("gemini", key);
