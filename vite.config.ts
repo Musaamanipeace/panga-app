@@ -60,9 +60,7 @@ export default defineConfig({
         navigateFallback: "index.html",
         // Never serve the SPA shell for the vanilla Puter edition or API routes.
         navigateFallbackDenylist: [/^\/puter\//, /^\/api\//, /^\/health/, /^\/ort\//],
-        // NOTE: no runtimeCaching for puter.com on purpose. Any route registered here
         // makes the SW fetch() the request itself, and that fetch is governed by the
-        // SW's own CSP connect-src (not script-src) -> js.puter.com gets blocked.
         // With no matching route, the browser loads cross-origin requests natively.
         //
         // The one route below is SAME-ORIGIN only (our self-hosted speech runtime),

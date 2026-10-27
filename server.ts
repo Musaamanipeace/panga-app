@@ -19,7 +19,7 @@ app.use((_req, res, next) => {
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://js.puter.com https://cdn.resend.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://api.github.com https://api.resend.com https://api.sendgrid.com https://puter.com https://*.puter.com wss://puter.com wss://*.puter.com https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; frame-src https://accounts.google.com https://puter.com https://*.puter.com; worker-src 'self'; manifest-src 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com ; style-src 'self' 'unsafe-inline' https://accounts.google.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://api.openai.com https://api.anthropic.com https://api.x.ai https://generativelanguage.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; frame-src https://accounts.google.com; worker-src 'self'; manifest-src 'self';"
   );
   next();
 });
@@ -149,106 +149,7 @@ app.post("/api/assistant/chat", rateLimit, async (req, res) => {
   }
 });
 
-// Email backup route (rate-limited, validates email format)
-app.post("/api/backup/email", rateLimit, async (req, res) => {
-  try {
-    const { email, snapshot, apiKey: clientApiKey, provider = "resend" } = req.body;
-
-    if (!email || !email.includes("@")) {
-      return res.status(400).json({ error: "Valid email address is required" });
-    }
-
-    if (!snapshot) {
-      return res.status(400).json({ error: "Snapshot data is required" });
-    }
-
-    const timestamp = new Date().toISOString().slice(0, 12);
-    const filename = `panga-backup-${timestamp}.json`;
-    const jsonContent = JSON.stringify(snapshot, null, 2);
-
-    const html = `
-      <div style="font-family: system-ui, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: #1f2937; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 20px;">📦 Panga Backup</h1>
-        </div>
-        <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-          <p>Your Panga data backup is attached as <strong>${filename}</strong>.</p>
-          <p>Exported on: ${new Date().toLocaleString()}</p>
-          <p style="color: #6b7280; font-size: 14px;">
-            This file contains all your projects, tasks, resources, notes, milestones, reminders, and settings.
-            Restore anytime in Panga Settings → <strong>Upload Snapshot</strong>.
-          </p>
-        </div>
-      </div>
-    `;
-
-    const resendKey = clientApiKey || process.env.RESEND_API_KEY;
-    const sendgridKey = clientApiKey || process.env.SENDGRID_API_KEY;
-
-    if (provider === "resend" && resendKey) {
-      const emailRes = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: process.env.RESEND_FROM_EMAIL || "Panga <onboarding@resend.dev>",
-          to: [email],
-          subject: `Panga Backup - ${timestamp}`,
-          html,
-          attachments: [{
-            filename,
-            content: Buffer.from(jsonContent).toString("base64"),
-          }],
-        }),
-      });
-      if (emailRes.ok) {
-        return res.json({ ok: true, message: `Backup sent successfully to ${email}` });
-      }
-      const errData = await emailRes.json().catch(() => ({}));
-      return res.status(400).json({ error: `Resend error: ${errData.message || JSON.stringify(errData)}` });
-    }
-
-    if (provider === "sendgrid" && sendgridKey) {
-      const emailRes = await fetch("https://api.sendgrid.com/v3/mail/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${sendgridKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email }] }],
-          from: { email: process.env.SENDGRID_FROM_EMAIL || "noreply@panga.app" },
-          subject: `Panga Backup - ${timestamp}`,
-          content: [{ type: "text/html", value: html }],
-          attachments: [{
-            content: Buffer.from(jsonContent).toString("base64"),
-            filename,
-            type: "application/json",
-            disposition: "attachment",
-          }],
-        }),
-      });
-      if (emailRes.ok) {
-        return res.json({ ok: true, message: `Backup sent successfully to ${email}` });
-      }
-      return res.status(400).json({ error: "SendGrid rejected the email dispatch. Check your API key." });
-    }
-
-    return res.status(400).json({
-      error: "No email API key found. Enter your free API key from Resend (resend.com) in Settings, or use 'Download Snapshot' for an instant local backup.",
-    });
-  } catch (error: any) {
-    console.error("Email backup error:", error);
-    res.status(500).json({ error: error?.message || "Failed to send backup email" });
-  }
-});
-
 async function start() {
-  // Serve the Puter edition (vanilla JS + puter.js) on /puter/
-  app.use("/puter", express.static(path.resolve(__dirname, "puter")));
-
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({

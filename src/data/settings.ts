@@ -79,32 +79,6 @@ export async function clearGoogleAccessToken(): Promise<void> {
   await setSetting("googleAccessToken", null);
 }
 
-// Gemini API Key (Saved locally in Dexie)
-export async function getGeminiApiKey(): Promise<string | null> {
-  return (await getSetting<string>("geminiApiKey")) ?? null;
-}
-
-export async function setGeminiApiKey(key: string): Promise<void> {
-  await setSetting("geminiApiKey", key);
-}
-
-// Email Backup API Key (Saved locally in Dexie per user)
-export async function getEmailBackupApiKey(): Promise<string | null> {
-  return (await getSetting<string>("emailBackupApiKey")) ?? null;
-}
-
-export async function setEmailBackupApiKey(key: string): Promise<void> {
-  await setSetting("emailBackupApiKey", key);
-}
-
-export async function getEmailBackupProvider(): Promise<string> {
-  return (await getSetting<string>("emailBackupProvider")) ?? "resend";
-}
-
-export async function setEmailBackupProvider(provider: string): Promise<void> {
-  await setSetting("emailBackupProvider", provider);
-}
-
 // Multi-cloud Sync Provider Settings
 export type CloudSyncProvider = "google_drive";
 
@@ -131,3 +105,38 @@ export async function setLastSyncInfo(info: LastSyncInfo): Promise<void> {
   await setSetting("lastCloudSyncInfo", info);
 }
 
+
+// ---------------------------------------------------------------------------
+// AI multi-provider settings
+// ---------------------------------------------------------------------------
+export type AIProviderId = "gemini" | "openai" | "anthropic" | "xai" | "openrouter" | "groq";
+
+export async function getAIProvider(): Promise<AIProviderId> {
+  return (await getSetting<AIProviderId>("aiProvider")) ?? "openrouter";
+}
+export async function setAIProvider(p: AIProviderId): Promise<void> {
+  await setSetting("aiProvider", p);
+}
+
+export async function getAIApiKey(provider: AIProviderId): Promise<string | null> {
+  return (await getSetting<string>(`aiApiKey_${provider}`)) ?? null;
+}
+export async function setAIApiKey(provider: AIProviderId, key: string): Promise<void> {
+  await setSetting(`aiApiKey_${provider}`, key);
+}
+
+export async function getAIModel(provider: AIProviderId): Promise<string | null> {
+  return (await getSetting<string>(`aiModel_${provider}`)) ?? null;
+}
+export async function setAIModel(provider: AIProviderId, model: string): Promise<void> {
+  await setSetting(`aiModel_${provider}`, model);
+}
+
+// Keep Gemini helpers for backward compatibility
+export async function getGeminiApiKey(): Promise<string | null> {
+  return (await getAIApiKey("gemini")) ?? (await getSetting<string>("geminiApiKey"));
+}
+export async function setGeminiApiKey(key: string): Promise<void> {
+  await setAIApiKey("gemini", key);
+  await setSetting("geminiApiKey", key);
+}

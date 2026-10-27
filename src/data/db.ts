@@ -247,8 +247,6 @@ export const SETTINGS_KEYS = {
   googlePickerKey: "googlePickerKey",
   googleAccessToken: "googleAccessToken",
   driveFolderPrefix: "driveFolder:",
-  emailBackupApiKey: "emailBackupApiKey",
-  emailBackupProvider: "emailBackupProvider",
 } as const;
 
 // Derive a stable, per-user database name from the logged-in user ID.
@@ -642,7 +640,6 @@ export async function ensureSeedData() {
 
 export const SENSITIVE_SETTING_KEYS = new Set([
   "geminiApiKey",
-  "emailBackupApiKey",
   "googleAccessToken",
   "googleCalendarToken",
   "googlePickerKey",

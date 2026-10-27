@@ -354,3 +354,43 @@ Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `RESEND_API_KEY`
 ```bash
 npm test     # caret-safe insertion, voice-activity detection, provider behaviour, install logic
 ```
+
+---
+
+## 2026-10 update: Supabase + multi-model AI + Puter/email removal
+
+### Removed
+- **Puter** entirely (SDK, auth, sync, `/puter` static, Landing/Settings UI paths).
+- **Email backup** (Resend/SendGrid route, Settings UI, package `@emailjs/browser`).
+
+### Kept
+- **Google Drive** AppData sync (primary cloud backup option).
+- Local-first **Dexie / IndexedDB** as offline source of truth.
+
+### Added
+1. **Supabase / Postgres**
+   - Schema: `supabase/schema.sql` — tables for projects, tasks, resources, milestones, issues, contacts, reminders, calendar_events, insights, docs, conversations, messages, settings + RLS.
+   - Client: `src/data/supabase.ts` — configure via `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` or Settings.
+   - Architecture remains offline-first: Dexie is primary; Supabase is the standard remote Postgres for multi-device sync (wire full sync in a follow-up).
+
+2. **Multi-provider AI** (`src/ai/providers.ts`)
+   - Providers: Gemini, OpenAI, Anthropic (Claude), xAI (Grok), OpenRouter, Groq.
+   - **Free models are never hard-coded** — `fetchAvailableModels(provider, apiKey)` calls the provider’s live list endpoint.
+   - Settings helpers: `getAIProvider` / `setAIProvider`, `getAIApiKey` / `setAIApiKey`, `getAIModel` / `setAIModel`.
+
+### Recommended providers (enough free + paid options)
+
+| Goal | Provider | Why |
+|------|----------|-----|
+| **Best free tier + many models** | **OpenRouter** | Single key, 20+ free models (`:free` suffix), live `/models` list, also routes Gemini/Claude/Grok/OpenAI paid. |
+| **Fast free inference** | **Groq** | Very high tokens/s free tier; live model list. |
+| **Google free tier** | **Gemini** | Free tier via AI Studio key; list models dynamically. |
+| **Paid quality** | **Anthropic Claude**, **OpenAI**, **xAI Grok** | First-party; use when you want native features / best quality. |
+
+**Advice:** Use **OpenRouter** as the default switchable backend. Users paste one key and can pick any free or paid model from the live list. Fall back to direct Gemini / Claude / OpenAI / Grok keys when they prefer first-party billing or features.
+
+### Still TODO (Settings UI + full sync)
+- Settings.tsx still contains dead Puter/email state & handlers (imports removed; compile will fail until those UI blocks are deleted or rewritten). Clean the “Cloud Backup”, “Email backup”, and “Puter” sections and replace the Gemini-only key UI with the multi-provider picker + live model dropdown.
+- Wire `AssistantPanel` / server AI route to use `src/ai/providers.ts` instead of hard-coded `gemini-3.8-flash`.
+- Implement Dexie ↔ Supabase bidirectional sync (outbox + RLS already prepared).
+

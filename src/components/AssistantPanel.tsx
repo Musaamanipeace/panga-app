@@ -8,7 +8,7 @@ import {
   pruneExpiredConversations,
   type Message,
 } from "../data/conversations";
-import { getGeminiApiKey } from "../data/settings";
+import { chatCompletion } from "../ai/chat";
 import { listAllProjects, createProject } from "../data/projects";
 import { listAllTasks, createTask, updateTask, deleteTask } from "../data/tasks";
 import { createMilestone } from "../data/milestones";
@@ -140,57 +140,16 @@ ${milestoneList || "None"}
     messages.reload();
 
     try {
-      const clientApiKey = await getGeminiApiKey();
       const allMsgs = await listMessages(convId);
       const systemInstruction = await buildSystemInstruction();
-      const needsSearch = /\b(search|research|look up|find online|latest|what is|news)\b/i.test(userText);
 
-      const contents = allMsgs.map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.text }],
+      const chatMessages = allMsgs.map((m) => ({
+        role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+        content: m.text,
       }));
 
-      // Call server-side proxy route
-      let reply = "";
-      try {
-        const res = await fetch("/api/assistant/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents,
-            systemInstruction,
-            enableSearch: needsSearch,
-            clientApiKey: clientApiKey || undefined,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          reply = data.text ?? "";
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server responded with ${res.status}`);
-        }
-      } catch (serverErr) {
-        // Fallback to client-side direct call if client has custom API key
-        if (clientApiKey) {
-          const fallbackRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${clientApiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                system_instruction: { parts: [{ text: systemInstruction }] },
-                contents,
-              }),
-            }
-          );
-          const fallbackData = await fallbackRes.json();
-          reply = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-        } else {
-          throw serverErr;
-        }
-      }
+      const result = await chatCompletion(chatMessages, { system: systemInstruction });
+      const reply = result.text;
 
       if (!reply) throw new Error("Empty response received from the assistant.");
 

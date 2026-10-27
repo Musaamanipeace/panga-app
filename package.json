@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "tsc -b && vite build && cp -r puter dist/puter",
+    "build": "tsc -b && vite build",
     "start": "node server.ts",
     "lint": "oxlint",
     "preview": "vite preview",
@@ -15,8 +15,8 @@
     "dev:pwa": "VITE_PWA_DEV=true tsx server.ts"
   },
   "dependencies": {
-    "@emailjs/browser": "^4.4.1",
     "@google/genai": "^2.24.0",
+    "@supabase/supabase-js": "^2.49.1",
     "dexie": "^4.4.6",
     "express": "^5.2.1",
     "flexsearch": "^0.8.212",
