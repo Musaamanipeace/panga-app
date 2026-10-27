@@ -1,4 +1,4 @@
-# Panga - Local-First Project & Resource Planner bro
+# Panga - Local-First Project & Resource Planner bro bro
 
 Personal, offline-first project and resource planner with Gemini AI integration and optional Google Drive synchronization.
 
