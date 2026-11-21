@@ -2198,7 +2198,7 @@ function RemindersTab({ projectId: _projectId }: { projectId: string }) {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [_projectId]);
 
   async function addReminder(e: React.FormEvent) {
     e.preventDefault();

@@ -2,6 +2,7 @@
 import { db, type LinkFolder } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { LinkFolder };

@@ -2,13 +2,14 @@
 import { db, type Link } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
+import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { Link };
 
 export async function listLinks(folderId: string | null): Promise<Link[]> {
   if (!db.isOpen()) await db.open();
-  return db.links.where("folderId").equals(folderId).toArray();
+  return db.links.where("folderId").equals(folderId as unknown as string).toArray();
 }
 
 export async function listAllLinks(): Promise<Link[]> {
@@ -31,14 +32,14 @@ export async function createLink(input: {
 }): Promise<Link> {
   if (!db.isOpen()) await db.open();
   const t = now();
-  const siblings = await db.links.where("folderId").equals(input.folderId).toArray();
+  const siblings = await db.links.where("folderId").equals(input.folderId as unknown as string).toArray();
   const order = input.order ?? (siblings.length ? Math.max(...siblings.map((l) => l.order)) + 1 : 0);
   const link: Link = {
     id: newId(),
     folderId: input.folderId ?? null,
     title: input.title.trim(),
     url: input.url.trim(),
-    notes: input.notes ?? null,
+    notes: input.notes ?? undefined,
     tags: input.tags ?? [],
     order,
     createdAt: t,
@@ -47,7 +48,7 @@ export async function createLink(input: {
   };
   await db.links.add(link);
   void syncPushRecord("links", link);
-  void logActivity({ entityType: "link", entityId: link.id, folderId: link.folderId, action: "created", description: `Created link "${link.title}"` });
+  void logActivity({ entityType: "link", entityId: link.id, action: "created", description: `Created link "${link.title}"` });
   return link;
 }
 
@@ -70,7 +71,7 @@ export async function deleteLink(id: string): Promise<void> {
   void logActivity({ entityType: "link", entityId: id, action: "deleted", description: "Link deleted" });
 }
 
-export async function reorderLinks(folderId: string | null, orderedIds: string[]): Promise<void> {
+export async function reorderLinks(_folderId: string | null, orderedIds: string[]): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.transaction("rw", db.links, async () => {
     for (const [index, id] of orderedIds.entries()) {

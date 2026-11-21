@@ -672,7 +672,7 @@ class PangaDB extends Dexie {
                 syncStatus: "pending",
               });
             }
-            listId = listForProject.get(t.projectId);
+            listId = listForProject.get(t.projectId) ?? null;
           }
           await tx.table("tasks").where("id").equals(t.id).modify({
             listId,

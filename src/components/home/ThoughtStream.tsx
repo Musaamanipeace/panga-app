@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { addThought, deleteThought, listThoughts, updateThought, type ThoughtEntry } from "../../data/thoughts";
-import { createTask, listTaskLists, type TaskList } from "../../data/taskLists";
+import { createTask } from "../../data/tasks";
+import { listTaskLists, type TaskList } from "../../data/taskLists";
 import { confirmDelete, showToast } from "../ui";
 
 export const CAPTURE_INPUT_ID = "panga-capture-input";

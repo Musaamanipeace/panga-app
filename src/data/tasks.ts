@@ -1,11 +1,11 @@
 // src/data/tasks.ts
-import { db, type Task, type TaskStatus, type TaskHorizon } from "./db";
+import { db, type Task, type TaskStatus, type TaskHorizon, type SyncStatus } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
 import { recordTombstone } from "../sync/tombstones";
 
-export type { Task, TaskStatus };
+export type { Task, TaskStatus, TaskHorizon };
 
 export interface TaskNode {
   task: Task;
@@ -24,7 +24,7 @@ export async function listSubtasks(parentId: string): Promise<Task[]> {
 
 export async function listRootTasks(): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
-  return db.tasks.where("parentId").equals(null).toArray();
+  return db.tasks.where("parentId").equals(null as unknown as string).toArray();
 }
 
 export async function getTask(id: string): Promise<Task | undefined> {
@@ -54,7 +54,7 @@ export async function createTask(input: {
     ? await db.tasks.where("parentId").equals(input.parentId).toArray()
     : input.listId
       ? await db.tasks.where("listId").equals(input.listId).and((task) => task.parentId === null).toArray()
-      : await db.tasks.where("listId").equals(null).and((task) => task.parentId === null).toArray();
+      : await db.tasks.where("listId").equals(null as unknown as string).and((task) => task.parentId === null).toArray();
   const order = input.order ?? (siblings.length ? Math.max(...siblings.map((s) => s.order)) + 1 : 0);
   const task: Task = {
     id: newId(),
@@ -78,7 +78,7 @@ export async function createTask(input: {
   };
   await db.tasks.add(task);
   void syncPushRecord("tasks", task);
-  void logActivity({ entityType: "task", entityId: task.id, listId: task.listId, action: "created", description: `Created task "${task.title}"` });
+  void logActivity({ entityType: "task", entityId: task.id, action: "created", description: `Created task "${task.title}"` });
   return task;
 }
 
@@ -99,7 +99,7 @@ export async function updateTask(
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
-  const next = { ...changes, updatedAt, syncStatus: "pending" };
+  const next: Partial<Task> & { updatedAt: number; syncStatus: SyncStatus } = { ...changes, updatedAt, syncStatus: "pending" };
   if (changes.status !== undefined) next.completed = changes.status === "completed";
   if (changes.completed !== undefined) next.status = changes.completed ? "completed" : "active";
   await db.tasks.update(id, next);
@@ -138,7 +138,7 @@ export async function deleteTask(id: string): Promise<void> {
 
 export async function moveTask(taskId: string, changes: { listId?: string | null; parentId?: string | null }): Promise<void> {
   if (!db.isOpen()) await db.open();
-  const updates: Record<string, unknown> = { updatedAt: now(), syncStatus: "pending" };
+  const updates: Partial<Task> = { updatedAt: now(), syncStatus: "pending" };
   if (changes.listId !== undefined) updates.listId = changes.listId;
   if (changes.parentId !== undefined) updates.parentId = changes.parentId;
   await db.tasks.update(taskId, updates);
@@ -146,7 +146,7 @@ export async function moveTask(taskId: string, changes: { listId?: string | null
   if (updated) void syncPushRecord("tasks", updated);
 }
 
-export async function reorderTasks(scope: { listId?: string | null; parentId?: string | null }, orderedIds: string[]): Promise<void> {
+export async function reorderTasks(orderedIds: string[]): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.transaction("rw", db.tasks, async () => {
     for (const [index, id] of orderedIds.entries()) {
@@ -184,9 +184,14 @@ export async function getTaskTree(listId: string): Promise<TaskNode[]> {
   return roots;
 }
 
+export async function listAllTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.toArray();
+}
+
 export async function listAllActiveTasks(): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
-  return db.tasks.where("completed").equals(false).toArray();
+  return db.tasks.where("completed").equals(false as unknown as string).toArray();
 }
 
 // ---------- Legacy compatibility wrappers (project-based UI, retired) ----------

@@ -14,6 +14,10 @@ type Filter = ActivityEntityType | "all";
 const ENTITY_LABELS: Record<ActivityEntityType, string> = {
   project: "Projects",
   task: "Tasks",
+  taskList: "Task lists",
+  link: "Links",
+  linkFolder: "Link folders",
+  note: "Notes",
   resource: "Resources",
   docEntry: "Documentation",
   milestone: "Milestones",

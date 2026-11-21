@@ -67,7 +67,7 @@ describe("Panga home (smoke)", () => {
     await type(host.querySelector('input[placeholder^="Category"]') as HTMLInputElement, "Work");
     await click(byText("Save note"));
     expect(host.textContent).toContain("remember the meeting agenda");
-    expect(byText("Work")).toBeTruthy();
+    expect(byText("#Work", "span")).toBeTruthy();
   });
 
   it("saves pasted text into the Clipboard tab", async () => {

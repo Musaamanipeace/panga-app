@@ -15,7 +15,7 @@ import { createMilestone } from "../data/milestones";
 import { createReminder } from "../data/reminders";
 import { createInsight } from "../data/insights";
 import { createResource } from "../data/resources";
-import { db } from "../data/db";
+import { db, type Milestone, type Project, type Task } from "../data/db";
 import { newId } from "../data/utils";
 import { useAsync } from "../components/ui";
 import { getUserScopedKey } from "../auth/session";
@@ -68,7 +68,7 @@ export default function AssistantPanel() {
       listAllProjects(),
       listAllTasks(),
       db.milestones.toArray(),
-    ]);
+    ]) as [Project[], Task[], Milestone[]];
 
     const projList = projects
       .map((p) => `- Project "${p.name}" (id: ${p.id}): ${p.description || "no description"} [status: ${p.status}]`)

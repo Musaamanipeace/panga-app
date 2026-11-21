@@ -186,7 +186,7 @@ export default function HomeTasksTab() {
             </p>
           ) : (
             <ul className="item-list">
-              {filtered.map((task) => (
+              {filtered.map((task: Task) => (
                 <TaskRow
                   key={task.id}
                   task={task}

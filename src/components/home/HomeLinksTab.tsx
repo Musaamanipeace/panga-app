@@ -39,7 +39,7 @@ export default function HomeLinksTab() {
     setFolders(allFolders);
     const byFolder: Record<string, Link[]> = {};
     for (const link of allLinks) {
-      const key = link.folderId ?? null;
+      const key = link.folderId ?? "";
       if (!byFolder[key]) byFolder[key] = [];
       byFolder[key].push(link);
     }

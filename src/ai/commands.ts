@@ -2,7 +2,7 @@
 // Nothing runs until the user approves it. Deletes can be undone.
 import { chatCompletion } from "./chat";
 import { createTask, updateTask, deleteTask, getTask, restoreTask, listAllTasks } from "../data/tasks";
-import { listThoughts } from "../data/thoughts";
+import { listThoughts, type ThoughtEntry } from "../data/thoughts";
 import type { Task } from "../data/db";
 
 export type CommandType = "create_task" | "complete_task" | "update_task" | "delete_task";
@@ -83,7 +83,7 @@ export async function proposeCommands(prompt: string): Promise<{ message: string
   const [tasks, thoughts] = await Promise.all([listAllTasks(), listThoughts(15)]);
   const system = buildSystemPrompt(
     tasks,
-    thoughts.map((t) => (t.taskId ? `${t.text} (already a task)` : t.text))
+    thoughts.map((t: ThoughtEntry) => (t.taskId ? `${t.text} (already a task)` : t.text))
   );
   const res = await chatCompletion([{ role: "user", content: prompt }], { system });
   return parseCommands(res.text);

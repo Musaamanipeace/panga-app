@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { addClip, clearClips, listClips, removeClip } from "../../data/clips";
+import { addClip, clearClips, clipTitle, listClips, removeClip } from "../../data/clips";
 import { createResource, type Resource } from "../../data/resources";
 import { createTask } from "../../data/tasks";
 import { confirmAction, copyToClipboard, showToast } from "../ui";
@@ -112,7 +112,7 @@ export default function ClipboardPanel() {
                     type="button"
                     className="btn-secondary btn-small"
                     onClick={async () => {
-                      await createTask({ listId: null, title: clipTitle(c.body) });
+                      await createTask({ listId: null, title: clipTitle(c.body ?? "") });
                       showToast("Saved as a task", "success");
                     }}
                   >

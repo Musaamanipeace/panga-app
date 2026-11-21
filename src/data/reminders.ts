@@ -81,7 +81,6 @@ export function showReminderNotification(reminder: Reminder): void {
   new Notification(`Panga: ${reminder.message}`, {
     body: new Date(reminder.triggerAt).toLocaleString(),
     tag: `reminder-${reminder.id}`,
-    renotify: true,
   });
   playTone(reminder.toneId ?? null);
 }
@@ -117,11 +116,11 @@ export function stopReminderScheduler(): void {
 }
 
 export async function listReminders(): Promise<Reminder[]> {
-  return db.reminders.sortBy("triggerAt");
+  return db.reminders.toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
 }
 
 export async function listPendingReminders(): Promise<Reminder[]> {
-  return db.reminders.where("status").equals("pending").sortBy("triggerAt");
+  return db.reminders.where("status").equals("pending").toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
 }
 
 export function bucketReminders(reminders: Reminder[]): Record<ReminderBucket, Reminder[]> {
@@ -147,7 +146,7 @@ export async function createReminder(input: {
   const t = now();
   const reminder: Reminder = {
     id: newId(),
-    toneId: input.toneId ?? null,
+    toneId: input.toneId,
     linkedEntityType: input.linkedEntityType,
     linkedEntityId: input.linkedEntityId,
     message: input.message,
@@ -164,7 +163,7 @@ export async function createReminder(input: {
 
 export async function updateReminder(
   id: string,
-  changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId">>
+  changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status">>
 ): Promise<void> {
   await db.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
   const updated = await db.reminders.get(id);

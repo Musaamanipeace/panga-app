@@ -42,10 +42,8 @@ export async function getDashboardAlerts(limit = 10): Promise<Alert[]> {
         type: label === "overdue" ? "overdue_reminder" : "due_reminder",
         title: r.message,
         subtitle: `${label === "overdue" ? "Overdue" : "Due"} reminder`,
-        projectId: r.projectId,
-        routerLink: r.projectId
-          ? `/project/${r.projectId}?tab=Reminders`
-          : `/dashboard`,
+        projectId: null,
+        routerLink: "/dashboard",
       });
     }
   }
