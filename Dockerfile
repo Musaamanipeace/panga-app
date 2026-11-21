@@ -37,7 +37,6 @@ ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/puter ./puter
 COPY package.json server.ts ./
 USER node
 EXPOSE 3000
