@@ -33,13 +33,13 @@ RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
 # ---- 4. runtime image ------------------------------------------------------------
 FROM node:${NODE_VERSION}-alpine AS runtime
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=5173
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json server.ts ./
 USER node
-EXPOSE 3000
+EXPOSE 5173
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null || exit 1
 CMD ["node_modules/.bin/tsx", "server.ts"]

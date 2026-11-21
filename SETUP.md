@@ -22,10 +22,13 @@ You can also enter Google Client ID, Supabase URL/key, and **all AI keys** in th
 ## 3. Supabase (optional)
 
 1. Create a project at https://supabase.com  
-2. SQL Editor → paste and run `supabase/schema.sql`  
-3. Project Settings → API → copy URL + anon key into `.env` or Settings  
+2. SQL Editor → paste and run `supabase/schema.sql` then `supabase/panga_sync.sql`
+   - `schema.sql` creates `task_lists`, `tasks`, `link_folders`, `links`, `notes`, `reminders` (+ legacy tables) with `user_id` and RLS policies.
+   - `panga_sync.sql` creates `public.panga_records` (kind check extended to task/taskList/thought/note/link/linkFolder/reminder) with RLS.
+3. Authentication → Providers → Email: turn **Confirm email OFF** (usernames become `name@panga.invalid`, so no email is sent).
+4. Project Settings → API → copy URL + anon key into `.env` or Settings → Supabase.
 
-Local Dexie remains primary; Supabase is ready for multi-device Postgres sync.
+Local Dexie remains primary; Supabase is the multi-device sync + auth backend.
 
 ## 4. AI (recommended)
 
@@ -43,11 +46,13 @@ Local Dexie remains primary; Supabase is ready for multi-device Postgres sync.
 
 ## Removed in this package
 
+- Workspaces / projects from the primary UX (legacy tables kept readable for one release)
 - Puter (SDK, auth, sync, UI)
 - Email backup (Resend/SendGrid)
 
 ## Kept
 
 - Offline-first Dexie
-- Google Drive AppData sync
+- Google Drive AppData sync (legacy)
 - Local JSON snapshot download/upload
+- Supabase Auth + sync (task lists, nested tasks, link folders, links, notes, reminders)

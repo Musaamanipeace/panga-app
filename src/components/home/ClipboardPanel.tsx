@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { addClip, clearClips, listClips, removeClip } from "../../data/clips";
 import { createResource, type Resource } from "../../data/resources";
+import { createTask } from "../../data/tasks";
 import { confirmAction, copyToClipboard, showToast } from "../ui";
 import { pasteWithFeedback } from "../quickPaste";
 
@@ -106,6 +107,16 @@ export default function ClipboardPanel() {
                     }}
                   >
                     → Note
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-small"
+                    onClick={async () => {
+                      await createTask({ listId: null, title: clipTitle(c.body) });
+                      showToast("Saved as a task", "success");
+                    }}
+                  >
+                    → Task
                   </button>
                   <button type="button" className="btn-secondary btn-small" onClick={() => void removeClip(c.id)}>
                     Delete

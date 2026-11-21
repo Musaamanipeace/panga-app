@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "./pages/Landing";
-import Home from "./pages/Home";
 import PangaHome from "./pages/PangaHome";
-import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import VoiceProvider from "./voice/VoiceProvider";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
+import { startReminderScheduler } from "./data/reminders";
 import { restoreSession, canUseApp } from "./auth/session";
 import "./index.css";
 
@@ -29,6 +28,7 @@ function App() {
         } catch (e) {
           console.warn("Initial sync error:", e);
         }
+        void startReminderScheduler();
       }
       setReady(true);
     });
@@ -77,9 +77,6 @@ function App() {
           }
         >
           <Route path="/home" element={<PangaHome />} />
-          <Route path="/workspaces" element={<Home />} />
-          <Route path="/dashboard" element={<Navigate to="/workspaces" replace />} />
-          <Route path="/project/:projectId" element={<ProjectView />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

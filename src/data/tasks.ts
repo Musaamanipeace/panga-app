@@ -3,19 +3,199 @@ import { db, type Task, type TaskStatus, type TaskHorizon } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
+import { recordTombstone } from "../sync/tombstones";
 
-export type { Task, TaskStatus, TaskHorizon };
+export type { Task, TaskStatus };
+
+export interface TaskNode {
+  task: Task;
+  children: TaskNode[];
+}
+
+export async function listTasksForList(listId: string): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.where("listId").equals(listId).toArray();
+}
+
+export async function listSubtasks(parentId: string): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.where("parentId").equals(parentId).toArray();
+}
+
+export async function listRootTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.where("parentId").equals(null).toArray();
+}
+
+export async function getTask(id: string): Promise<Task | undefined> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.get(id);
+}
+
+export async function createTask(input: {
+  listId?: string | null;
+  parentId?: string | null;
+  title: string;
+  notes?: string;
+  dueDate?: number | null;
+  tags?: string[];
+  order?: number;
+  // Legacy project-model fields (not written by the primary UX, kept for
+  // backward compatibility during the transition).
+  projectId?: string | null;
+  executor?: "ai" | "manual";
+  scheduledAt?: number | null;
+  estimatedMinutes?: number | null;
+  horizon?: TaskHorizon;
+}): Promise<Task> {
+  if (!db.isOpen()) await db.open();
+  const t = now();
+  const siblings = input.parentId
+    ? await db.tasks.where("parentId").equals(input.parentId).toArray()
+    : input.listId
+      ? await db.tasks.where("listId").equals(input.listId).and((task) => task.parentId === null).toArray()
+      : await db.tasks.where("listId").equals(null).and((task) => task.parentId === null).toArray();
+  const order = input.order ?? (siblings.length ? Math.max(...siblings.map((s) => s.order)) + 1 : 0);
+  const task: Task = {
+    id: newId(),
+    listId: input.listId ?? null,
+    parentId: input.parentId ?? null,
+    title: input.title.trim(),
+    notes: input.notes ?? "",
+    status: "active",
+    completed: false,
+    dueDate: input.dueDate ?? null,
+    order,
+    tags: input.tags ?? [],
+    createdAt: t,
+    updatedAt: t,
+    syncStatus: "pending",
+    projectId: input.projectId ?? null,
+    executor: input.executor ?? "manual",
+    scheduledAt: input.scheduledAt ?? null,
+    estimatedMinutes: input.estimatedMinutes ?? null,
+    horizon: input.horizon ?? "short",
+  };
+  await db.tasks.add(task);
+  void syncPushRecord("tasks", task);
+  void logActivity({ entityType: "task", entityId: task.id, listId: task.listId, action: "created", description: `Created task "${task.title}"` });
+  return task;
+}
+
+export async function addSubtask(parentId: string, title: string): Promise<Task> {
+  const parent = await getTask(parentId);
+  if (!parent) throw new Error(`Parent task ${parentId} not found`);
+  return createTask({ listId: parent.listId, parentId, title });
+}
+
+export async function updateTask(
+  id: string,
+  changes: Partial<
+    Pick<
+      Task,
+      "title" | "notes" | "status" | "completed" | "dueDate" | "tags" | "projectId" | "executor" | "scheduledAt" | "estimatedMinutes" | "horizon"
+    >
+  >
+): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const updatedAt = now();
+  const next = { ...changes, updatedAt, syncStatus: "pending" };
+  if (changes.status !== undefined) next.completed = changes.status === "completed";
+  if (changes.completed !== undefined) next.status = changes.completed ? "completed" : "active";
+  await db.tasks.update(id, next);
+  const updated = await db.tasks.get(id);
+  if (updated) void syncPushRecord("tasks", updated);
+}
+
+export async function toggleTaskCompleted(id: string): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const task = await db.tasks.get(id);
+  if (!task) return;
+  const completed = !task.completed;
+  await updateTask(id, { completed, status: completed ? "completed" : "active" });
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  // Collect the whole subtask subtree so everything is deleted in one transaction.
+  const toDelete: string[] = [];
+  const queue = [id];
+  while (queue.length) {
+    const current = queue.shift()!;
+    toDelete.push(current);
+    const children = await db.tasks.where("parentId").equals(current).toArray();
+    for (const child of children) queue.push(child.id);
+  }
+  await db.transaction("rw", db.tasks, async () => {
+    for (const taskId of toDelete) await db.tasks.delete(taskId);
+  });
+  for (const taskId of toDelete) {
+    void syncDeleteRecord("tasks", taskId);
+    recordTombstone("task", taskId);
+  }
+  void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
+}
+
+export async function moveTask(taskId: string, changes: { listId?: string | null; parentId?: string | null }): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const updates: Record<string, unknown> = { updatedAt: now(), syncStatus: "pending" };
+  if (changes.listId !== undefined) updates.listId = changes.listId;
+  if (changes.parentId !== undefined) updates.parentId = changes.parentId;
+  await db.tasks.update(taskId, updates);
+  const updated = await db.tasks.get(taskId);
+  if (updated) void syncPushRecord("tasks", updated);
+}
+
+export async function reorderTasks(scope: { listId?: string | null; parentId?: string | null }, orderedIds: string[]): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  await db.transaction("rw", db.tasks, async () => {
+    for (const [index, id] of orderedIds.entries()) {
+      await db.tasks.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
+    }
+  });
+  for (const id of orderedIds) {
+    const updated = await db.tasks.get(id);
+    if (updated) void syncPushRecord("tasks", updated);
+  }
+}
+
+/** Build a nested task tree for a task list (roots = parentId === null). */
+export async function getTaskTree(listId: string): Promise<TaskNode[]> {
+  if (!db.isOpen()) await db.open();
+  const all = await db.tasks.where("listId").equals(listId).toArray();
+  const byId = new Map<string, TaskNode>();
+  const roots: TaskNode[] = [];
+  for (const task of all) {
+    byId.set(task.id, { task, children: [] });
+  }
+  for (const task of all) {
+    const node = byId.get(task.id)!;
+    if (task.parentId && byId.has(task.parentId)) {
+      byId.get(task.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  const sort = (nodes: TaskNode[]) => {
+    nodes.sort((a, b) => a.task.order - b.task.order || a.task.createdAt - b.task.createdAt);
+    for (const n of nodes) sort(n.children);
+  };
+  sort(roots);
+  return roots;
+}
+
+export async function listAllActiveTasks(): Promise<Task[]> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.where("completed").equals(false).toArray();
+}
+
+// ---------- Legacy compatibility wrappers (project-based UI, retired) ----------
+// Kept so legacy consumers (ProjectView, Dashboard, HomeTasksTab) still compile
+// while those screens are retired from the primary UX.
 
 export async function listTasksForProject(projectId: string): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
-  const list = await db.tasks.where("projectId").equals(projectId).toArray();
-  return list.sort((a, b) => a.createdAt - b.createdAt);
-}
-
-export async function listAllTasks(): Promise<Task[]> {
-  if (!db.isOpen()) await db.open();
-  const all = await db.tasks.toArray();
-  return all.sort((a, b) => b.createdAt - a.createdAt);
+  return db.tasks.where("projectId").equals(projectId).toArray();
 }
 
 export async function listScheduledTasks(): Promise<Task[]> {
@@ -23,84 +203,16 @@ export async function listScheduledTasks(): Promise<Task[]> {
   return db.tasks.where("scheduledAt").above(0).sortBy("scheduledAt");
 }
 
-export async function listAllActiveTasks(): Promise<Task[]> {
-  if (!db.isOpen()) await db.open();
-  // Used by the AI planner (Stage 9) across all projects.
-  return db.tasks.where("status").equals("active").toArray();
-}
-
-export function isOverdue(task: Task): boolean {
-  return task.status === "active" && task.dueDate !== null && task.dueDate < Date.now();
-}
-
-export async function createTask(input: {
-  projectId?: string | null;
-  title: string;
-  notes?: string;
-  executor?: "ai" | "manual";
-  dueDate?: number | null;
-  scheduledAt?: number | null;
-  estimatedMinutes?: number | null;
-  tags?: string[];
-  horizon?: TaskHorizon;
-}): Promise<Task> {
-  if (!db.isOpen()) await db.open();
-  const t = now();
-  const task: Task = {
-    id: newId(),
-    projectId: input.projectId ?? null,
-    title: input.title,
-    notes: input.notes ?? "",
-    status: "active",
-    executor: input.executor ?? "manual",
-    dueDate: input.dueDate ?? null,
-    scheduledAt: input.scheduledAt ?? null,
-    estimatedMinutes: input.estimatedMinutes ?? null,
-    tags: input.tags ?? [],
-    horizon: input.horizon ?? "short",
-    createdAt: t,
-    updatedAt: t,
-    syncStatus: "pending",
-  };
-  await db.tasks.add(task);
-  void syncPushRecord("tasks", task);
-  void logActivity({ entityType: "task", entityId: task.id, projectId: task.projectId, action: "created", description: `Created task "${task.title}"` });
-  return task;
-}
-
-export async function updateTask(
-  id: string,
-  changes: Partial<
-    Pick<Task, "title" | "notes" | "status" | "executor" | "dueDate" | "scheduledAt" | "estimatedMinutes" | "tags" | "horizon">
-  >
-): Promise<void> {
-  if (!db.isOpen()) await db.open();
-  const updatedAt = now();
-  await db.tasks.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.tasks.get(id);
-  if (updated) void syncPushRecord("tasks", updated);
-}
-
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<void> {
-  if (!db.isOpen()) await db.open();
   await updateTask(id, { status });
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  if (!db.isOpen()) await db.open();
-  await db.tasks.delete(id);
-  void syncDeleteRecord("tasks", id);
-  void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
+export function isOverdue(task: Task): boolean {
+  return !task.completed && task.dueDate !== null && task.dueDate < Date.now();
 }
 
-/** Put a previously deleted task back (used for "Undo"). */
 export async function restoreTask(task: Task): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.tasks.put({ ...task, updatedAt: now(), syncStatus: "pending" });
   void syncPushRecord("tasks", task);
-}
-
-export async function getTask(id: string): Promise<Task | undefined> {
-  if (!db.isOpen()) await db.open();
-  return db.tasks.get(id);
 }

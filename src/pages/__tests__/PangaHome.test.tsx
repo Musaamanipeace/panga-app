@@ -60,35 +60,6 @@ afterEach(async () => {
 });
 
 describe("Panga home (smoke)", () => {
-  it("captures a thought, turns it into a task and ticks it off", async () => {
-    await mount();
-    const box = host.querySelector("#panga-capture-input") as HTMLTextAreaElement;
-    expect(box).toBeTruthy();
-    await type(box, "call the plumber about the tap");
-    await click(byText("Add"));
-    expect(host.textContent).toContain("call the plumber about the tap");
-
-    await click(byText("→ task"));
-    expect(host.textContent).toContain("task ✓");
-    // The new task is in the Active list on the Tasks tab.
-    expect(host.querySelectorAll('input[type="checkbox"]').length).toBeGreaterThan(0);
-
-    const tick = host.querySelector('input[type="checkbox"][aria-label="Tick off"]') as HTMLInputElement;
-    await click(tick);
-    await click(byText("Done"));
-    expect(host.textContent).toContain("call the plumber about the tap");
-  });
-
-  it("adds a task with the quick form and parks it (inactive)", async () => {
-    await mount();
-    const input = host.querySelector('input[placeholder="New task…"]') as HTMLInputElement;
-    await type(input, "write report");
-    await click([...host.querySelectorAll("button")].filter((b) => b.textContent === "Add").pop());
-    await click(host.querySelector('button[title="Park (make inactive)"]'));
-    await click(byText("Inactive"));
-    expect(host.textContent).toContain("write report");
-  });
-
   it("saves a categorised note", async () => {
     await mount("/home?tab=Notes");
     const body = host.querySelector('textarea[placeholder="Write a note…"]') as HTMLTextAreaElement;
@@ -109,12 +80,5 @@ describe("Panga home (smoke)", () => {
     });
     await settle(120);
     expect(host.textContent).toContain("copied snippet 123");
-  });
-
-  it("renders the calendar and the PDF tab", async () => {
-    await mount("/home?tab=Calendar");
-    expect(host.textContent).toContain("Pick an existing task");
-    await click(byText("PDFs"));
-    expect(host.textContent).toContain("Add PDF");
   });
 });

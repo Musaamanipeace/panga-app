@@ -1,14 +1,12 @@
 # Panga - catch your train of thought, tick off tasks
 
-Offline-first PWA for computers and phones. Capture thoughts in one click, turn them into tasks, plan days on a calendar, keep categorised notes, a clipboard history and PDFs, with voice typing, read-aloud and an optional bring-your-own-key AI. See `CHANGES.md` for what changed in the pivot and how to set up sync.
-
-> The older project/resource planner is still available under **Workspaces** (`/workspaces`).
+Offline-first PWA for computers and phones. Capture thoughts in one click, turn them into nested tasks in task lists, keep link folders, categorised notes (with voice typing, read-aloud and spelling/grammar assists), and reminders with selectable tones. Guest/local-only is always allowed; log in with Supabase for cloud sync. No workspaces. See `CHANGES.md` for what changed in the pivot and how to set up sync.
 
 ## Architecture
 
 - **Frontend**: React 19 SPA with Vite, TypeScript, and offline-first IndexedDB (Dexie)
-- **Backend**: Express on Node.js 22 providing secure server-side Gemini AI processing (`/api/assistant/chat`) and health monitoring (`/health`)
-- **Storage**: Local IndexedDB as primary source of truth; optional cloud sync via Google Drive AppData folder or private GitHub Gist
+- **Backend**: Express on Node.js 22 providing secure server-side AI processing and health monitoring
+- **Storage**: Local IndexedDB as primary source of truth; optional cloud sync via Supabase (auth + last-write-wins sync)
 - **Hosting**: Configured for Vite SPA frontend and serverless API routes.
 
 ---
@@ -16,34 +14,41 @@ Offline-first PWA for computers and phones. Capture thoughts in one click, turn 
 ## Features
 
 ### Local-First Core
-- **Guest / unlogged mode**: Start and use the app without any account. Progress is saved on-device (IndexedDB). Log in or connect cloud later from Settings.
-- **Zero-authentication Quick Upload**: Restore from `.json` snapshot on first load (or Landing dropzone) without any account setup
+- **Guest / unlogged mode**: Start and use the app without any account. Progress is saved on-device (IndexedDB). Log in or connect Supabase later from Settings.
 - **Full Offline Support**: All data stored in IndexedDB; works completely offline
 - **Snapshot Export/Import**: Download complete backups as versioned JSON files; drag-and-drop to restore
-- **Thought train**: Capture fleeting notes (with optional voice input) on the Home screen and scroll history later
+- **Thought train**: Capture fleeting notes (with voice input) and promote a thought → task (into a chosen list) or → note
+- **Clipboard**: Paste history with "Save as note" / "Save as task" affordances
 
-### Google Drive Sync (Optional)
-- **AppData Folder Sync**: Automatic background sync to your private Google Drive `appDataFolder`
-- **Debounced Auto-sync**: Changes debounced (30s) and uploaded automatically
-- **Cross-device Restore**: On new device, connect Google Drive and offer to restore existing snapshot
-- **Manual Controls**: "Download Backup" / "Upload Snapshot" buttons in Settings
+### Task lists (nested checklists)
+- **Task lists**: Top-level containers with a title, optional description and order. Create, rename, delete and reorder lists.
+- **Nested tasks**: Checkable items that belong to a list or a parent task (subtasks, unlimited depth, UI soft-limited to 3 levels). Toggle complete/incomplete, optional due date, notes and tags.
+- **Tree view**: Indented checklist with expand/collapse, inline edit, add subtask, drag-style reorder.
+- **Filters**: Active / Completed / All.
 
-### GitHub Gist Sync (Optional)
-- **Zero Server Setup**: Pure client-side backup and restore to a private GitHub Gist using the GitHub REST API.
-- **Automatic Gist Provisioning**: Leave the Gist ID blank to automatically create a private Gist on first sync.
-- **Secret Scanning Protection**: Built-in credential redaction ensures Personal Access Tokens are never accidentally included in the Gist content.
-- **One-Click Restore**: Pull and restore your entire database from your GitHub Gist at any time.
+### Link folders
+- **Link folders**: Named folders containing links (URL + title + optional notes/tags). Unsorted "Inbox links" folder. Create/rename/delete/reorder folders and links; open, copy, edit, move between folders, search.
+
+### Notes
+- **Notes editor**: Dedicated notes with plain-text body, native spellcheck, categories/tags.
+- **Voice typing**: Reuse the offline mic / Whisper path on the notes body.
+- **Read aloud**: Browser speech synthesis on note body and selection.
+- **Spelling/grammar**: Native browser spellcheck; optional "Suggest corrections" when the user supplies an AI key (never a hard dependency).
+
+### Reminders
+- **Reminders**: Message + trigger time, optional link to a task or note, selectable tone (default/chime/soft/urgent).
+- **Notifications**: System notification + selected tone when due; permission prompt in Settings / first reminder.
+
+### Train of thought
+- Quick-capture stream; promote a thought → task (into a chosen list) or → note.
+
+### Login (Supabase)
+- **Supabase Auth**: Username/email + password. Required for cloud sync; guest/local-only still allowed. After login, local rows bind to `user_id` and sync begins.
+- **Account panel**: Supabase URL/key, sign up / sign in / sign out, sync status.
 
 ### AI Integration
-- **Gemini API Proxy**: Server-side `/api/assistant/chat` endpoint keeps your API key secure
-- **AI Assistant Chat**: Natural language planning and task management
-- **Web Search**: Optional Google Search grounding for responses
-
-### Project Management
-- Projects with tasks, milestones, resources, issues, documentation
-- Calendar integration (local events + Google Calendar import)
-- Reminders, contacts, insights, conversations
-- Global search across all entity types
+- **AI Assistant Chat**: Natural language planning and task management with your own key (OpenRouter, Gemini, Claude, OpenAI, Grok, Groq).
+- **Web Search**: Optional Google Search grounding for responses.
 
 ---
 
@@ -57,7 +62,7 @@ No `.env` file or environment variables are required! All features run out of th
 # Install dependencies
 npm install
 
-# Start development server on port 3000
+# Start development server on port 5173
 npm run dev
 
 # Build for production
@@ -118,32 +123,25 @@ From the Landing page, choose how you want to work:
 3. **Optional Account**:
    - Create a local account or log in with email/password if you want multi-profile management.
 
-### Cloud Backup & Multi-Sync (Settings)
+### Cloud Sync (Supabase)
 
-Panga gives you full control over how and where your backups are stored:
+Panga syncs to Supabase when you configure a project URL + anon key (in Settings or via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
 
-#### 1. Google Drive
-- Connect using your own **Google Client ID** in Settings. Backups sync automatically to your hidden Google Drive `appDataFolder`.
+1. Create a project at https://supabase.com.
+2. SQL Editor → run `supabase/schema.sql` (creates task lists, tasks, link folders, links, notes, reminders with RLS) and `supabase/panga_sync.sql`.
+3. Authentication → Providers → Email: turn **Confirm email OFF** (usernames become `name@panga.invalid`, so no email is ever sent).
+4. Put the project URL and anon key in Settings → Supabase, then Sign up / Sign in.
+5. Local Dexie stays primary; Supabase mirrors changes (last-write-wins, deletes tracked via tombstones).
 
-#### 2. GitHub Gist
-- Sync private backups to a personal GitHub Gist using a GitHub Personal Access Token (`gist` scope).
-- Works with classic PAT (`ghp_...`) or fine-grained tokens.
-- All tokens are sent exclusively via standard authorization headers (`Authorization: Bearer <token>`) and scrubbed from payloads, preventing token exposure or revocation.
-- Leave Gist ID empty to auto-create a private Gist on first sync, or provide an existing Gist ID.
+Optional: add repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` so a keepalive workflow stops the free project pausing.
 
-#### 3. Instant Snapshot & Email Backups
-- **Download Snapshot**: Instant `.json` file download containing your full workspace.
-- **Email Backup**: Send automated backup JSON files directly to your inbox via Resend or SendGrid.
+If Supabase rejects the generated address, change the login domain in Settings → Advanced, or sign up with a real email.
 
 ### Sync Status Badge
 
 The header shows your sync state:
-- `· local` — Offline / on-device storage
-- `☁️ Google Drive` — Connected, auto-sync active
-- `🐙 GitHub Gist` — Connected, gist backup active
-- `⟳ Saving…` — Sync in progress
-- `✓ saved` — Synced successfully
-- `✗` — Sync error (check Settings for details)
+- `● online` / `○ offline` — network state
+- Sync badge — local / syncing / synced / error
 
 ---
 
@@ -153,21 +151,20 @@ All data lives in IndexedDB (Dexie) with these tables:
 
 | Table | Description |
 |-------|-------------|
-| `projects` | Project containers |
-| `tasks` | Tasks within projects |
-| `resources` | Links, notes, scripts, images, PDFs |
-| `milestones` | Project milestones with blocking tasks |
-| `issues` | Issues with severity, labels, comments |
-| `contacts` | People with email/phone/link |
-| `reminders` | Time-based notifications |
-| `calendarEvents` | Local + Google Calendar events |
-| `scheduleItems` | Time-blocked schedule entries |
-| `docEntries` | Project documentation (outline/phase) |
-| `insights` | AI-generated or manual insights |
-| `conversations` | AI chat history |
-| `messages` | Individual chat messages |
+| `taskLists` | Task list containers (title, description, order) |
+| `tasks` | Hierarchical checkable tasks (listId, parentId, subtasks) |
+| `linkFolders` | Named link folders |
+| `links` | Bookmarks (URL, title, notes, tags, folderId) |
+| `notes` | Dedicated notes (title, body, tags) |
+| `reminders` | Time-based reminders (toneId, linked task/note) |
+| `resources` | Legacy resources (read-only during transition) |
+| `projects` | Legacy projects (read-only during transition) |
+| `milestones`, `issues`, `contacts`, `calendarEvents`, `scheduleItems`, `docEntries`, `insights`, `conversations`, `messages` | Legacy tables (read-only during transition) |
+| `trainOfThought` | Quick-capture stream |
+| `clipboard` / clips | Clipboard history (local only, never synced) |
 | `settings` | User preferences (API keys, tokens, etc.) |
-| `scheduleItems` | Calendar schedule entries |
+
+Legacy project/workspace tables remain readable for one release but are no longer written by the primary UX.
 
 ---
 
@@ -224,23 +221,26 @@ src/
 │   ├── ...             # Other entity modules
 │   └── utils.ts        # ID generation, timestamps
 ├── sync/
-│   ├── snapshot.ts     # Export/import utilities
-│   ├── githubGistSync.ts # GitHub Gist backup & sync
-│   ├── googleDriveSync.ts # Google Drive AppData sync
+│   ├── supabaseSync.ts   # Supabase push/pull + RLS mirroring
+│   ├── sync.ts           # Local sync coordination
+│   ├── autoSync.ts       # Debounced auto-sync
+│   ├── snapshot.ts       # Export/import utilities
+│   ├── tombstones.ts     # Delete tracking for sync
+│   ├── crypto.ts         # Web Crypto API credential encryption
+│   ├── google.ts         # Google OAuth helpers
 │   ├── googleCalendar.ts # Google Calendar import
-│   ├── crypto.ts       # Web Crypto API credential encryption
-│   └── sync.ts         # Local sync coordination
+│   └── googleDriveSync.ts # Google Drive AppData sync (legacy)
 ├── auth/
-│   └── session.ts      # Email/password + snapshot session
+│   └── session.ts        # Session + Supabase auth binding
 ├── search/
-│   └── search.ts       # Global search across entities
-└── App.tsx             # Root component, routing, auth guard
+│   └── search.ts         # Global search across entities
+└── App.tsx               # Root component, routing, auth guard
 ```
 
 ### Key Patterns
 
 - **Local-first**: All writes go to IndexedDB first; sync is async and non-blocking
-- **Sync coordination**: `sync.ts` handles local status; `driveSync.ts` handles Google Drive
+- **Sync coordination**: `sync.ts` handles local status; `supabaseSync.ts` handles Supabase push/pull
 - **No direct Dexie imports outside `/data`**: Data modules export typed functions
 - **Debounced auto-sync**: `autoSyncIfNeeded()` called after mutations
 
@@ -255,11 +255,6 @@ npx playwright test test-*.mjs
 
 ## Troubleshooting
 
-### "No snapshot found on Google Drive"
-- Ensure you've connected Google Drive and uploaded at least once
-- Check that the Drive API is enabled in Google Cloud Console
-- Verify the OAuth Client ID matches the one used to upload
-
 ### "Invalid snapshot file"
 - Snapshot must be a valid JSON with `metadata.version` and `data` object
 - Version mismatches may require manual migration (not yet automated)
@@ -268,16 +263,16 @@ npx playwright test test-*.mjs
 - Check browser console for network errors
 - Verify internet connectivity
 - Try "Sync Now" manually in Settings
+- Ensure Supabase URL + anon key are configured and RLS allows your user_id
 
-### Port 3000 already in use
+### Port 5173 already in use
 ```bash
-lsof -ti:3000 | xargs kill -9
+lsof -ti:5173 | xargs kill -9
 ```
 
-### GitHub Gist Sync Issues
-- Ensure your Personal Access Token has the `gist` permission scope.
-- In Panga, tokens are transmitted purely via Authorization headers (`Bearer <token>`) and are automatically scrubbed from backup contents to avoid GitHub secret scanning auto-revocation.
-- If you see "Gist ID not found", click "Clear Gist ID" in Settings to automatically create a fresh private Gist on the next sync.
+### Notifications not firing
+- Grant notification permission when prompted (or click "Enable notifications" on the Reminders tab)
+- Notifications only fire while the app tab is open (free-tier reliability); OS may throttle when fully closed
 
 ---
 
@@ -292,8 +287,11 @@ MIT License — feel free to use, modify, and distribute.
 - **Dexie.js** — IndexedDB wrapper
 - **Vite** — Build tool
 - **React 19** — UI framework
-- **Google Drive API** — AppData folder sync
-- **Google Identity Services** — OAuth flow
+- **Dexie.js** — IndexedDB wrapper
+- **Vite** — Build tool
+- **React 19** — UI framework
+- **Supabase** — Auth + cloud sync backend
+- **@supabase/supabase-js** — Supabase client
 - **@google/genai** — Gemini AI SDK
 - **Web Crypto API** — AES-256-GCM credential encryption
 
@@ -336,12 +334,12 @@ Requirements and testing:
 ## Docker
 
 ```bash
-docker compose up --build     # http://localhost:3000
+docker compose up --build     # http://localhost:5173
 ```
 
 The `Dockerfile` is multi-stage (deps, build, production-only deps, runtime). The final image has no build tools or sources, runs as a non-root user, and has a `HEALTHCHECK` on `/health`. Your pipeline still just runs `docker build .`; BuildKit caches the dependency layers. Build with `--target test` to run the unit tests as part of the image build.
 
-Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `SENDGRID_API_KEY`, `WHISPER_SERVER_URL`, `WHISPER_SERVER_MODEL`.
+Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `WHISPER_SERVER_URL`, `WHISPER_SERVER_MODEL`. Supabase URL/anon key are configured client-side in Settings (or via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
 
 `.github/workflows/ci.yml` is a template that lints, tests, builds, and publishes the image to GHCR on pushes to `main`.
 

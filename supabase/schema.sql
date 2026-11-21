@@ -29,12 +29,15 @@ create table if not exists public.projects (
 create table if not exists public.tasks (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  project_id text references public.projects(id) on delete set null,
+  list_id text,
+  parent_id text,
   title text not null,
   notes text default '',
   status text not null default 'active' check (status in ('active', 'inactive', 'completed')),
-  executor text default 'manual' check (executor in ('ai', 'manual')),
+  completed boolean default false,
   due_date timestamptz,
+  order_index integer default 0,
+  tags text[] default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -90,11 +93,12 @@ create table if not exists public.contacts (
 create table if not exists public.reminders (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
-  title text not null,
-  notes text default '',
-  due_at timestamptz,
-  completed boolean default false,
-  project_id text references public.projects(id) on delete set null,
+  tone_id text,
+  linked_entity_type text check (linked_entity_type in ('task', 'note')),
+  linked_entity_id text,
+  message text not null,
+  trigger_at timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'fired', 'dismissed')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -158,12 +162,64 @@ create table if not exists public.settings (
   primary key (user_id, key)
 );
 
+-- Task lists (top-level containers)
+create table if not exists public.task_lists (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  description text default '',
+  order_index integer default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Link folders
+create table if not exists public.link_folders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  order_index integer default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Links (dedicated bookmarks)
+create table if not exists public.links (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  folder_id text,
+  title text not null,
+  url text not null,
+  notes text,
+  tags text[] default '{}',
+  order_index integer default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Notes (dedicated notes table)
+create table if not exists public.notes (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null default '',
+  body text default '',
+  tags text[] default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Indexes
 create index if not exists idx_projects_user on public.projects(user_id);
 create index if not exists idx_tasks_user on public.tasks(user_id);
 create index if not exists idx_tasks_project on public.tasks(project_id);
 create index if not exists idx_resources_user on public.resources(user_id);
 create index if not exists idx_resources_project on public.resources(project_id);
+create index if not exists idx_task_lists_user on public.task_lists(user_id);
+create index if not exists idx_tasks_list on public.tasks(list_id);
+create index if not exists idx_tasks_parent on public.tasks(parent_id);
+create index if not exists idx_link_folders_user on public.link_folders(user_id);
+create index if not exists idx_links_folder on public.links(folder_id);
+create index if not exists idx_notes_user on public.notes(user_id);
 
 -- Row Level Security
 alter table public.profiles enable row level security;
@@ -180,6 +236,10 @@ alter table public.doc_entries enable row level security;
 alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
 alter table public.settings enable row level security;
+alter table public.task_lists enable row level security;
+alter table public.link_folders enable row level security;
+alter table public.links enable row level security;
+alter table public.notes enable row level security;
 
 -- Policies: user can only see/edit own rows
 create policy "Users own their data" on public.projects
@@ -205,6 +265,16 @@ create policy "Users own their data" on public.doc_entries
 create policy "Users own their data" on public.conversations
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users own their data" on public.messages
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.settings
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.task_lists
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.link_folders
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.links
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.notes
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users own their data" on public.settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

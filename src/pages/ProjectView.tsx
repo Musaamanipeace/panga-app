@@ -2185,7 +2185,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
 }
 
 // ---------- Reminders ----------
-function RemindersTab({ projectId }: { projectId: string }) {
+function RemindersTab({ projectId: _projectId }: { projectId: string }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [message, setMessage] = useState("");
   const [when, setWhen] = useState("");
@@ -2193,7 +2193,7 @@ function RemindersTab({ projectId }: { projectId: string }) {
   const [editValue, setEditValue] = useState("");
 
   async function refresh() {
-    setReminders(await listReminders(projectId));
+    setReminders(await listReminders());
   }
   useEffect(() => {
     refresh();
@@ -2203,7 +2203,7 @@ function RemindersTab({ projectId }: { projectId: string }) {
   async function addReminder(e: React.FormEvent) {
     e.preventDefault();
     if (!message.trim() || !when) return;
-    await createReminder({ projectId, message: message.trim(), triggerAt: new Date(when).getTime() });
+    await createReminder({ message: message.trim(), triggerAt: new Date(when).getTime(), linkedEntityType: null, linkedEntityId: null });
     setMessage("");
     setWhen("");
     refresh();

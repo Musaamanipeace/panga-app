@@ -5,6 +5,7 @@
 
 import Dexie, { type Table } from "dexie";
 import { getSessionUserId } from "../auth/session";
+import { newId } from "./utils";
 
 export type TaskStatus = "active" | "inactive" | "completed";
 export type TaskHorizon = "short" | "long";
@@ -83,20 +84,76 @@ export interface Project {
 
 export interface Task {
   id: string;
-  projectId: string | null;
+  listId: string | null;      // top-level tasks belong to a list; null = unsorted/inbox
+  parentId: string | null;    // subtasks point at a parent task; null = root of a list
   title: string;
   notes: string;
-  status: TaskStatus;
-  executor: "ai" | "manual";
+  status: "active" | "completed" | "inactive";
+  completed: boolean;         // primary check state
   dueDate: number | null;
-  scheduledAt: number | null;
-  estimatedMinutes: number | null;
+  order: number;              // sibling order under same parent / list
   tags: string[];
-  /** short-term (today/this week) or long-term. Optional for older records. */
-  horizon?: TaskHorizon;
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
+  userId?: string; // when logged in
+  // Legacy project-model fields retained for backward compatibility during the
+  // transition. The primary UX no longer writes them.
+  projectId?: string | null;
+  executor?: "ai" | "manual";
+  scheduledAt?: number | null;
+  estimatedMinutes?: number | null;
+  horizon?: TaskHorizon;
+}
+
+// Task lists — top-level containers for tasks.
+export interface TaskList {
+  id: string;
+  title: string;
+  description?: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Link folders — named folders that contain links.
+export interface LinkFolder {
+  id: string;
+  title: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Links — dedicated bookmarks (replaces overloading resources with category "links").
+export interface Link {
+  id: string;
+  folderId: string | null;    // null = unsorted
+  title: string;
+  url: string;
+  notes?: string;
+  tags: string[];
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Notes — dedicated notes table (replaces overloading resources with category "notes").
+export interface Note {
+  id: string;
+  title: string;
+  body: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
 }
 
 // Resource: a single unified entity with a fixed `category` enum.
@@ -172,8 +229,8 @@ export interface IssueComment {
 
 export interface Reminder {
   id: string;
-  projectId: string | null;
-  linkedEntityType: "task" | "milestone" | null;
+  toneId?: string;            // e.g. "default" | "chime" | "soft" | "urgent"
+  linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   message: string;
   triggerAt: number;
@@ -181,6 +238,7 @@ export interface Reminder {
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
+  userId?: string; // when logged in
 }
 
 export type InsightType = "note" | "link" | "image" | "pdf";
@@ -303,7 +361,11 @@ export interface ThoughtEntry {
 class PangaDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
+  taskLists!: Table<TaskList, string>;
   resources!: Table<Resource, string>;
+  links!: Table<Link, string>;
+  linkFolders!: Table<LinkFolder, string>;
+  notes!: Table<Note, string>;
   docEntries!: Table<DocEntry, string>;
   milestones!: Table<Milestone, string>;
   issues!: Table<Issue, string>;
@@ -551,6 +613,126 @@ class PangaDB extends Dexie {
     this.version(10).stores({
       pdfDocs: "id, createdAt",
     });
+
+    // v11: Panga reshape — task lists, hierarchical tasks, link folders, links,
+    // dedicated notes, reminder tones. Old project/resource tables are kept
+    // readable for one release but no longer written by the primary UX.
+    this.version(11).stores({
+      taskLists: "id, order, updatedAt, syncStatus",
+      tasks: "id, listId, parentId, projectId, scheduledAt, status, dueDate, completed, order, updatedAt, syncStatus, *tags",
+      linkFolders: "id, order, updatedAt, syncStatus",
+      links: "id, folderId, updatedAt, syncStatus, *tags",
+      notes: "id, updatedAt, syncStatus, *tags",
+      // legacy tables retained for read-only access during the transition
+      projects: "id, status, updatedAt, syncStatus",
+      resources: "id, projectId, category, updatedAt, syncStatus, *tags, provider",
+      reminders: "id, triggerAt, status, updatedAt, syncStatus",
+    }).upgrade(async (tx) => {
+      const nowMs = Date.now();
+      const INBOX_TITLE = "Inbox";
+
+      try {
+        // --- Ensure a default Inbox task list exists ---
+        const existingInbox = await tx.table("taskLists").toArray();
+        let inboxId: string;
+        if (existingInbox.length === 0) {
+          inboxId = newId();
+          await tx.table("taskLists").add({
+            id: inboxId,
+            title: INBOX_TITLE,
+            description: "Default task list created during the Panga reshape.",
+            order: 0,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+            syncStatus: "pending",
+          });
+        } else {
+          inboxId = existingInbox.sort((a, b) => a.order - b.order)[0].id;
+        }
+
+        // --- Map existing tasks to task lists ---
+        const oldTasks = await tx.table("tasks").toArray();
+        const listForProject = new Map<string, string>();
+        const listsToCreate: Record<string, unknown>[] = [];
+        let listOrder = existingInbox.length;
+
+        for (const t of oldTasks as any[]) {
+          let listId: string | null = inboxId;
+          if (t.projectId) {
+            if (!listForProject.has(t.projectId)) {
+              const listId_ = newId();
+              listForProject.set(t.projectId, listId_);
+              listsToCreate.push({
+                id: listId_,
+                title: `Imported from ${t.projectId}`,
+                description: "Tasks imported from a project during the Panga reshape.",
+                order: listOrder++,
+                createdAt: nowMs,
+                updatedAt: nowMs,
+                syncStatus: "pending",
+              });
+            }
+            listId = listForProject.get(t.projectId);
+          }
+          await tx.table("tasks").where("id").equals(t.id).modify({
+            listId,
+            parentId: null,
+            completed: t.status === "completed",
+            order: t.order ?? 0,
+            // Keep legacy fields readable but stop populating them.
+            projectId: t.projectId,
+          });
+        }
+        if (listsToCreate.length) {
+          await tx.table("taskLists").bulkAdd(listsToCreate);
+        }
+
+        // --- Migrate link resources (category "links") to dedicated links table ---
+        const linkResources = await tx.table("resources").where("category").equals("links").toArray();
+        let folderOrder = 0;
+        const unsortedFolderId = newId();
+        await tx.table("linkFolders").add({
+          id: unsortedFolderId,
+          title: "Unsorted links",
+          order: folderOrder++,
+          createdAt: nowMs,
+          updatedAt: nowMs,
+          syncStatus: "pending",
+        });
+        const linksToAdd: Record<string, unknown>[] = linkResources.map((r: any) => ({
+          id: r.id,
+          folderId: unsortedFolderId,
+          title: r.title || r.url || "Untitled link",
+          url: r.url || "",
+          notes: r.body ?? null,
+          tags: r.tags || [],
+          order: r.order ?? 0,
+          createdAt: r.createdAt ?? nowMs,
+          updatedAt: r.updatedAt ?? nowMs,
+          syncStatus: r.syncStatus ?? "pending",
+        }));
+        if (linksToAdd.length) {
+          await tx.table("links").bulkAdd(linksToAdd);
+        }
+
+        // --- Migrate note resources (category "notes") to dedicated notes table ---
+        const noteResources = await tx.table("resources").where("category").equals("notes").toArray();
+        const notesToAdd: Record<string, unknown>[] = noteResources.map((r: any) => ({
+          id: r.id,
+          title: r.title || "Untitled note",
+          body: r.body ?? "",
+          tags: r.tags || [],
+          createdAt: r.createdAt ?? nowMs,
+          updatedAt: r.updatedAt ?? nowMs,
+          syncStatus: r.syncStatus ?? "pending",
+        }));
+        if (notesToAdd.length) {
+          await tx.table("notes").bulkAdd(notesToAdd);
+        }
+      } catch (e) {
+        console.warn("v11 migration error:", e);
+      }
+    });
   }
 }
 
@@ -689,7 +871,11 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
 
   const tables = [
     "projects",
+    "taskLists",
     "tasks",
+    "linkFolders",
+    "links",
+    "notes",
     "resources",
     "docEntries",
     "milestones",
@@ -736,7 +922,11 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
 
   const tables = [
     "projects",
+    "taskLists",
     "tasks",
+    "linkFolders",
+    "links",
+    "notes",
     "resources",
     "docEntries",
     "milestones",
@@ -800,7 +990,7 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
 export async function hasLocalData(): Promise<boolean> {
   if (!db.isOpen()) await db.open();
   const tables = [
-    "projects", "tasks", "resources", "docEntries", "milestones",
+    "projects", "taskLists", "tasks", "linkFolders", "links", "notes", "resources", "docEntries", "milestones",
     "issues", "contacts", "reminders", "calendarEvents",
     "scheduleItems", "conversations", "messages", "insights",
     "drafts", "activityLog", "trainOfThought",
@@ -819,7 +1009,11 @@ export async function clearAllLocalData(): Promise<void> {
   if (!db.isOpen()) await db.open();
   const tables = [
     "projects",
+    "taskLists",
     "tasks",
+    "linkFolders",
+    "links",
+    "notes",
     "resources",
     "docEntries",
     "milestones",

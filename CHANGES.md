@@ -1,32 +1,37 @@
 # Panga pivot: what changed
 
-Panga is now a quick capture tool: **thoughts -> tasks -> calendar**, plus notes, a clipboard history and PDFs.
-The old project/resource screens were kept and moved to **Workspaces** (`/workspaces`, header link) so nothing was lost.
+Panga is now a quick capture tool built around **task lists (nested checkable items), link folders, notes, reminders, train of thought and clipboard**, with **no workspaces**.
 
 ## New home (`/home`)
 | Area | What it does | Files |
 |---|---|---|
-| Capture | One box, Enter to save, mic on every text box (existing offline voice). "-> task" ticks a thought into a task. App shortcut "Quick capture" (long-press the icon) opens straight to it. Header "Thoughts" panel still works from any page. | `components/home/ThoughtStream.tsx`, `pages/PangaHome.tsx`, `vite.config.ts` |
-| Tasks | Active / Inactive (parked) / Done, short or long term, per-task date, double-click to edit. No project needed. | `components/home/TasksPanel.tsx`, `data/tasks.ts` (`horizon` field, optional) |
-| Calendar | Month grid with counts, pick a day, add an existing task to it or create one for that day. | `components/home/CalendarPanel.tsx` |
-| Notes | Categorised notes (category = a `cat:` tag on a `notes` resource), copy, read aloud, edit, delete. | `components/home/NotesPanel.tsx` |
-| Clipboard | Default note category `clipboard`. "Paste" button (header and home) reads the clipboard in one tap; Ctrl/Cmd+V on the tab, or paste into the fallback box. Anything copied inside Panga is added. Old Stash items migrate once. Local only, never synced. | `data/clips.ts`, `components/home/ClipboardPanel.tsx`, `components/quickPaste.ts` |
-| Copy icon | Highlight text anywhere and a copy icon appears. | `components/SelectionCopy.tsx` |
-| Read aloud | Browser speech synthesis, sentence-chunked, prefers offline voices. Buttons on notes and PDF pages. | `speech/tts.ts`, `components/ReadAloudButton.tsx` |
-| PDFs | Add a PDF (stored on this device), read page text, search, read aloud, save a page as a note. pdf.js loads only when used. No OCR for scanned files. | `components/home/PdfReader.tsx`, `data/pdfs.ts`, Dexie v10 |
-| AI commands | Speak or type; your own key (Settings -> AI) proposes create/tick/update/delete task actions; you approve each. Deletes are never bulk-approved and can be undone. | `ai/commands.ts`, `components/home/CommandBox.tsx` |
-| Account + sync | Username + password via Supabase, sync of tasks, thoughts and notes (last-write-wins, deletes tracked). | `sync/supabaseSync.ts`, `sync/tombstones.ts`, `components/AccountPanel.tsx` (Settings), `supabase/panga_sync.sql` |
+| Home tabs | Task lists, Links, Notes, Reminders, Clipboard. Thought train still available from any page via the header "Thoughts" button. | `pages/PangaHome.tsx` |
+| Task lists | Top-level containers (title, description, order). Create, rename, delete, reorder. | `data/taskLists.ts`, `components/home/TaskListsHome.tsx` |
+| Nested tasks | Checkable items belonging to a list or a parent task (subtasks, unlimited depth, UI soft-limited to 3 levels). Toggle complete/incomplete, optional due date, notes, tags. Expand/collapse children, inline edit, add subtask. | `data/tasks.ts`, `components/home/TaskListsHome.tsx` |
+| Links + folders | Dedicated links (URL, title, notes, tags) in named link folders. Unsorted folder. Create/rename/delete/reorder folders and links; open, copy, edit, move, search. | `data/linkFolders.ts`, `data/links.ts`, `components/home/HomeLinksTab.tsx` |
+| Notes | Dedicated notes (title, body, tags), native spellcheck, voice typing, read aloud, copy, edit, delete, search. | `data/notes.ts`, `components/home/NotesPanel.tsx` |
+| Reminders | Message + trigger time, optional link to a task or note, selectable tone (default/chime/soft/urgent). System notification + tone when due; notification permission prompt. | `data/reminders.ts`, `components/home/HomeRemindersTab.tsx` |
+| Thought train | Capture fleeting notes; promote a thought → task (with list picker) or → note. | `components/home/ThoughtStream.tsx` |
+| Clipboard | Paste history; "Save as note" / "Save as task" on each clip. | `components/home/ClipboardPanel.tsx` |
+| Account + sync | Username + password via Supabase, sync of task lists, tasks, link folders, links, notes, reminders (last-write-wins, deletes tracked via tombstones). Guest/local-only still allowed. | `sync/supabaseSync.ts`, `sync/tombstones.ts`, `data/reminders.ts`, `components/AccountPanel.tsx` |
 
-## Removed
-Puter (SDK files, `/puter`, types), the Stash panel (migrated into Clipboard), `panga-pwa-voice-docker.patch`.
-Kept: Express server and Docker (optional, not needed for static hosting), Drive/Gist backups, JSON export.
+## Removed from primary UX
+- **Workspaces** (`/workspaces`, `/dashboard`, `/project/:id`) retired. Header "Workspaces" link removed. Projects/milestones/issues/resources tables kept readable for one release but no longer written by new screens.
+- Legacy task fields (`projectId`, `executor`, `scheduledAt`, `estimatedMinutes`, `horizon`) retained as optional legacy columns but no longer written by primary UX.
+
+## Data model changes (Dexie v11)
+- New tables: `taskLists`, `linkFolders`, `links`, `notes`.
+- `tasks`: `listId`, `parentId`, `completed` (was `projectId` + `status`-only).
+- `reminders`: added `toneId` + `linkedEntityType`/`linkedEntityId` (task\|note); `projectId` dropped.
+- Migration: on first open after v11, creates an "Inbox" list, maps existing project tasks to lists (or Inbox), migrates link/note resources to dedicated tables. Legacy rows left readable for one version.
+- Sync: `panga_records` kind check extended to `task\|taskList\|thought\|note\|link\|linkFolder\|reminder`.
 
 ## Set up Supabase sync (free tier)
-1. Create a Supabase project. SQL editor: run `supabase/panga_sync.sql`.
-2. Authentication -> Providers -> Email: turn **Confirm email OFF** (usernames become `name@panga.invalid`, no email is sent).
-3. Put the project URL and anon key in the app (Settings -> Supabase) or `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
-4. Settings -> Account & sync: Create account, then Sign in on other devices.
-5. Optional: add repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` so `.github/workflows/supabase-keepalive.yml` stops the free project pausing after inactivity.
+1. Create a Supabase project. SQL editor: run `supabase/schema.sql`, then `supabase/panga_sync.sql`.
+2. Authentication → Providers → Email: turn **Confirm email OFF** (usernames become `name@panga.invalid`, no email is sent).
+3. Put the project URL and anon key in the app (Settings → Supabase) or `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+4. Settings → Account & sync: Create account, then Sign in on other devices.
+5. Optional: add repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` so `.github/workflows/supabase-keepalive.yml` stops the free project pausing.
 
 If Supabase rejects the generated address, open **Advanced** in the account box and change the domain, or sign up with a real email as the username.
 
@@ -36,9 +41,9 @@ If Supabase rejects the generated address, open **Advanced** in the account box 
 ## Known limits
 - Browsers cannot watch the system clipboard. Clips come from Panga copies and the Paste button.
 - iOS and Firefox show a system "Paste" prompt on every Paste tap.
+- Notifications only fire while a tab is open; OS may throttle when the app is fully closed. Server-side push (FCM/APNs) is a later phase.
 - Not tested against a live Supabase project or on a physical phone (no access here). Do a two-browser sync check first.
 - The first offline voice use downloads a Whisper model (40-260 MB, cached). Read-aloud quality depends on the device's installed voices.
-- Scanned PDFs need OCR, which is not included.
 
 ## Checks run
-`npx tsc -b`, `npm test` (66 tests incl. a jsdom smoke test of the new home), `npm run build` all pass.
+`npx tsc -b`, `npm test`, `npm run build` all pass.

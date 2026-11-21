@@ -71,7 +71,11 @@ function mapDexieTableName(table: string): string {
 export async function syncPushRecord(
   tableName:
     | "projects"
+    | "taskLists"
     | "tasks"
+    | "linkFolders"
+    | "links"
+    | "notes"
     | "resources"
     | "milestones"
     | "issues"

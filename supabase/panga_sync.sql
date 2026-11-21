@@ -1,11 +1,12 @@
--- Panga sync: one generic table for tasks, thoughts and notes.
+-- Panga sync: one generic table for tasks, task lists, thoughts, notes, links,
+-- link folders and reminders.
 -- Run once in the Supabase SQL editor. Safe to re-run.
 -- Also: Authentication -> Providers -> Email -> turn OFF "Confirm email"
 -- (usernames are turned into addresses like name@panga.invalid, so no email is ever sent).
 
 create table if not exists public.panga_records (
   user_id    uuid    not null default auth.uid() references auth.users(id) on delete cascade,
-  kind       text    not null check (kind in ('task', 'thought', 'note')),
+  kind       text    not null check (kind in ('task', 'taskList', 'thought', 'note', 'link', 'linkFolder', 'reminder')),
   id         text    not null,
   data       jsonb,
   updated_at bigint  not null,

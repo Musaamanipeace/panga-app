@@ -262,7 +262,8 @@ ${milestoneList || "None"}
         await createReminder({
           message: data.message,
           triggerAt: data.triggerAt ? Number(data.triggerAt) : currentTime + 3600000,
-          projectId: data.projectId ?? null,
+          linkedEntityType: null,
+          linkedEntityId: null,
         });
         break;
       }

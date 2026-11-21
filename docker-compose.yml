@@ -1,5 +1,5 @@
 # Run Panga in a container:   docker compose up --build
-# Then open http://localhost:3000
+# Then open http://localhost:5173
 #
 # Note: browsers only offer "Install app" on https:// or http://localhost.
 # Behind a real domain, put a TLS-terminating proxy (Caddy, Traefik, nginx, or
@@ -9,14 +9,15 @@ services:
     build: .
     image: panga-app:local
     ports:
-      - "3000:3000"
+      - "5173:5173"
     environment:
       # All optional. Users can also enter their own keys in Settings.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
-      # Optional self-hosted speech-to-text for the "Panga server" voice engine.
-      # Any OpenAI-compatible /v1/audio/transcriptions server works.
+      # Supabase is configured client-side in Settings → Supabase (or via
+      # VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY). No Postgres runs in this
+      # container unless you intentionally add a local Supabase stack.
       WHISPER_SERVER_URL: ${WHISPER_SERVER_URL:-}
       WHISPER_SERVER_MODEL: ${WHISPER_SERVER_MODEL:-whisper-1}
     restart: unless-stopped

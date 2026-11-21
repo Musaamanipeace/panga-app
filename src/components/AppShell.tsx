@@ -48,26 +48,23 @@ export default function AppShell() {
         >
           💭 Thoughts
         </button>
-        <button
-          type="button"
-          className="btn-secondary btn-small clickable"
-          onClick={() => void pasteWithFeedback()}
-          data-tip="Save what is on your clipboard"
-          data-tip-pos="bottom"
-        >
-          📋 Paste
-        </button>
-        <Link to="/workspaces" className="btn-secondary btn-small clickable" data-tip="Projects, activities and resources" data-tip-pos="bottom">
-          Workspaces
-        </Link>
-        <Link
-          to="/settings"
-          className="btn-secondary btn-small clickable"
-          data-tip="Settings: API keys, backup & sync (Google Drive)"
-          data-tip-pos="bottom"
-        >
-          Settings
-        </Link>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            onClick={() => void pasteWithFeedback()}
+            data-tip="Save what is on your clipboard"
+            data-tip-pos="bottom"
+          >
+            📋 Paste
+          </button>
+          <Link
+            to="/settings"
+            className="btn-secondary btn-small clickable"
+            data-tip="Settings: API keys, backup & sync (Google Drive)"
+            data-tip-pos="bottom"
+          >
+            Settings
+          </Link>
         <span
           className="user-email"
           title={guest ? "Guest (offline)" : email || ""}

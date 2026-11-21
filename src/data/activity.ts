@@ -9,6 +9,10 @@ export type { ActivityLog };
 export type ActivityEntityType =
   | "project"
   | "task"
+  | "taskList"
+  | "link"
+  | "linkFolder"
+  | "note"
   | "resource"
   | "docEntry"
   | "milestone"

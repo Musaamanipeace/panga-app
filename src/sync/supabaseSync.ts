@@ -136,18 +136,28 @@ export function shouldApplyRemote(localUpdatedAt: number | undefined, remoteUpda
 }
 
 function tableFor(kind: SyncKind) {
-  return kind === "task" ? db.tasks : kind === "thought" ? db.trainOfThought : db.resources;
+  switch (kind) {
+    case "task": return db.tasks;
+    case "taskList": return db.taskLists;
+    case "thought": return db.trainOfThought;
+    case "note": return db.notes;
+    case "link": return db.links;
+    case "linkFolder": return db.linkFolders;
+    case "reminder": return db.reminders;
+  }
 }
 
 async function collectLocalChanges(since: number): Promise<{ kind: SyncKind; id: string; data: any; updated_at: number }[]> {
   const out: { kind: SyncKind; id: string; data: any; updated_at: number }[] = [];
   for (const t of await db.tasks.where("updatedAt").above(since).toArray()) out.push({ kind: "task", id: t.id, data: t, updated_at: t.updatedAt });
+  for (const t of await db.taskLists.where("updatedAt").above(since).toArray()) out.push({ kind: "taskList", id: t.id, data: t, updated_at: t.updatedAt });
   for (const t of await db.trainOfThought.where("createdAt").above(0).toArray()) {
     if (t.updatedAt > since) out.push({ kind: "thought", id: t.id, data: t, updated_at: t.updatedAt });
   }
-  for (const r of await db.resources.where("category").equals("notes").toArray()) {
-    if (r.updatedAt > since) out.push({ kind: "note", id: r.id, data: r, updated_at: r.updatedAt });
-  }
+  for (const n of await db.notes.where("updatedAt").above(since).toArray()) out.push({ kind: "note", id: n.id, data: n, updated_at: n.updatedAt });
+  for (const l of await db.links.where("updatedAt").above(since).toArray()) out.push({ kind: "link", id: l.id, data: l, updated_at: l.updatedAt });
+  for (const f of await db.linkFolders.where("updatedAt").above(since).toArray()) out.push({ kind: "linkFolder", id: f.id, data: f, updated_at: f.updatedAt });
+  for (const r of await db.reminders.where("updatedAt").above(since).toArray()) out.push({ kind: "reminder", id: r.id, data: r, updated_at: r.updatedAt });
   return out;
 }
 
