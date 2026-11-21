@@ -3,7 +3,6 @@ import {
   createLink,
   deleteLink,
   listAllLinks,
-  listLinks,
   updateLink,
   type Link,
 } from "../../data/links";
@@ -19,7 +18,6 @@ import { copyToClipboard, confirmDelete } from "../../components/ui";
 export default function HomeLinksTab() {
   const [folders, setFolders] = useState<LinkFolder[]>([]);
   const [linksByFolder, setLinksByFolder] = useState<Record<string, Link[]>>({});
-  const [allLinks, setAllLinks] = useState<Link[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [unsortedFolderId, setUnsortedFolderId] = useState<string | null>(null);
 
@@ -39,7 +37,6 @@ export default function HomeLinksTab() {
   const reload = useCallback(async () => {
     const [allFolders, allLinks] = await Promise.all([listLinkFolders(), listAllLinks()]);
     setFolders(allFolders);
-    setAllLinks(allLinks);
     const byFolder: Record<string, Link[]> = {};
     for (const link of allLinks) {
       const key = link.folderId ?? null;
@@ -70,16 +67,8 @@ export default function HomeLinksTab() {
 
   const filtered = useMemo(() => {
     const list = currentLinks;
-    if (!q) return list.slice().sort((a, b) => a.order - b.order || b.updatedAt - a.updatedAt);
-    const query = q.toLowerCase();
-    return list.filter(
-      (l) =>
-        l.title.toLowerCase().includes(query) ||
-        l.url.toLowerCase().includes(query) ||
-        (l.notes ?? "").toLowerCase().includes(query) ||
-        l.tags.some((t) => t.toLowerCase().includes(query))
-    );
-  }, [currentLinks, q]);
+    return list.slice().sort((a, b) => a.order - b.order || b.updatedAt - a.updatedAt);
+  }, [currentLinks]);
 
   async function handleAddFolder(e: React.FormEvent) {
     e.preventDefault();
@@ -309,7 +298,6 @@ export default function HomeLinksTab() {
         ) : (
           <ul className="item-list">
             {filtered.map((link) => {
-              const isFolderOpen = selectedFolderId === link.folderId || (!selectedFolderId && !link.folderId);
               return (
                 <li key={link.id} className="item" style={{ display: "flex", flexDirection: "column", background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", marginBottom: "10px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>

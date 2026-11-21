@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import ThoughtStream from "../components/home/ThoughtStream";
 import { CAPTURE_INPUT_ID } from "../components/home/ThoughtStream";
 import CommandBox from "../components/home/CommandBox";
 import TaskListsHome from "../components/home/TaskListsHome";

@@ -81,7 +81,7 @@ export default function ThoughtStream() {
                     <select
                       value={promoteListId ?? ""}
                       onChange={(e) => setPromoteListId(e.target.value || null)}
-                      style({ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any)
+                      style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
                     >
                       <option value="">Inbox</option>
                       {lists.map((l) => (
