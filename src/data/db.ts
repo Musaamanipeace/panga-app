@@ -7,6 +7,7 @@ import Dexie, { type Table } from "dexie";
 import { getSessionUserId } from "../auth/session";
 
 export type TaskStatus = "active" | "inactive" | "completed";
+export type TaskHorizon = "short" | "long";
 export type ProjectStatus = "active" | "archived";
 export type IssueSeverity = "low" | "medium" | "high";
 export type IssueStatus = "open" | "resolved";
@@ -91,6 +92,8 @@ export interface Task {
   scheduledAt: number | null;
   estimatedMinutes: number | null;
   tags: string[];
+  /** short-term (today/this week) or long-term. Optional for older records. */
+  horizon?: TaskHorizon;
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -247,8 +250,6 @@ export const SETTINGS_KEYS = {
   googlePickerKey: "googlePickerKey",
   googleAccessToken: "googleAccessToken",
   driveFolderPrefix: "driveFolder:",
-  emailBackupApiKey: "emailBackupApiKey",
-  emailBackupProvider: "emailBackupProvider",
 } as const;
 
 // Derive a stable, per-user database name from the logged-in user ID.
@@ -279,9 +280,21 @@ export interface ActivityLog {
   userId: string | null;
 }
 
+/** A PDF stored on this device (never uploaded to the cloud). */
+export interface PdfDoc {
+  id: string;
+  name: string;
+  size: number;
+  blob: Blob;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ThoughtEntry {
   id: string;
   text: string;
+  /** Set once the thought has been turned into a task. */
+  taskId?: string | null;
   projectContext: string | null;
   createdAt: number;
   updatedAt: number;
@@ -305,6 +318,7 @@ class PangaDB extends Dexie {
   drafts!: Table<Draft, string>;
   activityLog!: Table<ActivityLog, string>;
   trainOfThought!: Table<ThoughtEntry, string>;
+  pdfDocs!: Table<PdfDoc, string>;
 
   constructor() {
     super(getUserDbName());
@@ -532,6 +546,11 @@ class PangaDB extends Dexie {
       activityLog: "id, entityType, entityId, projectId, timestamp",
       trainOfThought: "id, createdAt, projectContext",
     });
+
+    // v10: PDFs kept on-device for the reader
+    this.version(10).stores({
+      pdfDocs: "id, createdAt",
+    });
   }
 }
 
@@ -642,7 +661,6 @@ export async function ensureSeedData() {
 
 export const SENSITIVE_SETTING_KEYS = new Set([
   "geminiApiKey",
-  "emailBackupApiKey",
   "googleAccessToken",
   "googleCalendarToken",
   "googlePickerKey",

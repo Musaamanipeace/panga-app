@@ -2244,3 +2244,40 @@ body {
   color: inherit;
 }
 .sync-menu-action small { font-weight: 400; font-size: 11px; color: var(--color-text-muted); }
+
+/* ---- Panga home (capture, tasks, notes, clipboard, PDFs) ---- */
+.pg-home { max-width: 860px; margin: 0 auto; }
+.pg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.pg-head h1 { margin: 0; font-size: 22px; }
+.pg-card { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+.pg-capture-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 10px; flex-wrap: wrap; }
+.pg-capture-row > textarea, .pg-capture-row > input, .pg-capture-row > select { flex: 1 1 200px; min-width: 0; }
+.pg-wide { width: 100%; margin: 8px 0; box-sizing: border-box; }
+.pg-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pg-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-subtle); flex-wrap: wrap; }
+.pg-row.pg-active { border-color: var(--color-accent-primary); }
+.pg-row.pg-danger { border-color: var(--color-accent-issue); }
+.pg-grow { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.pg-muted { color: var(--color-text-muted); font-size: 13px; }
+.pg-error { color: var(--color-accent-issue); font-size: 13px; }
+.pg-done { text-decoration: line-through; color: var(--color-text-muted); }
+.pg-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.pg-chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
+.pg-sep { width: 1px; height: 20px; background: var(--color-border); margin: 0 4px; }
+.pg-h3 { margin: 16px 0 8px; font-size: 15px; }
+.pg-note, .pg-note-form { border: 1px solid var(--color-border); border-radius: 8px; padding: 10px; background: var(--color-bg-subtle); display: flex; flex-direction: column; gap: 6px; }
+.pg-note-form { margin-bottom: 10px; }
+.pg-body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; user-select: text; }
+.pg-clip { cursor: pointer; }
+.pg-pdf-text { max-height: 55vh; overflow: auto; line-height: 1.55; margin-top: 10px; }
+.pg-file { cursor: pointer; display: inline-block; }
+.pg-link { background: none; border: none; text-align: left; color: var(--color-accent-primary); cursor: pointer; padding: 0; font: inherit; }
+.pg-cal-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.pg-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.pg-cal-dow { text-align: center; font-size: 11px; color: var(--color-text-muted); }
+.pg-cal-day { position: relative; aspect-ratio: 1.2; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg); cursor: pointer; font: inherit; }
+.pg-cal-today { border-color: var(--color-accent-primary); }
+.pg-cal-sel { background: var(--color-accent-primary); color: #fff; }
+.pg-cal-dot { position: absolute; right: 4px; bottom: 3px; font-size: 10px; background: var(--color-accent-milestone); color: #111; border-radius: 999px; padding: 0 5px; }
+.pg-copy-fab { position: fixed; z-index: 9999; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--color-border-strong); background: var(--color-bg); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); cursor: pointer; font-size: 17px; line-height: 1; }
+@media (max-width: 640px) { .pg-row { padding: 8px; } }

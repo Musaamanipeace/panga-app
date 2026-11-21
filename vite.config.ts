@@ -36,14 +36,19 @@ export default defineConfig({
         id: "/",
         name: "Panga",
         short_name: "Panga",
-        description: "Personal, offline-first project & resource planner.",
+        description: "Catch your train of thought and tick off tasks. Offline-first.",
         lang: "en",
         categories: ["productivity", "business"],
         theme_color: "#111111",
         background_color: "#ffffff",
         display: "standalone",
         scope: "/",
-        start_url: "/",
+        start_url: "/home",
+        shortcuts: [
+          { name: "Quick capture", short_name: "Capture", url: "/home?capture=1", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Clipboard", url: "/home?tab=Clipboard", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Tasks", url: "/home", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+        ],
         icons: [
           { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },
@@ -59,10 +64,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "index.html",
         // Never serve the SPA shell for the vanilla Puter edition or API routes.
-        navigateFallbackDenylist: [/^\/puter\//, /^\/api\//, /^\/health/, /^\/ort\//],
-        // NOTE: no runtimeCaching for puter.com on purpose. Any route registered here
+        navigateFallbackDenylist: [/^\/api\//, /^\/health/, /^\/ort\//],
         // makes the SW fetch() the request itself, and that fetch is governed by the
-        // SW's own CSP connect-src (not script-src) -> js.puter.com gets blocked.
         // With no matching route, the browser loads cross-origin requests natively.
         //
         // The one route below is SAME-ORIGIN only (our self-hosted speech runtime),

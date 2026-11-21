@@ -1,10 +1,10 @@
 // src/data/tasks.ts
-import { db, type Task, type TaskStatus } from "./db";
+import { db, type Task, type TaskStatus, type TaskHorizon } from "./db";
 import { newId, now } from "./utils";
 import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
 
-export type { Task, TaskStatus };
+export type { Task, TaskStatus, TaskHorizon };
 
 export async function listTasksForProject(projectId: string): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
@@ -42,6 +42,7 @@ export async function createTask(input: {
   scheduledAt?: number | null;
   estimatedMinutes?: number | null;
   tags?: string[];
+  horizon?: TaskHorizon;
 }): Promise<Task> {
   if (!db.isOpen()) await db.open();
   const t = now();
@@ -56,6 +57,7 @@ export async function createTask(input: {
     scheduledAt: input.scheduledAt ?? null,
     estimatedMinutes: input.estimatedMinutes ?? null,
     tags: input.tags ?? [],
+    horizon: input.horizon ?? "short",
     createdAt: t,
     updatedAt: t,
     syncStatus: "pending",
@@ -69,7 +71,7 @@ export async function createTask(input: {
 export async function updateTask(
   id: string,
   changes: Partial<
-    Pick<Task, "title" | "notes" | "status" | "executor" | "dueDate" | "scheduledAt" | "estimatedMinutes" | "tags">
+    Pick<Task, "title" | "notes" | "status" | "executor" | "dueDate" | "scheduledAt" | "estimatedMinutes" | "tags" | "horizon">
   >
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
@@ -89,4 +91,16 @@ export async function deleteTask(id: string): Promise<void> {
   await db.tasks.delete(id);
   void syncDeleteRecord("tasks", id);
   void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
+}
+
+/** Put a previously deleted task back (used for "Undo"). */
+export async function restoreTask(task: Task): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  await db.tasks.put({ ...task, updatedAt: now(), syncStatus: "pending" });
+  void syncPushRecord("tasks", task);
+}
+
+export async function getTask(id: string): Promise<Task | undefined> {
+  if (!db.isOpen()) await db.open();
+  return db.tasks.get(id);
 }

@@ -7,7 +7,10 @@ import { ToastContainer, ConfirmDialogHost } from "./ui";
 import { SyncMenu, AutoSyncIndicator } from "./SyncMenu";
 import InstallButton from "./InstallButton";
 import { subscribeAutoSync, startAutoSync, type AutoSyncState } from "../sync/autoSync";
-import StashPanel from "./Stash";
+import SelectionCopy from "./SelectionCopy";
+import { pasteWithFeedback } from "./quickPaste";
+import { migrateStash } from "../data/clips";
+import { startSupabaseSync } from "../sync/supabaseSync";
 import { getSessionEmail, isGuest, logout } from "../auth/session";
 
 export default function AppShell() {
@@ -18,6 +21,8 @@ export default function AppShell() {
 
   useEffect(() => {
     startAutoSync();
+    void migrateStash();
+    startSupabaseSync();
     return subscribeAutoSync(setAutoState);
   }, []);
 
@@ -43,6 +48,18 @@ export default function AppShell() {
         >
           💭 Thoughts
         </button>
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable"
+          onClick={() => void pasteWithFeedback()}
+          data-tip="Save what is on your clipboard"
+          data-tip-pos="bottom"
+        >
+          📋 Paste
+        </button>
+        <Link to="/workspaces" className="btn-secondary btn-small clickable" data-tip="Projects, activities and resources" data-tip-pos="bottom">
+          Workspaces
+        </Link>
         <Link
           to="/settings"
           className="btn-secondary btn-small clickable"
@@ -84,7 +101,7 @@ export default function AppShell() {
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
       <ToastContainer />
       <ConfirmDialogHost />
-      <StashPanel />
+      <SelectionCopy />
     </div>
   );
 }

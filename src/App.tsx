@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Home from "./pages/Home";
+import PangaHome from "./pages/PangaHome";
 import ProjectView from "./pages/ProjectView";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
@@ -9,7 +10,6 @@ import VoiceProvider from "./voice/VoiceProvider";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
 import { restoreSession, canUseApp } from "./auth/session";
-import { initPuterSync } from "./sync/puterSync";
 import "./index.css";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -23,11 +23,6 @@ function App() {
   useEffect(() => {
     void restoreSession().then(async () => {
       await ensureSeedData();
-      try {
-        await initPuterSync();
-      } catch (e) {
-        console.warn("Puter sync init error:", e);
-      }
       if (canUseApp()) {
         try {
           await syncAll();
@@ -63,7 +58,7 @@ function App() {
       <div className="page landing">
         <div className="landing-mark" data-tip="Panga">P</div>
         <h1>Panga</h1>
-        <p>Project &amp; resource planner.</p>
+        <p>Catch your thoughts. Tick off tasks.</p>
         <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>
       </div>
     );
@@ -81,8 +76,9 @@ function App() {
             </RequireAuth>
           }
         >
-          <Route path="/home" element={<Home />} />
-          <Route path="/dashboard" element={<Home />} />
+          <Route path="/home" element={<PangaHome />} />
+          <Route path="/workspaces" element={<Home />} />
+          <Route path="/dashboard" element={<Navigate to="/workspaces" replace />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

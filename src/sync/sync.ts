@@ -4,6 +4,7 @@
 
 import { db } from "../data/db";
 import { getSessionUserId } from "../auth/session";
+import { recordTombstone } from "./tombstones";
 
 export type SyncStatusState = "idle" | "syncing" | "synced" | "error";
 
@@ -95,7 +96,9 @@ export async function syncPushRecord(
 }
 
 /** Push of a deletion */
-export async function syncDeleteRecord(_tableName: string, _id: string) {
+export async function syncDeleteRecord(tableName: string, id: string) {
+  if (tableName === "tasks") recordTombstone("task", id);
+  else if (tableName === "resources") recordTombstone("note", id);
   lastSyncTimestamp = Date.now();
   safeSetStorage(getLastSyncKey(), String(lastSyncTimestamp));
   updateStatus("synced", "Record removed");

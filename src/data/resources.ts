@@ -18,6 +18,7 @@ export interface ResourceCategoryMeta {
 
 export const PRELOADED_CATEGORIES: ResourceCategoryMeta[] = [
   { id: "documents", label: "Documents", baseFormat: "note", description: "Project documentation, specs & READMEs", icon: "📄" },
+  { id: "clipboard", label: "Clipboard", baseFormat: "note", description: "Things you pasted or copied inside Panga", icon: "📎" },
   { id: "notes", label: "Notes", baseFormat: "note", description: "Quick thoughts, memos & references", icon: "📝" },
   { id: "links", label: "Links (URLs)", baseFormat: "url", description: "Web bookmarks & URL links", icon: "🔗" },
   { id: "lists", label: "Lists", baseFormat: "list", description: "Itemized list with copy button on every element", icon: "📋" },
