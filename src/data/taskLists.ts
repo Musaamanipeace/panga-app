@@ -21,6 +21,7 @@ export async function createTaskList(input: {
   title: string;
   description?: string;
   order?: number;
+  folderId?: string | null;
 }): Promise<TaskList> {
   if (!db.isOpen()) await db.open();
   const t = now();
@@ -28,6 +29,7 @@ export async function createTaskList(input: {
   const order = input.order ?? (lists.length ? Math.max(...lists.map((l) => l.order)) + 1 : 0);
   const list: TaskList = {
     id: newId(),
+    folderId: input.folderId ?? null,
     title: input.title.trim(),
     description: input.description,
     order,
@@ -43,7 +45,7 @@ export async function createTaskList(input: {
 
 export async function updateTaskList(
   id: string,
-  changes: Partial<Pick<TaskList, "title" | "description" | "order">>
+  changes: Partial<Pick<TaskList, "title" | "description" | "order" | "folderId">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();

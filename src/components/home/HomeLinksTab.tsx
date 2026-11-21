@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   createLink,
   deleteLink,
@@ -14,22 +14,22 @@ import {
   type LinkFolder,
 } from "../../data/linkFolders";
 import { copyToClipboard, confirmDelete } from "../../components/ui";
+import FolderTree from "./FolderTree";
 
 export default function HomeLinksTab() {
   const [folders, setFolders] = useState<LinkFolder[]>([]);
-  const [linksByFolder, setLinksByFolder] = useState<Record<string, Link[]>>({});
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [unsortedFolderId, setUnsortedFolderId] = useState<string | null>(null);
+  const [links, setLinks] = useState<Link[]>([]);
+  const [selType, setSelType] = useState<"folder" | "link" | null>(null);
+  const [selId, setSelId] = useState<string | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newFolderTitle, setNewFolderTitle] = useState("");
+  const [targetFolderId, setTargetFolderId] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
-  const [targetFolderId, setTargetFolderId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,23 +37,18 @@ export default function HomeLinksTab() {
   const reload = useCallback(async () => {
     const [allFolders, allLinks] = await Promise.all([listLinkFolders(), listAllLinks()]);
     setFolders(allFolders);
-    const byFolder: Record<string, Link[]> = {};
-    for (const link of allLinks) {
-      const key = link.folderId ?? "";
-      if (!byFolder[key]) byFolder[key] = [];
-      byFolder[key].push(link);
+    setLinks(allLinks);
+    if (selId && !folders.find((f) => f.id === selId) && !links.find((l) => l.id === selId)) {
+      setSelId(allFolders[0]?.id ?? null);
+      setSelType("folder");
     }
-    setLinksByFolder(byFolder);
-    const unsorted = allFolders.find((f) => f.title === "Unsorted links");
-    setUnsortedFolderId(unsorted?.id ?? null);
-    if (!selectedFolderId || !allFolders.find((f) => f.id === selectedFolderId)) {
-      setSelectedFolderId(unsorted?.id ?? allFolders[0]?.id ?? null);
-    }
-  }, [selectedFolderId]);
+  }, [selId, folders, links]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
+  const currentLink = useMemo(() => links.find((l) => l.id === selId) ?? null, [links, selId]);
+  const currentLinks = useMemo(() => links.filter((l) => l.folderId === (currentFolder?.id ?? null)), [links, currentFolder]);
+
+  const filtered = useMemo(() => currentLinks.slice().sort((a, b) => a.order - b.order || b.updatedAt - a.updatedAt), [currentLinks]);
 
   function normalizeUrl(input: string): string {
     const trimmed = input.trim();
@@ -62,32 +57,21 @@ export default function HomeLinksTab() {
     return trimmed;
   }
 
-  const currentFolder = useMemo(() => folders.find((f) => f.id === selectedFolderId) ?? null, [folders, selectedFolderId]);
-  const currentLinks = useMemo(() => linksByFolder[selectedFolderId ?? ""] ?? [], [linksByFolder, selectedFolderId]);
-
-  const filtered = useMemo(() => {
-    const list = currentLinks;
-    return list.slice().sort((a, b) => a.order - b.order || b.updatedAt - a.updatedAt);
-  }, [currentLinks]);
-
-  async function handleAddFolder(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newFolderTitle.trim()) return;
-    await createLinkFolder({ title: newFolderTitle.trim() });
-    setNewFolderTitle("");
+  async function handleCreateFolder(parentId: string | null, title: string) {
+    await createLinkFolder({ title: title.trim(), parentFolderId: parentId });
     await reload();
   }
 
   async function handleRenameFolder(id: string, title: string) {
-    await updateLinkFolder(id, { title: title.trim() });
+    await updateLinkFolder(id, { title: title.trim(), parentFolderId: selType === "folder" ? selId : null });
     await reload();
   }
 
   async function handleDeleteFolder(id: string) {
     const folder = folders.find((f) => f.id === id);
     if (!(await confirmDelete({ kind: "link folder", name: folder?.title }))) return;
-    await deleteLinkFolder(id, { moveLinksToFolderId: unsortedFolderId ?? undefined });
-    if (selectedFolderId === id) setSelectedFolderId(unsortedFolderId ?? null);
+    await deleteLinkFolder(id);
+    if (selId === id) setSelId(null);
     await reload();
   }
 
@@ -106,26 +90,21 @@ export default function HomeLinksTab() {
       if (editingId) {
         await updateLink(editingId, { title: finalTitle, url: finalUrl, notes: notes.trim() || undefined, tags: tagList, folderId: targetFolderId ?? null });
       } else {
-        await createLink({ folderId: targetFolderId ?? null, title: finalTitle, url: finalUrl, notes: notes.trim() || undefined, tags: tagList });
+        await createLink({ folderId: targetFolderId ?? (selType === "folder" ? selId : null), title: finalTitle, url: finalUrl, notes: notes.trim() || undefined, tags: tagList });
       }
-      resetForm();
+      setShowAddForm(false);
+      setEditingId(null);
+      setTitle("");
+      setUrl("");
+      setNotes("");
+      setTags("");
+      setTargetFolderId(currentFolder?.id ?? null);
       await reload();
     } catch (err: any) {
       setError(err?.message || "Could not save the link.");
     } finally {
       setSaving(false);
     }
-  }
-
-  function resetForm() {
-    setEditingId(null);
-    setTargetFolderId(currentFolder?.id ?? null);
-    setTitle("");
-    setUrl("");
-    setNotes("");
-    setTags("");
-    setShowAddForm(false);
-    setError(null);
   }
 
   function startEdit(link: Link) {
@@ -144,97 +123,90 @@ export default function HomeLinksTab() {
     await reload();
   }
 
-  async function handleCopy(url: string) {
-    await copyToClipboard(url);
-  }
+  const sx: Record<string, React.CSSProperties> = {
+    sidebar: { flex: "0 0 260px" as const, borderRight: "1px solid var(--color-border)" as const, display: "flex" as const, flexDirection: "column" as const },
+    sidebarHeader: { padding: 12, display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
+    sidebarTitle: { margin: 0, fontSize: 16 },
+    main: { flex: 1, minHeight: 0, display: "flex" as const, flexDirection: "column" as const },
+    emptyState: { padding: 32, textAlign: "center", flex: 1 },
+    header: { padding: "12px 16px", borderBottom: "1px solid var(--color-border)", display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const, flexShrink: 0 },
+    headerTitle: { margin: 0, fontSize: 18 },
+    addForm: { background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "16px", margin: "12px 16px", boxShadow: "0 4px 12px rgba(0,0,0,0.04)" },
+    addFormHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
+    addFormH3: { margin: 0, fontSize: "16px", fontWeight: 600 },
+    addFormField: { marginTop: "10px" },
+    addFormLabel: { fontSize: "13px", fontWeight: 600, display: "block" as const, marginBottom: "6px" },
+    addFormInput: { width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" },
+    addFormActions: { display: "flex" as const, gap: "8px", justifyContent: "flex-end" as const, marginTop: "8px" },
+    cancelBtn: {},
+    saveBtn: {},
+    emptyLinks: { textAlign: "center", padding: "32px 16px", flex: 1 },
+    linkList: { flex: 1, overflowY: "auto", padding: 0, margin: 0, listStyle: "none" },
+    linkItem: { display: "flex" as const, flexDirection: "column" as const, background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", margin: "12px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" },
+    linkHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "flex-start" as const, gap: 8 },
+    linkTitleWrap: { display: "flex" as const, alignItems: "baseline" as const, gap: 8, flex: 1, minWidth: 0 },
+    linkActions: { display: "flex" as const, gap: "6px", alignItems: "center" },
+    linkUrl: { marginTop: "2px", marginBottom: "6px" },
+    linkNotes: { background: "var(--color-bg-subtle)", borderLeft: "3px solid var(--color-accent-primary)", padding: "8px 12px", borderRadius: "0 var(--radius-sm) var(--radius-sm) 0", fontSize: "13px", lineHeight: "1.5", color: "var(--color-text)", margin: "6px 0 8px 0", whiteSpace: "pre-wrap" },
+    linkTags: { display: "flex" as const, gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" },
+    tagChip: { margin: 0, background: "var(--color-bg-subtle)" },
+    tagDate: { marginLeft: "auto", fontSize: "11px", color: "var(--color-text-muted)" },
+    linkAnchor: { fontWeight: 600, fontSize: "15px", color: "var(--color-accent-primary)", textDecoration: "none", wordBreak: "break-word" },
+    linkUrlAnchor: { fontSize: "12px", color: "var(--color-text-muted)", textDecoration: "none", wordBreak: "break-all" },
+  };
 
   return (
-    <div className="home-links-tab">
-      <aside className="link-folders-sidebar">
-        <h2>Link folders</h2>
-        <form className="quick-add-bar" onSubmit={handleAddFolder}>
-          <input
-            value={newFolderTitle}
-            onChange={(e) => setNewFolderTitle(e.target.value)}
-            placeholder="New folder…"
-            autoFocus
-          />
-          <button type="submit" className="btn-action clickable" disabled={!newFolderTitle.trim()}>
-            +
-          </button>
-          <button type="button" className="btn-secondary btn-small" onClick={() => setNewFolderTitle("")}>
-            ✕
-          </button>
-        </form>
-        <ul className="item-list">
-          {folders.length === 0 ? (
-            <p className="empty-state">No folders yet.</p>
-          ) : (
-            folders.map((f) => {
-              const active = selectedFolderId === f.id;
-              const count = (linksByFolder[f.id] ?? []).length;
-              return (
-                <li key={f.id} className={`item ${active ? "item-active" : ""}`}>
-                  <button
-                    type="button"
-                    className="clickable"
-                    onClick={() => setSelectedFolderId(f.id)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", padding: 6, cursor: "pointer" }}
-                  >
-                    <span className="item-title">{f.title}</span>
-                    <span className="item-meta">{count}</span>
-                    <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                      <button type="button" className="btn-icon clickable" onClick={(e) => { e.stopPropagation(); handleRenameFolder(f.id, f.title); }} data-tip="Rename folder">✎</button>
-                      <button type="button" className="btn-icon clickable" onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(f.id); }} data-tip="Delete folder" style={{ color: "var(--color-accent-issue)" }}>×</button>
-                    </span>
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
+    <div className="home-links-tab" style={sx.sidebar}>
+      <aside className="link-folders-sidebar" style={sx.sidebar}>
+        <div style={sx.sidebarHeader}>
+          <h2 style={sx.sidebarTitle}>Link folders</h2>
+          <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder">+</button>
+        </div>
+        <FolderTree
+          folders={folders}
+          items={links}
+          folderId={(f) => f.id}
+          folderParentId={(f) => f.parentFolderId}
+          folderTitle={(f) => f.title}
+          itemId={(l) => l.id}
+          itemFolderId={(l) => l.folderId}
+          itemTitle={(l) => l.title}
+          selectedId={selId}
+          onSelectFolder={(id) => { setSelType("folder"); setSelId(id); }}
+          onSelectItem={(id) => { const l = links.find((x) => x.id === id); if (l) startEdit(l); setSelType("link"); setSelId(id); }}
+          onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
+          newFolderPlaceholder={selType === "folder" ? `New folder under "${currentFolder?.title}"…` : "New folder…"}
+          renderFolderMeta={(f) => {
+            const n = links.filter((l) => l.folderId === f.id).length;
+            return n > 0 ? <span className="item-meta">{n}</span> : null;
+          }}
+        />
       </aside>
 
-      <main className="link-list-main">
-        <header className="page-header">
+      <main className="link-list-main" style={sx.main}>
+        <header className="page-header" style={sx.header}>
           <div>
-            <h1>{currentFolder ? currentFolder.title : "Unsorted links"}</h1>
+            <h1 style={sx.headerTitle}>{currentFolder?.title ?? currentLink?.title ?? "Links"}</h1>
           </div>
-          <div className="header-actions">
-            <button
-              type="button"
-              className="btn-primary clickable"
-              onClick={() => { setShowAddForm(true); setEditingId(null); resetForm(); }}
-              data-tip="Add a link"
-            >
-              + Add link
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn-primary clickable"
+            onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }}
+            data-tip="Add a link"
+          >
+            + Add link
+          </button>
         </header>
 
         {showAddForm && (
-          <form onSubmit={handleSaveLink} className="stack" style={{ background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "16px", marginBottom: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.04)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>{editingId ? "Edit link" : "Add a link"}</h3>
+          <form onSubmit={handleSaveLink} className="stack" style={sx.addForm}>
+            <div style={sx.addFormHeader}>
+              <h3 style={sx.addFormH3}>{editingId ? "Edit link" : "Add a link"}</h3>
             </div>
-            <div>
-              <label htmlFor="link-folder" style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>Folder</label>
-              <select
-                id="link-folder"
-                value={targetFolderId ?? ""}
-                onChange={(e) => setTargetFolderId(e.target.value || null)}
-                style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
-              >
-                <option value="">Unsorted</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ marginTop: "10px" }}>
-              <label htmlFor="link-url" style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>URL <span style={{ color: "var(--color-accent-issue)" }}>*</span></label>
+            <div style={sx.addFormField}>
+              <label htmlFor="link-url" style={sx.addFormLabel}>URL <span style={{ color: "var(--color-accent-issue)" }}>*</span></label>
               <input
                 id="link-url"
                 autoFocus
@@ -242,43 +214,43 @@ export default function HomeLinksTab() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
-                style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
+                style={sx.addFormInput}
               />
             </div>
-            <div style={{ marginTop: "10px" }}>
-              <label htmlFor="link-title" style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>Title</label>
+            <div style={sx.addFormField}>
+              <label htmlFor="link-title" style={sx.addFormLabel}>Title</label>
               <input
                 id="link-title"
                 placeholder="Link title (defaults to domain)"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
+                style={sx.addFormInput}
               />
             </div>
-            <div style={{ marginTop: "10px" }}>
-              <label htmlFor="link-notes" style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>Notes</label>
+            <div style={sx.addFormField}>
+              <label htmlFor="link-notes" style={sx.addFormLabel}>Notes</label>
               <textarea
                 id="link-notes"
                 rows={3}
                 placeholder="Notes about this link"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
+                style={sx.addFormInput}
               />
             </div>
-            <div style={{ marginTop: "10px" }}>
-              <label htmlFor="link-tags" style={{ fontSize: "13px", fontWeight: 600, display: "block", marginBottom: "6px" }}>Tags (comma-separated)</label>
+            <div style={sx.addFormField}>
+              <label htmlFor="link-tags" style={sx.addFormLabel}>Tags (comma-separated)</label>
               <input
                 id="link-tags"
                 placeholder="research, docs, tools"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
-                style={{ width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}
+                style={sx.addFormInput}
               />
             </div>
             {error && <p className="form-error">{error}</p>}
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "8px" }}>
-              <button type="button" className="btn-secondary clickable" onClick={resetForm} disabled={saving}>
+            <div style={sx.addFormActions}>
+              <button type="button" className="btn-secondary clickable" onClick={() => { setShowAddForm(false); setEditingId(null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }} disabled={saving}>
                 Cancel
               </button>
               <button type="submit" className="btn-primary clickable" disabled={saving}>
@@ -288,56 +260,52 @@ export default function HomeLinksTab() {
           </form>
         )}
 
-        {filtered.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: "center", padding: "32px 16px" }}>
-            <p>No links in this folder.</p>
-            <button type="button" className="btn-primary btn-small clickable" onClick={() => { setShowAddForm(true); setEditingId(null); resetForm(); }}>
+        {filtered.length === 0 && !showAddForm ? (
+          <div className="empty-state" style={sx.emptyLinks}>
+            <p>No links in {currentFolder?.title ? `“${currentFolder.title}”` : "this folder"}.</p>
+            <button type="button" className="btn-primary btn-small clickable" onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }}>
               + Add your first link
             </button>
           </div>
         ) : (
-          <ul className="item-list">
-            {filtered.map((link) => {
-              return (
-                <li key={link.id} className="item" style={{ display: "flex", flexDirection: "column", background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", marginBottom: "10px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flex: 1, minWidth: 0 }}>
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        style={{ fontWeight: 600, fontSize: "15px", color: "var(--color-accent-primary)", textDecoration: "none", wordBreak: "break-word" }}
-                        className="clickable"
-                        data-tip="Open link"
-                      >
-                        {link.title || link.url} ↗
-                      </a>
-                    </div>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <button type="button" className="btn-secondary btn-small clickable" onClick={() => handleCopy(link.url)} data-tip="Copy link URL">Copy</button>
-                      <button type="button" className="btn-secondary btn-small clickable" onClick={() => startEdit(link)} data-tip="Edit link">Edit</button>
-                      <button type="button" className="btn-icon clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" style={{ color: "var(--color-accent-issue)" }}>×</button>
-                    </div>
+          <ul className="item-list" style={sx.linkList}>
+            {filtered.map((link) => (
+              <li key={link.id} className="item" style={sx.linkItem}>
+                <div style={sx.linkHeader}>
+                  <div style={sx.linkTitleWrap}>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      style={sx.linkAnchor}
+                      className="clickable"
+                      data-tip="Open link"
+                    >
+                      {link.title || link.url} ↗
+                    </a>
                   </div>
-                  {link.url && (
-                    <div style={{ marginTop: "2px", marginBottom: "6px" }}>
-                      <a href={link.url} target="_blank" rel="noreferrer noopener" style={{ fontSize: "12px", color: "var(--color-text-muted)", textDecoration: "none", wordBreak: "break-all" }}>{link.url}</a>
-                    </div>
-                  )}
-                  {link.notes && (
-                    <div style={{ background: "var(--color-bg-subtle)", borderLeft: "3px solid var(--color-accent-primary)", padding: "8px 12px", borderRadius: "0 var(--radius-sm) var(--radius-sm) 0", fontSize: "13px", lineHeight: "1.5", color: "var(--color-text)", margin: "6px 0 8px 0", whiteSpace: "pre-wrap" }}>{link.notes}</div>
-                  )}
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" }}>
-                    {link.tags.map((tag) => (
-                      <span key={tag} className="chip-small" style={{ margin: 0, background: "var(--color-bg-subtle)" }}>
-                        #{tag}
-                      </span>
-                    ))}
-                    <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--color-text-muted)" }}>{new Date(link.updatedAt).toLocaleDateString()}</span>
+                  <div style={sx.linkActions}>
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => copyToClipboard(link.url)} data-tip="Copy link URL">Copy</button>
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => startEdit(link)} data-tip="Edit link">Edit</button>
+                    <button type="button" className="btn-icon clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" style={{ color: "var(--color-accent-issue)" }}>×</button>
                   </div>
-                </li>
-              );
-            })}
+                </div>
+                {link.url && (
+                  <div style={sx.linkUrl}>
+                    <a href={link.url} target="_blank" rel="noreferrer noopener" style={sx.linkUrlAnchor}>{link.url}</a>
+                  </div>
+                )}
+                {link.notes && (
+                  <div style={sx.linkNotes}>{link.notes}</div>
+                )}
+                <div style={sx.linkTags}>
+                  {link.tags.map((tag) => (
+                    <span key={tag} className="chip-small" style={sx.tagChip}>#{tag}</span>
+                  ))}
+                  <span style={sx.tagDate}>{new Date(link.updatedAt).toLocaleDateString()}</span>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </main>

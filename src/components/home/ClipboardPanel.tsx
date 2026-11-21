@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { addClip, clearClips, clipTitle, listClips, removeClip } from "../../data/clips";
-import { createResource, type Resource } from "../../data/resources";
+import { type Resource } from "../../data/resources";
 import { createTask } from "../../data/tasks";
+import { createNote } from "../../data/notes";
 import { confirmAction, copyToClipboard, showToast } from "../ui";
 import { pasteWithFeedback } from "../quickPaste";
 
@@ -98,16 +99,16 @@ export default function ClipboardPanel() {
                   <button type="button" className="btn-secondary btn-small" onClick={() => void copyToClipboard(c.body ?? "")}>
                     Copy
                   </button>
-                  <button
-                    type="button"
-                    className="btn-secondary btn-small"
-                    onClick={async () => {
-                      await createResource({ category: "notes", title: c.title, body: c.body, tags: [] });
-                      showToast("Saved as a note", "success");
-                    }}
-                  >
-                    → Note
-                  </button>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small"
+                      onClick={async () => {
+                        await createNote({ folderId: null, title: c.title, body: c.body ?? "" });
+                        showToast("Saved as a note", "success");
+                      }}
+                    >
+                      → Note
+                    </button>
                   <button
                     type="button"
                     className="btn-secondary btn-small"

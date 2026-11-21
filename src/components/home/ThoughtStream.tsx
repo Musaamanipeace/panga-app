@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { addThought, deleteThought, listThoughts, updateThought, type ThoughtEntry } from "../../data/thoughts";
 import { createTask } from "../../data/tasks";
+import { createNote } from "../../data/notes";
 import { listTaskLists, type TaskList } from "../../data/taskLists";
+import { listNoteFolders, type NoteFolder } from "../../data/noteFolders";
 import { confirmDelete, showToast } from "../ui";
 
 export const CAPTURE_INPUT_ID = "panga-capture-input";
@@ -11,13 +13,17 @@ export default function ThoughtStream() {
   const [draft, setDraft] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [lists, setLists] = useState<TaskList[]>([]);
+  const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [promoting, setPromoting] = useState<{ id: string; text: string } | null>(null);
+  const [promoteAs, setPromoteAs] = useState<"task" | "note" | null>(null);
   const [promoteListId, setPromoteListId] = useState<string | null>(null);
+  const [promoteFolderId, setPromoteFolderId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [thoughtsList, allLists] = await Promise.all([listThoughts(showAll ? 200 : 8), listTaskLists()]);
+    const [thoughtsList, allLists, allFolders] = await Promise.all([listThoughts(showAll ? 200 : 8), listTaskLists(), listNoteFolders()]);
     setThoughts(thoughtsList);
     setLists(allLists);
+    setFolders(allFolders);
   }, [showAll]);
 
   useEffect(() => {
@@ -43,6 +49,18 @@ export default function ThoughtStream() {
     setPromoteListId(null);
     window.dispatchEvent(new CustomEvent("panga-data-updated"));
     showToast("Added to tasks", "success");
+  }
+
+  async function toNote(th: ThoughtEntry) {
+    const firstLine = th.text.split(/\r?\n/)[0].slice(0, 160);
+    const folderId = promoteFolderId ?? (folders.length ? folders[0].id : null);
+    const note = await createNote({ folderId, title: firstLine, body: th.text.length > firstLine.length ? th.text : "" });
+    await updateThought(th.id, { noteId: note.id });
+    setPromoting(null);
+    setPromoteAs(null);
+    setPromoteFolderId(null);
+    window.dispatchEvent(new CustomEvent("panga-data-updated"));
+    showToast("Added to notes", "success");
   }
 
   return (
@@ -77,27 +95,62 @@ export default function ThoughtStream() {
                 </span>
                 {th.taskId ? (
                   <span className="chip-small">task ✓</span>
+                ) : th.noteId ? (
+                  <span className="chip-small">note ✓</span>
                 ) : promotingThis ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <select
-                      value={promoteListId ?? ""}
-                      onChange={(e) => setPromoteListId(e.target.value || null)}
+                      value={promoteAs ?? ""}
+                      onChange={(e) => setPromoteAs(e.target.value as "task" | "note")}
                       style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
                     >
-                      <option value="">Inbox</option>
-                      {lists.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.title}
-                        </option>
-                      ))}
+                      <option value="task">→ task</option>
+                      <option value="note">→ note</option>
                     </select>
-                    <button type="button" className="btn-secondary btn-small" onClick={() => void toTask(th)}>→ task</button>
-                    <button type="button" className="btn-secondary btn-small" onClick={() => setPromoting(null)}>✕</button>
+                    {promoteAs === "task" ? (
+                      <>
+                        <select
+                          value={promoteListId ?? ""}
+                          onChange={(e) => setPromoteListId(e.target.value || null)}
+                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
+                        >
+                          <option value="">Inbox</option>
+                          {lists.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.title}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="button" className="btn-secondary btn-small" onClick={() => void toTask(th)}>Create</button>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          value={promoteFolderId ?? ""}
+                          onChange={(e) => setPromoteFolderId(e.target.value || null)}
+                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
+                        >
+                          <option value="">Inbox</option>
+                          {folders.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.title}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="button" className="btn-secondary btn-small" onClick={() => void toNote(th)}>Create</button>
+                      </>
+                    )}
+                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting(null); setPromoteAs(null); setPromoteListId(null); setPromoteFolderId(null); }}>✕</button>
                   </div>
                 ) : (
-                  <button type="button" className="btn-secondary btn-small" onClick={() => setPromoting({ id: th.id, text: th.text })} title="Turn this into a task">
-                    → task
-                  </button>
+                  <>
+                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("task"); }} title="Turn this into a task">
+                      → task
+                    </button>
+                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("note"); }} title="Turn this into a note">
+                      → note
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

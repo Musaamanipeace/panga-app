@@ -169,6 +169,18 @@ create table if not exists public.task_lists (
   title text not null,
   description text default '',
   order_index integer default 0,
+  folder_id text references public.task_list_folders(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Task list folders (nestable)
+create table if not exists public.task_list_folders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  parent_folder_id text references public.task_list_folders(id),
+  title text not null,
+  order_index integer default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -177,6 +189,7 @@ create table if not exists public.task_lists (
 create table if not exists public.link_folders (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
+  parent_folder_id text references public.link_folders(id),
   title text not null,
   order_index integer default 0,
   created_at timestamptz not null default now(),
@@ -208,6 +221,43 @@ create table if not exists public.notes (
   updated_at timestamptz not null default now()
 );
 
+-- Note folders (nestable)
+create table if not exists public.note_folders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  parent_folder_id text references public.note_folders(id),
+  title text not null,
+  order_index integer default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Reminder folders (nestable)
+create table if not exists public.reminder_folders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  parent_folder_id text references public.reminder_folders(id),
+  title text not null,
+  order_index integer default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Reminders
+create table if not exists public.reminders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  folder_id text references public.reminder_folders(id),
+  tone_id text,
+  linked_entity_type text check (linked_entity_type in ('task', 'note')),
+  linked_entity_id text,
+  message text not null,
+  trigger_at timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'fired', 'dismissed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Indexes
 create index if not exists idx_projects_user on public.projects(user_id);
 create index if not exists idx_tasks_user on public.tasks(user_id);
@@ -220,6 +270,14 @@ create index if not exists idx_tasks_parent on public.tasks(parent_id);
 create index if not exists idx_link_folders_user on public.link_folders(user_id);
 create index if not exists idx_links_folder on public.links(folder_id);
 create index if not exists idx_notes_user on public.notes(user_id);
+create index if not exists idx_task_list_folders_user on public.task_list_folders(user_id);
+create index if not exists idx_task_list_folders_parent on public.task_list_folders(parent_folder_id);
+create index if not exists idx_task_lists_folder on public.task_lists(folder_id);
+create index if not exists idx_note_folders_user on public.note_folders(user_id);
+create index if not exists idx_note_folders_parent on public.note_folders(parent_folder_id);
+create index if not exists idx_reminder_folders_user on public.reminder_folders(user_id);
+create index if not exists idx_reminder_folders_parent on public.reminder_folders(parent_folder_id);
+create index if not exists idx_reminders_folder on public.reminders(folder_id);
 
 -- Row Level Security
 alter table public.profiles enable row level security;
@@ -238,6 +296,9 @@ alter table public.messages enable row level security;
 alter table public.settings enable row level security;
 alter table public.task_lists enable row level security;
 alter table public.link_folders enable row level security;
+alter table public.task_list_folders enable row level security;
+alter table public.note_folders enable row level security;
+alter table public.reminder_folders enable row level security;
 alter table public.links enable row level security;
 alter table public.notes enable row level security;
 
@@ -271,6 +332,12 @@ create policy "Users own their data" on public.settings
 create policy "Users own their data" on public.task_lists
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users own their data" on public.link_folders
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.task_list_folders
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.note_folders
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users own their data" on public.reminder_folders
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users own their data" on public.links
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

@@ -20,6 +20,7 @@ export async function getLinkFolder(id: string): Promise<LinkFolder | undefined>
 export async function createLinkFolder(input: {
   title: string;
   order?: number;
+  parentFolderId?: string | null;
 }): Promise<LinkFolder> {
   if (!db.isOpen()) await db.open();
   const t = now();
@@ -27,6 +28,7 @@ export async function createLinkFolder(input: {
   const order = input.order ?? (folders.length ? Math.max(...folders.map((f) => f.order)) + 1 : 0);
   const folder: LinkFolder = {
     id: newId(),
+    parentFolderId: input.parentFolderId ?? null,
     title: input.title.trim(),
     order,
     createdAt: t,
@@ -41,7 +43,7 @@ export async function createLinkFolder(input: {
 
 export async function updateLinkFolder(
   id: string,
-  changes: Partial<Pick<LinkFolder, "title" | "order">>
+  changes: Partial<Pick<LinkFolder, "title" | "order" | "parentFolderId">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
@@ -67,21 +69,23 @@ export async function reorderLinkFolders(orderedIds: string[]): Promise<void> {
   }
 }
 
-export async function deleteLinkFolder(id: string, options?: { moveLinksToFolderId?: string }): Promise<void> {
+/** Delete a folder, reparenting subfolders and links to its parent (or root). */
+export async function deleteLinkFolder(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
-  const moveTo = options?.moveLinksToFolderId;
+  const folder = await db.linkFolders.get(id);
+  const parentId = folder?.parentFolderId ?? null;
+  const subfolders = await db.linkFolders.where("parentFolderId").equals(id).toArray();
   const links = await db.links.where("folderId").equals(id).toArray();
   await db.transaction("rw", [db.links, db.linkFolders], async () => {
+    for (const sf of subfolders) {
+      await db.linkFolders.update(sf.id, { parentFolderId: parentId, updatedAt: now(), syncStatus: "pending" });
+      const updated = await db.linkFolders.get(sf.id);
+      if (updated) void syncPushRecord("linkFolders", updated);
+    }
     for (const link of links) {
-      if (moveTo) {
-        await db.links.update(link.id, { folderId: moveTo, updatedAt: now(), syncStatus: "pending" });
-        const updated = await db.links.get(link.id);
-        if (updated) void syncPushRecord("links", updated);
-      } else {
-        await db.links.delete(link.id);
-        void syncDeleteRecord("links", link.id);
-        recordTombstone("link", link.id);
-      }
+      await db.links.update(link.id, { folderId: parentId, updatedAt: now(), syncStatus: "pending" });
+      const updated = await db.links.get(link.id);
+      if (updated) void syncPushRecord("links", updated);
     }
     await db.linkFolders.delete(id);
   });

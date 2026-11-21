@@ -2,7 +2,7 @@
 // cloud about them. Tiny and dependency-free so any data module can import it.
 import { getUserScopedKey } from "../auth/session";
 
-export type SyncKind = "task" | "taskList" | "thought" | "note" | "link" | "linkFolder" | "reminder";
+export type SyncKind = "task" | "taskList" | "taskListFolder" | "thought" | "note" | "noteFolder" | "link" | "linkFolder" | "reminder" | "reminderFolder";
 export interface Tombstone {
   kind: SyncKind;
   id: string;

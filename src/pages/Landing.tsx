@@ -1,76 +1,53 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import InstallButton from "../components/InstallButton";
 import { useNavigate } from "react-router-dom";
-import { setGuestMode, canUseApp, restoreSessionFromSnapshot, resetGuestSession, getUserScopedKey, getSessionUserId } from "../auth/session";
+import { setGuestMode, canUseApp, restoreSessionFromSnapshot, getSessionUserId } from "../auth/session";
 import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
+import { signIn, signUp } from "../sync/supabaseSync";
 
 export default function Landing() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [confirmStartAfresh, setConfirmStartAfresh] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const fileInputRef = useCallback((el: HTMLInputElement | null) => {
+    if (el) el.addEventListener("change", (e) => {
+      const target = e.target as HTMLInputElement | null;
+      const f = target?.files?.[0];
+      if (f && (f.name.endsWith(".json") || f.type === "application/json")) {
+        void handleJsonImport(f);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    // If already signed in, go straight home
+    if (getSessionUserId() || canUseApp()) {
+      // still allow guest if no session
+      void navigate("/home");
+    }
+  }, [navigate]);
 
   function reset() {
     setError(null);
     setSuccessNotice(null);
   }
 
-  async function handleStartAfreshClick() {
+  async function handleSignIn(kind: "in" | "up") {
     reset();
-    try {
-      const has = await hasLocalData();
-      if (has) {
-        setConfirmStartAfresh(true);
-      } else {
-        await performStartAfresh();
-      }
-    } catch {
-      await performStartAfresh();
-    }
-  }
-
-  async function performStartAfresh() {
     setLoading(true);
-    reset();
-    setConfirmStartAfresh(false);
     try {
-      // Clear all local database tables so existing data is never resumed
-      await clearAllLocalData();
-      // Generate a brand new clean guest session ID and switch DB
-      resetGuestSession();
-      const { switchUserAccount } = await import("../data/db");
-      await switchUserAccount();
-      // Clear local UI cached states
-      try {
-        localStorage.removeItem(getUserScopedKey("panga_home_expanded"));
-        localStorage.removeItem(`panga_last_sync_info_${getSessionUserId() || "guest"}`);
-      } catch {}
-      navigate("/home");
+      const res = kind === "in" ? await signIn(login.trim(), password) : await signUp(login.trim(), password);
+      if (res.error) {
+        setError(res.error);
+      } else {
+        setSuccessNotice(kind === "up" ? "Account created. You're signed in." : "Signed in.");
+        setTimeout(() => navigate("/home"), 600);
+      }
     } catch (e: any) {
-      setError(e?.message || "Could not start fresh offline workspace.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleResumeLocal() {
-    setLoading(true);
-    reset();
-    setConfirmStartAfresh(false);
-    try {
-      const has = await hasLocalData();
-      if (has || canUseApp()) {
-        if (!canUseApp()) setGuestMode();
-        // Ensure DB is bound to the current session user
-        const { switchUserAccount } = await import("../data/db");
-        void switchUserAccount();
-        navigate("/home");
-      } else {
-        setError("No saved local data found on this device. Click 'Start Afresh' to begin a new workspace, or import a JSON backup.");
-      }
+      setError(e?.message || "Authentication failed.");
     } finally {
       setLoading(false);
     }
@@ -82,13 +59,11 @@ export default function Landing() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      // Support both { metadata, data } and flat table maps
       const data = parsed.data ?? parsed;
       if (!data || typeof data !== "object") {
         throw new Error("Invalid snapshot: expected an object with table arrays.");
       }
       await importDbState(data);
-      // Optional email from metadata for session
       const emailFromMeta =
         parsed.metadata?.email ||
         parsed.metadata?.userEmail ||
@@ -103,9 +78,25 @@ export default function Landing() {
     }
   }, [navigate]);
 
+  async function handleContinueAsGuest() {
+    reset();
+    setLoading(true);
+    try {
+      const has = await hasLocalData();
+      if (has) {
+        await clearAllLocalData();
+      }
+      setGuestMode();
+      navigate("/home");
+    } catch (e: any) {
+      setError(e?.message || "Could not start guest workspace.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
-    setDragOver(false);
     const f = e.dataTransfer.files?.[0];
     if (f && (f.name.endsWith(".json") || f.type === "application/json")) {
       void handleJsonImport(f);
@@ -119,134 +110,114 @@ export default function Landing() {
       <div className="landing-mark" data-tip="Panga">P</div>
       <h1>Panga</h1>
       <p className="landing-tagline">
-        Local-first project &amp; resource planner for focused work in distracting places.
+        Capture thoughts, tick off tasks, keep links and notes — all offline-first.
       </p>
       <p className="landing-sub">
-        Save progress on this device. Optionally sync with Google Drive.
-        No forced account — start offline and go.
+        Sign in to sync across devices, import a JSON backup, or continue as a guest.
+        Nothing is forced — your data stays on this device by default.
       </p>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
         <InstallButton variant="large" />
       </div>
 
-      <div className="landing-actions">
-        {/* Section: Continue Offline */}
-        <div className="landing-offline-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ textAlign: "center", marginBottom: 2 }}>
-            <h2 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700, color: "var(--color-text)" }}>
-              Continue Offline
-            </h2>
-            <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-muted)" }}>
-              Work locally without an account. Data stays on this device.
-            </p>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <button
-              type="button"
-              className="btn-primary btn-large blade-glint clickable"
-              disabled={loading}
-              onClick={() => void handleStartAfreshClick()}
-              data-tip="Start with a completely blank workspace. Clears existing local data so you begin fresh."
-            >
-              {loading ? "Starting…" : "Start Afresh"}
-            </button>
-
-            <button
-              type="button"
-              className="btn-secondary btn-large clickable"
-              disabled={loading}
-              onClick={() => void handleResumeLocal()}
-              data-tip="Continue working with the existing data saved on this browser."
-            >
-              {loading ? "Checking…" : "Resume Local"}
-            </button>
-          </div>
-
-          {confirmStartAfresh && (
-            <div
-              style={{
-                background: "#fffbeb",
-                border: "1px solid #fde68a",
-                borderRadius: "var(--radius)",
-                padding: "14px",
-                fontSize: "13px",
-                color: "#92400e",
-                textAlign: "left",
-                marginTop: 4,
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                ⚠️ Confirm Start Afresh
-              </div>
-              <p style={{ margin: "0 0 10px 0", lineHeight: 1.45 }}>
-                Existing local data was found on this device. Starting afresh will erase all current local projects, tasks, and notes so you begin with a blank workspace.
-              </p>
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  className="btn-secondary btn-small clickable"
-                  onClick={() => setConfirmStartAfresh(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary btn-small clickable"
-                  style={{ background: "#dc2626", borderColor: "#dc2626" }}
-                  onClick={() => void performStartAfresh()}
-                >
-                  Yes, Clear &amp; Start Afresh
-                </button>
-              </div>
+      <div className="landing-actions" style={{ maxWidth: 460, margin: "0 auto" }}>
+        {/* Sign in */}
+        <section className="landing-panel" style={{ marginBottom: 14 }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Sign in</h2>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--color-text-muted)" }}>
+            Username + password. Synced to Supabase when you log in.
+          </p>
+          <form onSubmit={(e) => { e.preventDefault(); void handleSignIn("in"); }} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              autoFocus
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              placeholder="Username"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              style={{ padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", width: "100%" }}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password (8+ characters)"
+              autoComplete="current-password"
+              spellCheck={false}
+              style={{ padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", width: "100%" }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="submit" className="btn-primary" disabled={loading || !login.trim() || !password}>
+                {loading ? "Signing in…" : "Sign in"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={loading || !login.trim() || !password}
+                onClick={() => void handleSignIn("up")}
+              >
+                Create account
+              </button>
             </div>
-          )}
-         </div>
+          </form>
+          {error && <p className="otp-error" style={{ marginTop: 8 }}>{error}</p>}
+          {successNotice && <p className="otp-success" style={{ marginTop: 8 }}>{successNotice}</p>}
+        </section>
 
-        <div
-          className={`dropzone ${dragOver ? "dropzone-active" : ""}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
-        >
-          <strong>Import JSON backup</strong>
-          <span>Drop a .json snapshot here or click to choose a file</span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleJsonImport(f);
+        {/* Upload JSON */}
+        <section className="landing-panel" style={{ marginBottom: 14 }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Import JSON backup</h2>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--color-text-muted)" }}>
+            Restore a previously exported Panga snapshot.
+          </p>
+          <div
+            className={`dropzone ${loading ? "dropzone-active" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); }}
+            onDragLeave={() => {}}
+            onDrop={onDrop}
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = ".json,application/json";
+              input.onchange = (e: any) => {
+                const f = e.target.files?.[0];
+                if (f) void handleJsonImport(f);
+              };
+              input.click();
             }}
-          />
-        </div>
+            role="button"
+            tabIndex={0}
+            style={{ border: "2px dashed var(--color-border)", borderRadius: "var(--radius)", padding: "20px 16px", textAlign: "center", cursor: "pointer", background: "var(--color-bg-subtle)" }}
+          >
+            <strong>Drop a .json snapshot here or click to choose a file</strong>
+            <input ref={fileInputRef as any} type="file" accept=".json,application/json" style={{ display: "none" }} />
+          </div>
+          {error && <p className="otp-error" style={{ marginTop: 8 }}>{error}</p>}
+          {successNotice && <p className="otp-success" style={{ marginTop: 8 }}>{successNotice}</p>}
+        </section>
 
-        <p className="landing-or">or connect later in Settings → Cloud Sync</p>
+        {/* Continue as guest */}
+        <section className="landing-panel">
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Continue as guest</h2>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--color-text-muted)" }}>
+            Work offline without an account. Data stays on this device only.
+          </p>
+          <button
+            type="button"
+            className="btn-primary btn-large clickable"
+            disabled={loading}
+            onClick={() => void handleContinueAsGuest()}
+            style={{ width: "100%" }}
+          >
+            {loading ? "Starting…" : "Continue as guest"}
+          </button>
+        </section>
       </div>
 
-      {error && (
-        <p className="otp-error" style={{ marginTop: 16 }}>
-          {error}
-        </p>
-      )}
-      {successNotice && (
-        <p className="otp-success" style={{ marginTop: 16 }}>
-          ✓ {successNotice}
-        </p>
-      )}
-
-      <footer className="landing-footer">
+      <footer className="landing-footer" style={{ marginTop: 20, fontSize: 12, color: "var(--color-text-muted)" }}>
         <span>Data stays on your device by default.</span>
-        <span>Cloud sync uses your own Google Drive account.</span>
+        <span>Signed-in users sync to Supabase.</span>
       </footer>
     </div>
   );

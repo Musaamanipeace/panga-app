@@ -109,8 +109,21 @@ export interface Task {
 // Task lists — top-level containers for tasks.
 export interface TaskList {
   id: string;
+  folderId: string | null;    // null = unfiled (shows at root)
   title: string;
   description?: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Task list folders — named folders that can contain task lists and subfolders.
+export interface TaskListFolder {
+  id: string;
+  parentFolderId: string | null; // null = root folder
+  title: string;
   order: number;
   createdAt: number;
   updatedAt: number;
@@ -121,6 +134,20 @@ export interface TaskList {
 // Link folders — named folders that contain links.
 export interface LinkFolder {
   id: string;
+  parentFolderId: string | null; // null = root folder
+  title: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Note folders — named folders that contain notes. Folder acts as the note's
+// categorisation, so notes have no separate category field.
+export interface NoteFolder {
+  id: string;
+  parentFolderId: string | null; // null = root folder
   title: string;
   order: number;
   createdAt: number;
@@ -147,6 +174,7 @@ export interface Link {
 // Notes — dedicated notes table (replaces overloading resources with category "notes").
 export interface Note {
   id: string;
+  folderId: string | null;    // null = unsorted/inbox note folder
   title: string;
   body: string;
   tags: string[];
@@ -229,12 +257,25 @@ export interface IssueComment {
 
 export interface Reminder {
   id: string;
+  folderId: string | null;    // null = unfiled (shows at root)
   toneId?: string;            // e.g. "default" | "chime" | "soft" | "urgent"
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   message: string;
   triggerAt: number;
   status: "pending" | "fired" | "dismissed";
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+  userId?: string; // when logged in
+}
+
+// Reminder folders — named folders that can contain reminders and subfolders.
+export interface ReminderFolder {
+  id: string;
+  parentFolderId: string | null; // null = root folder
+  title: string;
+  order: number;
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -353,6 +394,8 @@ export interface ThoughtEntry {
   text: string;
   /** Set once the thought has been turned into a task. */
   taskId?: string | null;
+  /** Set once the thought has been turned into a note. */
+  noteId?: string | null;
   projectContext: string | null;
   createdAt: number;
   updatedAt: number;
@@ -362,15 +405,18 @@ class PangaDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
   taskLists!: Table<TaskList, string>;
+  taskListFolders!: Table<TaskListFolder, string>;
   resources!: Table<Resource, string>;
   links!: Table<Link, string>;
   linkFolders!: Table<LinkFolder, string>;
+  noteFolders!: Table<NoteFolder, string>;
   notes!: Table<Note, string>;
   docEntries!: Table<DocEntry, string>;
   milestones!: Table<Milestone, string>;
   issues!: Table<Issue, string>;
   contacts!: Table<Contact, string>;
   reminders!: Table<Reminder, string>;
+  reminderFolders!: Table<ReminderFolder, string>;
   calendarEvents!: Table<CalendarEvent, string>;
   scheduleItems!: Table<ScheduleItem, string>;
   conversations!: Table<Conversation, string>;
@@ -733,6 +779,93 @@ class PangaDB extends Dexie {
         console.warn("v11 migration error:", e);
       }
     });
+
+    // v12: note folders — notes live inside folders; the folder is the note's
+    // categorisation, so notes have no separate category field.
+    this.version(12).stores({
+      noteFolders: "id, order, updatedAt, syncStatus",
+      notes: "id, folderId, updatedAt, syncStatus, *tags",
+    }).upgrade(async (tx) => {
+      const nowMs = Date.now();
+      try {
+        // Ensure a default Inbox note folder exists
+        const existingFolders = await tx.table("noteFolders").toArray();
+        let inboxFolderId: string;
+        if (existingFolders.length === 0) {
+          inboxFolderId = newId();
+          await tx.table("noteFolders").add({
+            id: inboxFolderId,
+            title: "Inbox",
+            order: 0,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+            syncStatus: "pending",
+          });
+        } else {
+          inboxFolderId = existingFolders.sort((a, b) => a.order - b.order)[0].id;
+        }
+        // Migrate existing notes into the Inbox folder
+        const notes = await tx.table("notes").toArray();
+        for (const n of notes as any[]) {
+          if (n.folderId === undefined || n.folderId === null) {
+            await tx.table("notes").where("id").equals(n.id).modify({ folderId: inboxFolderId });
+          }
+        }
+        } catch (e) {
+          console.warn("v12 migration error:", e);
+        }
+      });
+
+    // v13: nested folders — parentFolderId on link/note folders, folderId on
+    // task lists and reminders, plus new taskListFolders and reminderFolders tables.
+    this.version(13).stores({
+      taskLists: "id, folderId, order, updatedAt, syncStatus",
+      taskListFolders: "id, parentFolderId, order, updatedAt, syncStatus",
+      linkFolders: "id, parentFolderId, order, updatedAt, syncStatus",
+      noteFolders: "id, parentFolderId, order, updatedAt, syncStatus",
+      reminders: "id, folderId, triggerAt, status, updatedAt, syncStatus",
+      reminderFolders: "id, parentFolderId, order, updatedAt, syncStatus",
+    }).upgrade(async (tx) => {
+      const nowMs = Date.now();
+      try {
+        // Seed a default root folder for domains that now have folders.
+        const existingTLF = await tx.table("taskListFolders").toArray();
+        if (existingTLF.length === 0) {
+          await tx.table("taskListFolders").add({
+            id: newId(),
+            title: "Inbox",
+            parentFolderId: null,
+            order: 0,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+            syncStatus: "pending",
+          });
+        }
+        const existingRF = await tx.table("reminderFolders").toArray();
+        if (existingRF.length === 0) {
+          await tx.table("reminderFolders").add({
+            id: newId(),
+            title: "Inbox",
+            parentFolderId: null,
+            order: 0,
+            createdAt: nowMs,
+            updatedAt: nowMs,
+            syncStatus: "pending",
+          });
+        }
+        // Backfill parentFolderId = null on existing link/note folders.
+        for (const table of ["linkFolders", "noteFolders"]) {
+          const rows = await tx.table(table).toArray();
+          for (const f of rows as any[]) {
+            if (f.parentFolderId === undefined) {
+              await tx.table(table).where("id").equals(f.id).modify({ parentFolderId: null });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("v13 migration error:", e);
+      }
+    });
   }
 }
 
@@ -872,8 +1005,10 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
   const tables = [
     "projects",
     "taskLists",
+    "taskListFolders",
     "tasks",
     "linkFolders",
+    "noteFolders",
     "links",
     "notes",
     "resources",
@@ -882,6 +1017,7 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
     "issues",
     "contacts",
     "reminders",
+    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",
@@ -923,8 +1059,10 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
   const tables = [
     "projects",
     "taskLists",
+    "taskListFolders",
     "tasks",
     "linkFolders",
+    "noteFolders",
     "links",
     "notes",
     "resources",
@@ -933,6 +1071,7 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
     "issues",
     "contacts",
     "reminders",
+    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",
@@ -990,10 +1129,29 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
 export async function hasLocalData(): Promise<boolean> {
   if (!db.isOpen()) await db.open();
   const tables = [
-    "projects", "taskLists", "tasks", "linkFolders", "links", "notes", "resources", "docEntries", "milestones",
-    "issues", "contacts", "reminders", "calendarEvents",
-    "scheduleItems", "conversations", "messages", "insights",
-    "drafts", "activityLog", "trainOfThought",
+    "projects",
+    "taskLists",
+    "taskListFolders",
+    "tasks",
+    "linkFolders",
+    "noteFolders",
+    "links",
+    "notes",
+    "resources",
+    "docEntries",
+    "milestones",
+    "issues",
+    "contacts",
+    "reminders",
+    "reminderFolders",
+    "calendarEvents",
+    "scheduleItems",
+    "conversations",
+    "messages",
+    "insights",
+    "drafts",
+    "activityLog",
+    "trainOfThought",
   ];
   const counts = await Promise.all(
     tables.map((t) => (db as any)[t]?.count().catch(() => 0))
@@ -1010,8 +1168,10 @@ export async function clearAllLocalData(): Promise<void> {
   const tables = [
     "projects",
     "taskLists",
+    "taskListFolders",
     "tasks",
     "linkFolders",
+    "noteFolders",
     "links",
     "notes",
     "resources",
@@ -1020,6 +1180,7 @@ export async function clearAllLocalData(): Promise<void> {
     "issues",
     "contacts",
     "reminders",
+    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",

@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import PangaHome from "../PangaHome";
+import { ensureSeedData, db } from "../../data/db";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,8 +50,12 @@ async function click(el: Element | null | undefined) {
 
 const byText = (text: string, sel = "button") => [...host.querySelectorAll(sel)].find((e) => e.textContent?.trim().startsWith(text));
 
-beforeAll(() => {
+beforeAll(async () => {
   localStorage.setItem("panga_guest", "1");
+  await ensureSeedData();
+  if (await db.noteFolders.count() === 0) {
+    await db.noteFolders.add({ id: "folder_inbox", title: "Inbox", parentFolderId: null, order: 0, createdAt: Date.now(), updatedAt: Date.now(), syncStatus: "synced" });
+  }
 });
 
 afterEach(async () => {
@@ -62,12 +67,14 @@ afterEach(async () => {
 describe("Panga home (smoke)", () => {
   it("saves a categorised note", async () => {
     await mount("/home?tab=Notes");
-    const body = host.querySelector('textarea[placeholder="Write a note…"]') as HTMLTextAreaElement;
+    await settle(1000);
+    await click(byText("+ Add note"));
+    await settle(50);
+    const body = host.querySelector('textarea[placeholder="Write your note…"]') as HTMLTextAreaElement;
     await type(body, "remember the meeting agenda");
-    await type(host.querySelector('input[placeholder^="Category"]') as HTMLInputElement, "Work");
     await click(byText("Save note"));
+    await settle(100);
     expect(host.textContent).toContain("remember the meeting agenda");
-    expect(byText("#Work", "span")).toBeTruthy();
   });
 
   it("saves pasted text into the Clipboard tab", async () => {

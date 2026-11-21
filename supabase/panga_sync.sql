@@ -6,7 +6,7 @@
 
 create table if not exists public.panga_records (
   user_id    uuid    not null default auth.uid() references auth.users(id) on delete cascade,
-  kind       text    not null check (kind in ('task', 'taskList', 'thought', 'note', 'link', 'linkFolder', 'reminder')),
+  kind       text    not null check (kind in ('task', 'taskList', 'taskListFolder', 'thought', 'note', 'noteFolder', 'link', 'linkFolder', 'reminder', 'reminderFolder')),
   id         text    not null,
   data       jsonb,
   updated_at bigint  not null,

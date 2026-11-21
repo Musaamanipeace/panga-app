@@ -141,9 +141,12 @@ function tableFor(kind: SyncKind) {
     case "taskList": return db.taskLists;
     case "thought": return db.trainOfThought;
     case "note": return db.notes;
+    case "noteFolder": return db.noteFolders;
     case "link": return db.links;
     case "linkFolder": return db.linkFolders;
     case "reminder": return db.reminders;
+    case "taskListFolder": return db.taskListFolders;
+    case "reminderFolder": return db.reminderFolders;
   }
 }
 
@@ -155,9 +158,12 @@ async function collectLocalChanges(since: number): Promise<{ kind: SyncKind; id:
     if (t.updatedAt > since) out.push({ kind: "thought", id: t.id, data: t, updated_at: t.updatedAt });
   }
   for (const n of await db.notes.where("updatedAt").above(since).toArray()) out.push({ kind: "note", id: n.id, data: n, updated_at: n.updatedAt });
+  for (const f of await db.noteFolders.where("updatedAt").above(since).toArray()) out.push({ kind: "noteFolder", id: f.id, data: f, updated_at: f.updatedAt });
   for (const l of await db.links.where("updatedAt").above(since).toArray()) out.push({ kind: "link", id: l.id, data: l, updated_at: l.updatedAt });
   for (const f of await db.linkFolders.where("updatedAt").above(since).toArray()) out.push({ kind: "linkFolder", id: f.id, data: f, updated_at: f.updatedAt });
   for (const r of await db.reminders.where("updatedAt").above(since).toArray()) out.push({ kind: "reminder", id: r.id, data: r, updated_at: r.updatedAt });
+  for (const f of await db.taskListFolders.where("updatedAt").above(since).toArray()) out.push({ kind: "taskListFolder", id: f.id, data: f, updated_at: f.updatedAt });
+  for (const f of await db.reminderFolders.where("updatedAt").above(since).toArray()) out.push({ kind: "reminderFolder", id: f.id, data: f, updated_at: f.updatedAt });
   return out;
 }
 

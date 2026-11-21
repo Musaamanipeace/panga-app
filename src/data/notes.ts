@@ -7,7 +7,15 @@ import { logActivity } from "./activity";
 
 export type { Note };
 
-export async function listNotes(): Promise<Note[]> {
+export async function listNotes(folderId: string | null = null): Promise<Note[]> {
+  if (!db.isOpen()) await db.open();
+  if (folderId === null) {
+    return db.notes.where("folderId").equals(null as unknown as string).toArray();
+  }
+  return db.notes.where("folderId").equals(folderId).toArray();
+}
+
+export async function listAllNotes(): Promise<Note[]> {
   if (!db.isOpen()) await db.open();
   return db.notes.orderBy("updatedAt").reverse().toArray();
 }
@@ -18,6 +26,7 @@ export async function getNote(id: string): Promise<Note | undefined> {
 }
 
 export async function createNote(input: {
+  folderId: string | null;
   title: string;
   body: string;
   tags?: string[];
@@ -26,6 +35,7 @@ export async function createNote(input: {
   const t = now();
   const note: Note = {
     id: newId(),
+    folderId: input.folderId,
     title: input.title.trim(),
     body: input.body,
     tags: input.tags ?? [],
@@ -41,7 +51,7 @@ export async function createNote(input: {
 
 export async function updateNote(
   id: string,
-  changes: Partial<Pick<Note, "title" | "body" | "tags">>
+  changes: Partial<Pick<Note, "title" | "body" | "tags" | "folderId">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
@@ -61,7 +71,7 @@ export async function deleteNote(id: string): Promise<void> {
 export async function searchNotes(query: string): Promise<Note[]> {
   if (!db.isOpen()) await db.open();
   const q = query.trim().toLowerCase();
-  if (!q) return listNotes();
+  if (!q) return listAllNotes();
   const all = await db.notes.toArray();
   return all.filter(
     (n) =>

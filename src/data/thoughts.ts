@@ -37,7 +37,7 @@ export async function clearThoughts(): Promise<void> {
   window.dispatchEvent(new CustomEvent("panga-data-updated"));
 }
 
-export async function updateThought(id: string, changes: Partial<Pick<ThoughtEntry, "text" | "taskId">>): Promise<void> {
+export async function updateThought(id: string, changes: Partial<Pick<ThoughtEntry, "text" | "taskId" | "noteId">>): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.trainOfThought.update(id, { ...changes, updatedAt: Date.now() });
   window.dispatchEvent(new CustomEvent("panga-data-updated"));

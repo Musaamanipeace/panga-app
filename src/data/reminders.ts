@@ -142,10 +142,12 @@ export async function createReminder(input: {
   toneId?: string;
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
+  folderId?: string | null;
 }): Promise<Reminder> {
   const t = now();
   const reminder: Reminder = {
     id: newId(),
+    folderId: input.folderId ?? null,
     toneId: input.toneId,
     linkedEntityType: input.linkedEntityType,
     linkedEntityId: input.linkedEntityId,
@@ -163,7 +165,7 @@ export async function createReminder(input: {
 
 export async function updateReminder(
   id: string,
-  changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status">>
+  changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status" | "folderId">>
 ): Promise<void> {
   await db.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
   const updated = await db.reminders.get(id);
