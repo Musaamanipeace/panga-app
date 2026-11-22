@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { isTtsSupported, speak, stopSpeaking } from "../speech/tts";
+import { isTtsSupported, speak, stopSpeaking, TTS_STOPPED_EVENT } from "../speech/tts";
 import { showToast } from "./ui";
 
 interface Props {
@@ -13,12 +13,17 @@ export default function ReadAloudButton({ text, label, className = "btn-secondar
   const [speaking, setSpeaking] = useState(false);
   const mine = useRef(false);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const onStopped = () => {
+      mine.current = false;
+      setSpeaking(false);
+    };
+    window.addEventListener(TTS_STOPPED_EVENT, onStopped);
+    return () => {
+      window.removeEventListener(TTS_STOPPED_EVENT, onStopped);
       if (mine.current) stopSpeaking();
-    },
-    []
-  );
+    };
+  }, []);
 
   if (!isTtsSupported()) return null;
 
