@@ -19,7 +19,7 @@ app.use((_req, res, next) => {
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com ; style-src 'self' 'unsafe-inline' https://accounts.google.com; connect-src 'self' https://accounts.google.com https://www.googleapis.com https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://api.openai.com https://api.anthropic.com https://api.x.ai https://generativelanguage.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; frame-src https://accounts.google.com; worker-src 'self'; manifest-src 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://api.openai.com https://api.anthropic.com https://api.x.ai https://generativelanguage.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self';"
   );
   next();
 });
