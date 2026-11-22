@@ -5,6 +5,6 @@
 - [x] Create branch `docs/1-bootstrap-agent-workflow` from up-to-date `main`
 - [x] AGENTS.md: skill index, non-negotiable rules, session start/end checklists
 - [x] 10 skills in `.agents/skills/`
-- [ ] docs/agent: USER_RULES.md, DECISIONS.md, NEXT.md, PROGRESS.md
+- [x] docs/agent: USER_RULES.md, DECISIONS.md, NEXT.md, PROGRESS.md
 - [ ] .github: ISSUE_TEMPLATE/{bug,feature,task}.md, pull_request_template.md, workflows/require-linked-issue.yml
 - [ ] CONTRIBUTING.md
