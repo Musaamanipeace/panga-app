@@ -256,10 +256,11 @@ export default function Settings() {
       <AccountPanel promptUpgrade={isGuest() && supabaseConfigured} />
 
       <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Supabase (Postgres)</h2>
+        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Bring your own Supabase project</h2>
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
-          Optional remote Postgres. Run <code>supabase/panga_sync.sql</code> in your project SQL editor, then paste URL + anon key.
-          Local Dexie stays the offline source of truth.
+          Required for sign-up and cloud sync. Create your own project, run <code>supabase/panga_sync.sql</code> in its SQL
+          editor, then paste its URL + anon key here. Panga ships with no default project; local IndexedDB stays the offline
+          source of truth.
         </p>
         <form onSubmit={handleSaveSupabase} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label style={{ fontSize: 13, fontWeight: 600 }}>

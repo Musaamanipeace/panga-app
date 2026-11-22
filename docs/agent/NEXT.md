@@ -3,7 +3,7 @@
 ## Current plan (5 ordered steps, from the user on 2026-11-22)
 1. [x] Remove Google Drive / every Google reference (issue #4, branch `refactor/4-remove-google-drive`)
 2. [x] Harden sign-up / sign-in + per-user IndexedDB isolation + JSON identity restore (issue #6, branch `feat/6-auth-data-isolation`)
-3. [ ] Empty key fields by default + explicit "bring your own Supabase" messaging
+3. [x] Empty key fields by default + explicit "bring your own Supabase" messaging (issue #8, branch `fix/8-empty-secret-fields`)
 4. [ ] Voice transcription speed (Fast default, preload, VAD/chunking, WebGPU/WASM, partial results, loading progress, fastest-engine note)
 5. [ ] Read Aloud coverage on notes / long thoughts + stop-on-navigation polish
 Do not reorder or merge steps. Each step = its own issue → branch → small commits → PR → merge.
