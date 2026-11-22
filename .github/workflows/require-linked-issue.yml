@@ -1,0 +1,23 @@
+name: require-linked-issue
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  require-linked-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the PR body links a closing issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          BODY=$(gh pr view "${{ github.event.pull_request.number }}" --json body --jq .body)
+          if ! echo "$BODY" | grep -Eqi '(close[sd]?|fix(es|ed)?|resolve[sd]?)[[:space:]]+#[0-9]+'; then
+            echo '::error::PR body must reference an issue with a closing keyword (close(s)/fix(es)/resolve(s) #N), e.g. "Closes #12".'
+            exit 1
+          fi
