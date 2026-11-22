@@ -14,7 +14,7 @@ export type IssueSeverity = "low" | "medium" | "high";
 export type IssueStatus = "open" | "resolved";
 export type MilestoneStatus = "in_progress" | "achieved" | "missed";
 export type SyncStatus = "pending" | "synced";
-export type CalendarEventSource = "local" | "google";
+export type CalendarEventSource = "local" | "imported";
 export type ResourceProvider = "gemini" | "claude" | "gpt" | "other";
 export type ContactType = "email" | "phone" | "link";
 

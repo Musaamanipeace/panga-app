@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { listScheduledTasks, type Task } from "../../data/tasks";
 import { listAllProjects } from "../../data/projects";
-import { listAllCalendarEvents, type CalendarEvent } from "../../data/calendar";
+import { listAllCalendarEvents, isImportedEvent, type CalendarEvent } from "../../data/calendar";
 import { ErrorNote, Loading, StatusLabel, useAsync } from "../../components/ui";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -33,7 +33,7 @@ export default function HomeScheduleTab() {
     return (
       <p className="empty-state">
         Nothing scheduled. Give a task a date and time in a project's Tasks tab, or
-        connect Google Calendar in Settings to import events.
+        import a calendar .ics file from the Calendar tab.
       </p>
     );
   }
@@ -64,7 +64,7 @@ export default function HomeScheduleTab() {
                 title={event.title}
                 time={event.startAt}
                 endTime={event.endAt}
-                meta={event.source === "google" ? "Google Calendar" : "Local event"}
+                meta={isImportedEvent(event) ? "Imported event" : "Local event"}
                 meetLink={event.hangoutLink}
                 to={event.projectId ? `/project/${event.projectId}?tab=Tasks` : undefined}
                 openTip="Open the project this event belongs to"
@@ -116,7 +116,7 @@ function ScheduleRow({
             target="_blank"
             rel="noreferrer"
             className="btn-secondary btn-small"
-            data-tip="Join the Google Meet for this event"
+            data-tip="Join the video call for this event"
             data-tip-edge="left"
           >
             Join Meet

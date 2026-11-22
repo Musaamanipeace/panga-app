@@ -6,15 +6,15 @@ import { ErrorNote, Loading, StatusLabel, Editable } from "../../components/ui.t
 const INSIGHT_TYPES: { value: InsightType; label: string; placeholder: string }[] = [
   { value: "note", label: "Note", placeholder: "Write your insight..." },
   { value: "link", label: "Link", placeholder: "https://..." },
-  { value: "image", label: "Image", placeholder: "https://... (Google Drive share link)" },
-  { value: "pdf", label: "PDF", placeholder: "https://... (Google Drive share link)" },
+  { value: "image", label: "Image", placeholder: "https://... (share link)" },
+  { value: "pdf", label: "PDF", placeholder: "https://... (share link)" },
 ];
 
 const TYPE_HINTS: Record<InsightType, string> = {
   note: "Plain text note — type or paste text, or upload a .txt file",
   link: "A URL to any resource — the link is stored, not the content",
-  image: "A Google Drive (or any) image link — the link is stored, not the file",
-  pdf: "A Google Drive (or any) PDF link — use the helper below to extract text if needed",
+  image: "An image link from any cloud storage — the link is stored, not the file",
+  pdf: "A PDF link from any cloud storage — use the helper below to extract text if needed",
 };
 
 const PDF_HELPER_URL = "https://www.ilovepdf.com/pdf_to_text";
@@ -78,7 +78,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
 
     const isTextDoc = file.name.endsWith(".txt") || file.name.endsWith(".md") || file.type.startsWith("text/");
     if (!isTextDoc) {
-      setUploadError("Only text documents (.txt, .md) can be uploaded. For PDFs or Word documents, convert to text first or paste a cloud drive link.");
+      setUploadError("Only text documents (.txt, .md) can be uploaded. For PDFs or Word documents, convert to text first or paste a cloud storage link.");
       e.target.value = "";
       return;
     }

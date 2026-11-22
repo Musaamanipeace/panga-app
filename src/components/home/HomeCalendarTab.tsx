@@ -4,8 +4,8 @@ import {
   listAllCalendarEvents,
   createLocalEvent,
   deleteCalendarEvent,
+  isImportedEvent,
   type CalendarEvent,
-  type CalendarEventSource,
 } from "../../data/calendar";
 import { listAllProjects } from "../../data/projects";
 import { db } from "../../data/db";
@@ -128,13 +128,13 @@ export default function HomeCalendarTab() {
         return;
       }
       const toImport = parsedEvents.map((ev) => ({
-        id: `google_${newId()}`,
+        id: `imported_${newId()}`,
         projectId: null,
         title: ev.title ?? "(no title)",
         description: ev.description ?? null,
         startAt: ev.startAt,
         endAt: ev.endAt,
-        source: "google" as CalendarEventSource,
+        source: "imported" as const,
         hangoutLink: ev.hangoutLink ?? null,
         syncedAt: Date.now(),
         createdAt: now(),
@@ -202,7 +202,7 @@ export default function HomeCalendarTab() {
             type="button"
             className="btn-secondary clickable"
             onClick={() => setShowImport((s) => !s)}
-            data-tip="Import events from Google Calendar .ics export"
+            data-tip="Import events from a calendar .ics file"
           >
             {showImport ? "Close import" : "Import .ics"}
           </button>
@@ -231,10 +231,9 @@ export default function HomeCalendarTab() {
       {/* ICS Import Drawer/Section */}
       {showImport && (
         <section className="dashboard-section" style={{ background: "white", padding: 14, border: "1px solid var(--color-border)", borderRadius: "var(--radius)", marginBottom: 16 }}>
-          <h3 className="section-heading">Import from Google Calendar</h3>
+          <h3 className="section-heading">Import from a calendar file</h3>
           <p className="form-note">
-            Export your Google Calendar as an .ics file (Google Calendar → Settings → Import &amp; export → Export),
-            then upload it here. Events will be imported into Panga.
+            Export your calendar as an .ics file, then upload it here. Events are stored locally in Panga.
           </p>
           {importStatus && (
             <p className={importStatus.type === "error" ? "otp-error" : "progress-label"} style={{ margin: "6px 0" }}>
@@ -319,10 +318,10 @@ export default function HomeCalendarTab() {
             <label>Video call / Meet link (optional)</label>
             <input
               type="url"
-              placeholder="https://meet.google.com/..."
+              placeholder="https://meet.example.com/..."
               value={hangoutLink}
               onChange={(e) => setHangoutLink(e.target.value)}
-              data-tip="Google Meet or video conference link"
+              data-tip="Video call link"
             />
           </div>
 
@@ -393,7 +392,7 @@ export default function HomeCalendarTab() {
                 {dayEvents.map((e) => (
                   <div
                     key={e.id}
-                    className={`calendar-event-pill ${e.source === "google" ? "google" : ""}`}
+                    className={`calendar-event-pill ${isImportedEvent(e) ? "imported" : ""}`}
                     data-tip={`${new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${e.title}${e.projectId && projects[e.projectId] ? ` (${projects[e.projectId]})` : ""}`}
                   >
                     {new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {e.title}
@@ -409,7 +408,7 @@ export default function HomeCalendarTab() {
       {viewMode === "list" && (
         events.length === 0 ? (
           <p className="empty-state">
-            No events scheduled yet. Add an event above or import from Google Calendar.
+            No events scheduled yet. Add an event above or import an .ics file.
           </p>
         ) : (
           <ul className="resource-list">
@@ -419,7 +418,7 @@ export default function HomeCalendarTab() {
                 <li key={e.id} className="resource-item">
                   <span
                     className="resource-category-dot"
-                    style={{ backgroundColor: e.source === "google" ? "#4285f4" : "#3b82f6" }}
+                    style={{ backgroundColor: isImportedEvent(e) ? "#8b5cf6" : "#3b82f6" }}
                   />
                   <span className="resource-text">
                     <span className="resource-title">{e.title}</span>
@@ -445,7 +444,7 @@ export default function HomeCalendarTab() {
                       )}
                     </p>
                     <span className="chip-small">
-                      {e.source === "google" ? "Google Calendar" : "Local"}
+                      {isImportedEvent(e) ? "Imported" : "Local"}
                     </span>
                     {e.projectId && projects[e.projectId] && (
                       <Link

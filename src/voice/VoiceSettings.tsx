@@ -14,7 +14,7 @@ const ENGINE_INFO: Record<EngineId, { title: string; detail: string }> = {
   browser: {
     title: "Browser speech recognition (needs internet)",
     detail:
-      "Shows words as you speak. Your browser sends the audio to its maker's servers (Google for Chrome, Microsoft for Edge, Apple for Safari).",
+      "Shows words as you speak. Your browser sends the audio to the speech service of whoever made the browser.",
   },
   server: {
     title: "Panga server",
