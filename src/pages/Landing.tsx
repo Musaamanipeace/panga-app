@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import InstallButton from "../components/InstallButton";
 import { useNavigate } from "react-router-dom";
-import { setGuestMode, canUseApp, restoreSessionFromSnapshot, getSessionUserId } from "../auth/session";
-import { hasLocalData, importDbState, clearAllLocalData } from "../data/db";
+import { setGuestMode, canUseApp, getSessionUserId } from "../auth/session";
+import { hasLocalData, clearAllLocalData } from "../data/db";
 import { signIn, signUp } from "../sync/supabaseSync";
+import { importSnapshot, readSnapshotFile } from "../sync/snapshot";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -57,18 +58,8 @@ export default function Landing() {
     setLoading(true);
     reset();
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const data = parsed.data ?? parsed;
-      if (!data || typeof data !== "object") {
-        throw new Error("Invalid snapshot: expected an object with table arrays.");
-      }
-      await importDbState(data);
-      const emailFromMeta =
-        parsed.metadata?.email ||
-        parsed.metadata?.userEmail ||
-        "imported@local";
-      await restoreSessionFromSnapshot(emailFromMeta);
+      const snapshot = await readSnapshotFile(file);
+      await importSnapshot(snapshot);
       setSuccessNotice("Backup restored. Opening workspace…");
       setTimeout(() => navigate("/home"), 600);
     } catch (e: any) {
@@ -86,7 +77,7 @@ export default function Landing() {
       if (has) {
         await clearAllLocalData();
       }
-      setGuestMode();
+      await setGuestMode();
       navigate("/home");
     } catch (e: any) {
       setError(e?.message || "Could not start guest workspace.");

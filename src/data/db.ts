@@ -989,8 +989,9 @@ export function isSensitiveSettingKey(key: string): boolean {
  * Used by the snapshot/backup system. Strictly excludes all tokens, passwords,
  * and API keys to prevent secret exposure (e.g. GitHub PAT revocation).
  */
-export async function exportDbState(): Promise<Record<string, any[]>> {
+export async function exportDbState(options: { includeSecrets?: boolean } = {}): Promise<Record<string, any[]>> {
   if (!db.isOpen()) await db.open();
+  const includeSecrets = options.includeSecrets === true;
 
   const tables = [
     "projects",
@@ -1023,9 +1024,9 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
   for (const name of tables) {
     try {
       if (name === "settings") {
-        // Strip out any secret tokens or passwords from export
+        // Secret tokens/passwords are only included for a full snapshot restore.
         const rows = await db.settings.toArray();
-        data[name] = rows.filter((r) => !isSensitiveSettingKey(r.key));
+        data[name] = includeSecrets ? rows : rows.filter((r) => !isSensitiveSettingKey(r.key));
       } else {
         data[name] = await (db as any)[name].toArray();
       }
@@ -1043,8 +1044,9 @@ export async function exportDbState(): Promise<Record<string, any[]>> {
  * Preserves the user's existing local credentials (tokens, API keys, passwords)
  * so restoring data never erases or breaks cloud sync authentication.
  */
-export async function importDbState(data: Record<string, any[]>): Promise<void> {
+export async function importDbState(data: Record<string, any[]>, options: { includeSecrets?: boolean } = {}): Promise<void> {
   if (!db.isOpen()) await db.open();
+  const includeSecrets = options.includeSecrets === true;
 
   const tables = [
     "projects",
@@ -1090,16 +1092,14 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
       if (table) {
         if (name === "settings") {
           await table.clear();
-          if (tableData.length > 0) {
-            // Filter incoming snapshot settings to prevent overwriting with old or empty keys
-            const safeIncoming = tableData.filter((r: any) => !isSensitiveSettingKey(r.key));
-            if (safeIncoming.length > 0) {
-              await table.bulkAdd(safeIncoming);
-            }
+          // A full snapshot restore keeps its credentials; ordinary imports do not.
+          const safeIncoming = includeSecrets ? tableData : tableData.filter((r: any) => !isSensitiveSettingKey(r.key));
+          if (safeIncoming.length > 0) {
+            await table.bulkAdd(safeIncoming);
           }
-          // Restore the user's local credentials intact
+          // Keep local credentials unless the snapshot supplied its own value.
           for (const cred of localCredentialsToKeep) {
-            await table.put(cred);
+            if (!safeIncoming.some((r: any) => r.key === cred.key)) await table.put(cred);
           }
         } else {
           await table.clear();
@@ -1110,6 +1110,34 @@ export async function importDbState(data: Record<string, any[]>): Promise<void> 
       }
     }
   });
+  } finally {
+    suppressChangeHooks = false;
+  }
+}
+
+/**
+ * Merge data into the current user's store without clearing it. Used when a
+ * guest upgrades to an account and wants to bring their local data along.
+ */
+export async function mergeDbState(data: Record<string, any[]>): Promise<void> {
+  if (!db.isOpen()) await db.open();
+  const tables = [
+    "projects", "taskLists", "taskListFolders", "tasks", "linkFolders",
+    "noteFolders", "links", "notes", "resources", "docEntries", "milestones",
+    "issues", "contacts", "reminders", "reminderFolders", "calendarEvents",
+    "scheduleItems", "conversations", "messages", "insights", "drafts",
+    "activityLog", "trainOfThought",
+  ];
+  suppressChangeHooks = true;
+  try {
+    await db.transaction("rw", tables, async () => {
+      for (const name of tables) {
+        const rows = data[name] ?? [];
+        if (!rows.length) continue;
+        const table = (db as any)[name];
+        if (table) await table.bulkPut(rows);
+      }
+    });
   } finally {
     suppressChangeHooks = false;
   }

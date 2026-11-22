@@ -100,12 +100,12 @@ export async function getSupabaseSessionSnapshot(): Promise<unknown | null> {
 }
 
 /** Restore a snapshot's Supabase session before the client is created. */
-export async function restoreSupabaseSession(session: unknown): Promise<void> {
+export async function restoreSupabaseSession(session: unknown, url?: string): Promise<void> {
   if (!session) return;
-  const cfg = await getSupabaseConfig();
-  if (!cfg) return;
+  const projectUrl = url ?? (await getSupabaseConfig())?.url;
+  if (!projectUrl) return;
   clearSupabaseAuthStorage();
-  const ref = new URL(cfg.url).hostname.split(".")[0] || "supabase";
+  const ref = new URL(projectUrl).hostname.split(".")[0] || "supabase";
   try {
     localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(session));
   } catch {
