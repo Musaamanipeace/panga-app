@@ -118,18 +118,11 @@ export async function restoreSessionFromSnapshot(email: string): Promise<{ error
 
 /**
  * Exit the current session and return to the landing page.
- * Clears session, guest mode, and Google Drive token from localStorage.
+ * Clears the session and guest mode from localStorage.
  */
 export async function logout(): Promise<void> {
-  const userId = getSessionUserId();
   clearSession();
   clearGuestMode();
-  // Clear this user's Google Drive token from localStorage
-  if (userId) {
-    try {
-      localStorage.removeItem(`panga_google_drive_token_${userId}`);
-    } catch {}
-  }
   void switchUserAccount();
   window.location.assign("/");
 }

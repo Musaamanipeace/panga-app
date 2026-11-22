@@ -51,7 +51,7 @@ export interface ResourceImage {
 
 export interface ResourceFile {
   name: string;
-  link?: string; // for PDFs: Drive link
+  link?: string; // for PDFs: link to the document
   text?: string; // for notes: parsed text content
   dataUrl?: string; // legacy support for existing base64 files
   type?: string; // legacy
@@ -200,7 +200,7 @@ export interface Resource {
   listItems: ResourceListItem[]; // preset-list: structured checklist items
   customFields: Record<string, string>; // custom resource types: user-defined key-value metadata
   images: ResourceImage[]; // images
-  files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (Drive file info)
+  files: ResourceFile[]; // notes (attached doc/pdf/spreadsheet), pdfs (file info)
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -344,11 +344,6 @@ export interface Message {
 export const SETTINGS_KEYS = {
   appInitialized: "appInitialized",
   geminiApiKey: "geminiApiKey",
-  googleCalendarClientId: "googleCalendarClientId",
-  googleCalendarToken: "googleCalendarToken",
-  googlePickerKey: "googlePickerKey",
-  googleAccessToken: "googleAccessToken",
-  driveFolderPrefix: "driveFolder:",
 } as const;
 
 // Derive a stable, per-user database name from the logged-in user ID.
@@ -974,12 +969,7 @@ export async function ensureSeedData() {
   }
 }
 
-export const SENSITIVE_SETTING_KEYS = new Set([
-  "geminiApiKey",
-  "googleAccessToken",
-  "googleCalendarToken",
-  "googlePickerKey",
-]);
+export const SENSITIVE_SETTING_KEYS = new Set(["geminiApiKey"]);
 
 export function isSensitiveSettingKey(key: string): boolean {
   if (!key) return false;

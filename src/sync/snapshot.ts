@@ -1,7 +1,6 @@
 // src/sync/snapshot.ts
-// Local-first snapshot export/import. Serializes the entire IndexedDB
-// contents to a versioned JSON structure for backup, restore, and
-// Google Drive sync. Never includes credentials or env vars.
+// Local-first snapshot export/import. Serializes the IndexedDB contents
+// to a versioned JSON structure for backup and restore.
 
 import { db, exportDbState, importDbState, hasLocalData } from "../data/db";
 
