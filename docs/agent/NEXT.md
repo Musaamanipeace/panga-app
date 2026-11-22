@@ -5,7 +5,7 @@
 2. [x] Harden sign-up / sign-in + per-user IndexedDB isolation + JSON identity restore (issue #6, branch `feat/6-auth-data-isolation`)
 3. [x] Empty key fields by default + explicit "bring your own Supabase" messaging (issue #8, branch `fix/8-empty-secret-fields`)
 4. [x] Voice transcription speed (issue #10, branch `perf/10-voice-transcription-speed`)
-5. [ ] Read Aloud coverage on notes / long thoughts + stop-on-navigation polish
+5. [x] Read Aloud coverage on notes / long thoughts + stop-on-navigation polish (issue #12, branch `feat/12-read-aloud-coverage`)
 Do not reorder or merge steps. Each step = its own issue → branch → small commits → PR → merge.
 
 ## Goal

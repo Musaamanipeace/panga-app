@@ -88,9 +88,12 @@ export function sortVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice
 
 let session = 0;
 
+export const TTS_STOPPED_EVENT = "panga-tts-stopped";
+
 export function stopSpeaking(): void {
   session++;
   if (isTtsSupported()) window.speechSynthesis.cancel();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(TTS_STOPPED_EVENT));
 }
 
 export function pauseSpeaking(): void {

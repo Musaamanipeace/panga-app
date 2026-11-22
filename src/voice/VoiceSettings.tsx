@@ -12,6 +12,14 @@ import {
 import { isEngineSupported, probeServerEngine } from "./engines";
 import { getWhisperRuntime, preloadWhisperModel } from "./engines/localWhisper";
 import { getWarmupState, subscribeWarmup, type WarmupState } from "./warmup";
+import {
+  getVoices,
+  isTtsSupported,
+  loadTtsPrefs,
+  saveTtsPrefs,
+  sortVoices,
+  type TtsPrefs,
+} from "../speech/tts";
 import type { EngineId } from "./types";
 
 const ENGINE_INFO: Record<EngineId, { title: string; detail: string }> = {
@@ -40,9 +48,17 @@ export default function VoiceSettings() {
     error: null,
   });
   const [warmup, setWarmup] = useState<WarmupState>(getWarmupState);
+  const [ttsPrefs, setTtsPrefsState] = useState<TtsPrefs>(loadTtsPrefs);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  function setTtsPrefs(p: TtsPrefs) {
+    setTtsPrefsState(p);
+    saveTtsPrefs(p);
+  }
 
   useEffect(() => {
     void probeServerEngine().then(setServerOk);
+    void getVoices().then(setVoices);
     return subscribeWarmup(setWarmup);
   }, []);
 
@@ -191,6 +207,44 @@ export default function VoiceSettings() {
           placeholder="Click here, press the mic that appears, and speak."
           style={{ width: "100%", boxSizing: "border-box" }}
         />
+      </div>
+
+      <div style={{ marginTop: 20, borderTop: "1px solid var(--color-border)", paddingTop: 16 }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>Read aloud</h3>
+        <p className="settings-help" style={{ marginTop: 0 }}>
+          The 🔊 buttons on notes, thoughts and insights use your device's speech synthesis. Local voices are listed first.
+        </p>
+        {isTtsSupported() ? (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, flex: 1, minWidth: 180 }}>
+              Voice
+              <select
+                value={ttsPrefs.voiceURI ?? ""}
+                onChange={(e) => setTtsPrefs({ ...ttsPrefs, voiceURI: e.target.value || null })}
+              >
+                <option value="">System default</option>
+                {sortVoices(voices).map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} ({v.lang}){v.localService ? " · local" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 140 }}>
+              Rate ({ttsPrefs.rate.toFixed(1)}×)
+              <input
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={ttsPrefs.rate}
+                onChange={(e) => setTtsPrefs({ ...ttsPrefs, rate: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+        ) : (
+          <p className="settings-help" style={{ marginBottom: 0 }}>Speech synthesis is not supported in this browser.</p>
+        )}
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitIntoChunks } from "../tts";
+import { splitIntoChunks, stopSpeaking, TTS_STOPPED_EVENT, loadTtsPrefs, saveTtsPrefs } from "../tts";
 
 describe("splitIntoChunks", () => {
   it("returns nothing for blank text", () => {
@@ -21,5 +21,21 @@ describe("splitIntoChunks", () => {
     const chunks = splitIntoChunks(text, 50);
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(50);
     expect(chunks.join(" ")).toBe(text);
+  });
+});
+
+describe("read-aloud preferences", () => {
+  it("round-trips the chosen voice and rate", () => {
+    saveTtsPrefs({ voiceURI: "voice-1", rate: 1.4 });
+    expect(loadTtsPrefs()).toEqual({ voiceURI: "voice-1", rate: 1.4 });
+  });
+
+  it("announces when reading stops so buttons can reset", () => {
+    let events = 0;
+    const listener = () => events++;
+    window.addEventListener(TTS_STOPPED_EVENT, listener);
+    stopSpeaking();
+    window.removeEventListener(TTS_STOPPED_EVENT, listener);
+    expect(events).toBe(1);
   });
 });

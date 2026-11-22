@@ -5,6 +5,7 @@ import { createNote } from "../../data/notes";
 import { listTaskLists, type TaskList } from "../../data/taskLists";
 import { listNoteFolders, type NoteFolder } from "../../data/noteFolders";
 import { confirmDelete, showToast } from "../ui";
+import ReadAloudButton from "../ReadAloudButton";
 
 export const CAPTURE_INPUT_ID = "panga-capture-input";
 
@@ -152,6 +153,7 @@ export default function ThoughtStream() {
                     </button>
                   </>
                 )}
+                <ReadAloudButton text={th.text} />
                 <button
                   type="button"
                   className="btn-icon"

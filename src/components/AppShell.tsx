@@ -1,4 +1,4 @@
-import { Link, Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
@@ -11,16 +11,23 @@ import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
 import { signOut, startSupabaseSync } from "../sync/supabaseSync";
 import { getSessionEmail, isGuest } from "../auth/session";
+import { stopSpeaking } from "../speech/tts";
 
 export default function AppShell() {
   const email = getSessionEmail();
   const guest = isGuest();
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     void migrateStash();
     startSupabaseSync();
   }, []);
+
+  // Reading belongs to the page it started on; never let it follow navigation.
+  useEffect(() => {
+    stopSpeaking();
+  }, [location.pathname]);
 
   async function handleLogout() {
     await signOut();

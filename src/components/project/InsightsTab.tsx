@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAsync, confirmDelete } from "../../components/ui.tsx";
 import { listInsights, createInsight, updateInsight, deleteInsight, type InsightType } from "../../data/insights.ts";
 import { ErrorNote, Loading, StatusLabel, Editable } from "../../components/ui.tsx";
+import ReadAloudButton from "../../components/ReadAloudButton.tsx";
 
 const INSIGHT_TYPES: { value: InsightType; label: string; placeholder: string }[] = [
   { value: "note", label: "Note", placeholder: "Write your insight..." },
@@ -276,6 +277,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
                 </div>
               </span>
               <span className="item-actions">
+                {insight.type === "note" && insight.body && <ReadAloudButton text={`${insight.title}. ${insight.body}`} />}
                 <button
                   type="button"
                   className="btn-icon"
