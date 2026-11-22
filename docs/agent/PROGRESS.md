@@ -1,5 +1,12 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-22 — Step 5: Read Aloud coverage and polish (issue #12, branch feat/12-read-aloud-coverage)
+- [x] Read Aloud added to long thoughts (ThoughtStream + ThoughtTrain) and note-type insights; each appears once per item
+- [x] Voice + rate controls added to Voice Settings, using existing TTS preferences
+- [x] Reading stops on route change; a stop event resets every Read Aloud button when any reading stops
+- [x] ui-no-redundancy reviewed: notes/PDF keep their existing single button, no duplicated controls
+- [x] Checks: `npm test` 15 files / 74 tests pass; `npm run lint` exit 0 (pre-existing warnings); `npm run build` succeeds
+
 ## 2026-11-22 — Step 4: voice transcription speed (issue #10, branch perf/10-voice-transcription-speed)
 - [x] Fast / Balanced / Accurate selector defaulting to Fast (tiny.en → base → small)
 - [x] Faster VAD: silence 700→450 ms, max segment 25→15 s, min speech 250→180 ms, pre-roll 300→250 ms, partial every 2 s
