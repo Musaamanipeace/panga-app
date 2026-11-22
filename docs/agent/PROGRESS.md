@@ -1,5 +1,15 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-22 — Final state of the 5-step BYOK plan
+- All five steps implemented, reviewed by CI and merged to `main`:
+  1. #4 / PR #5 — remove every Google/Drive integration and reference (local calendar kept).
+  2. #6 / PR #7 — BYOK auth, per-user IndexedDB isolation, JSON identity/session restore, guest upgrade prompt.
+  3. #8 / PR #9 — empty secret fields, env fallback removed, BYOK Supabase messaging.
+  4. #10 / PR #11 — Fast/Balanced/Accurate selector, app-start warmup, faster VAD/chunks, WebGPU→WASM, partial results.
+  5. #12 / PR #13 — Read Aloud on thoughts/insights, voice/rate controls, stop on navigation.
+- Final verification on `main`: `npm test` 15 files / 74 tests pass; `npm run lint` exit 0 (pre-existing warnings only); `npm run build` succeeds.
+- All GitHub checks passed on every PR (web, image, require-linked-issue, Vercel).
+
 ## 2026-11-22 — Step 5: Read Aloud coverage and polish (issue #12, branch feat/12-read-aloud-coverage)
 - [x] Read Aloud added to long thoughts (ThoughtStream + ThoughtTrain) and note-type insights; each appears once per item
 - [x] Voice + rate controls added to Voice Settings, using existing TTS preferences

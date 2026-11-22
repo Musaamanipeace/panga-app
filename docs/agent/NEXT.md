@@ -20,6 +20,12 @@ The solo-developer agent workflow from the task is live: every unit of work = is
 - [x] Issue #1 created; branch `docs/1-bootstrap-agent-workflow`; PR with `Closes #1`; merged; branch deleted
 - [x] Final PROGRESS/NEXT update on `main` after merge
 
+## Plan status
+All five steps of the 2026-11-22 BYOK plan are complete and merged. No step remains. Known trade-offs accepted by the user:
+- JSON snapshots contain the Supabase session and API keys so import equals login; sign-in is for cloud access, not a security boundary.
+- Google Gemini as an AI provider and Google Search grounding in the assistant are retained — the removal covered Google Drive, Google OAuth, Google Calendar integration and Drive link wording.
+- Whisper WebGPU may be unsupported by some ONNX graphs; the worker falls back to WASM automatically.
+
 ## Open questions (future phases)
 - TODO(user): Enable branch protection or rulesets if desired — requires my approval (approval-for-locks).
 - TODO(user): Create the suggested extra skills when you approve: secrets-and-safety, pre-merge-checklist, release-and-changelog.
