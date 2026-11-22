@@ -24,6 +24,23 @@ export const WHISPER_MODELS = {
 
 export type WhisperModelKey = keyof typeof WHISPER_MODELS;
 
+export type WhisperQuality = "fast" | "balanced" | "accurate";
+
+/** Explicit speed selector. Fast is the default so the first word arrives sooner. */
+export const WHISPER_QUALITY_OPTIONS: { id: WhisperQuality; label: string; model: WhisperModelKey; hint: string }[] = [
+  { id: "fast", label: "Fast", model: "tiny.en", hint: "Smallest model, quickest response (English only)" },
+  { id: "balanced", label: "Balanced", model: "base", hint: "Multilingual with reasonable speed" },
+  { id: "accurate", label: "Accurate", model: "small", hint: "Best accuracy, slower on older phones" },
+];
+
+export function modelForQuality(q: WhisperQuality): WhisperModelKey {
+  return WHISPER_QUALITY_OPTIONS.find((o) => o.id === q)?.model ?? "tiny.en";
+}
+
+export function qualityForModel(model: WhisperModelKey): WhisperQuality {
+  return WHISPER_QUALITY_OPTIONS.find((o) => o.model === model)?.id ?? "fast";
+}
+
 export const LANGUAGES = [
   { code: "en", label: "English", whisper: "english", browser: "en-US" },
   { code: "sw", label: "Swahili", whisper: "swahili", browser: "sw-KE" },

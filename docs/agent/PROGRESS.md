@@ -1,5 +1,14 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-22 — Step 4: voice transcription speed (issue #10, branch perf/10-voice-transcription-speed)
+- [x] Fast / Balanced / Accurate selector defaulting to Fast (tiny.en → base → small)
+- [x] Faster VAD: silence 700→450 ms, max segment 25→15 s, min speech 250→180 ms, pre-roll 300→250 ms, partial every 2 s
+- [x] Whisper worker tries WebGPU (fp16) then falls back to WASM (q8); transcribe jobs serialised; chunks 30→15 s (10 s for partials)
+- [x] Partial/interim results for local Whisper; browser engine keeps its live interim results
+- [x] Selected model warms on app start (idle callback) with progress/ready/error status shown in Voice Settings
+- [x] Voice Settings notes lowest-latency engine and the active runtime
+- [x] Checks: `npm test` 15 files / 72 tests pass; `npm run lint` exit 0 (pre-existing warnings); `npm run build` succeeds
+
 ## 2026-11-22 — Step 3: empty secret fields + BYOK Supabase (issue #8, branch fix/8-empty-secret-fields)
 - [x] Supabase config no longer falls back to `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`; only user-saved settings count
 - [x] Settings Supabase section renamed "Bring your own Supabase project" with required-for-sign-up-and-sync wording

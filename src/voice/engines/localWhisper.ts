@@ -18,6 +18,8 @@ class WhisperClient {
   private files = new Map<string, { loaded: number; total: number }>();
   private onProgress: Progress | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private runtimeDevice = "wasm";
+  private notice = "";
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
@@ -29,9 +31,14 @@ class WhisperClient {
   }
 
   private onMessage(m: any) {
-    if (m.type === "progress") {
+    if (m.type === "notice") {
+      this.notice = m.message ?? "";
+    } else if (m.type === "progress") {
       const p = m.p ?? {};
-      if (p.status === "progress" && p.file && typeof p.total === "number") {
+      if (p.status === "reset") {
+        this.files.clear();
+        this.onProgress?.(null);
+      } else if (p.status === "progress" && p.file && typeof p.total === "number") {
         this.files.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
         let loaded = 0;
         let total = 0;
@@ -42,6 +49,7 @@ class WhisperClient {
         this.onProgress?.(total > 0 ? Math.min(1, loaded / total) : null);
       }
     } else if (m.type === "ready") {
+      this.runtimeDevice = m.device ?? "wasm";
       this.loadWaiter?.resolve();
       this.loadWaiter = null;
     } else if (m.type === "result") {
@@ -87,13 +95,13 @@ class WhisperClient {
     });
   }
 
-  transcribe(pcm: Float32Array, language?: string): Promise<string> {
+  transcribe(pcm: Float32Array, language?: string, partial = false): Promise<string> {
     this.touch();
     const w = this.ensureWorker();
     const id = this.nextId++;
     return new Promise<string>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      w.postMessage({ type: "transcribe", id, audio: pcm, language }, [pcm.buffer]);
+      w.postMessage({ type: "transcribe", id, audio: pcm, language, partial }, [pcm.buffer]);
     });
   }
 
@@ -101,6 +109,10 @@ class WhisperClient {
   private touch() {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => this.dispose(), IDLE_TERMINATE_MS);
+  }
+
+  getRuntime(): { device: string; notice: string } {
+    return { device: this.runtimeDevice, notice: this.notice };
   }
 
   dispose() {
@@ -119,6 +131,11 @@ export function preloadWhisperModel(model: WhisperModelKey, onProgress: Progress
   return client.load(model, onProgress);
 }
 
+/** Runtime actually in use after the model loaded (WebGPU or WASM fallback). */
+export function getWhisperRuntime(): { device: string; notice: string } {
+  return client.getRuntime();
+}
+
 export function isLocalWhisperSupported(): boolean {
   return (
     typeof Worker !== "undefined" &&
@@ -131,9 +148,11 @@ export function isLocalWhisperSupported(): boolean {
 export function createLocalWhisperEngine(): VoiceEngine {
   let capture: CaptureHandle | null = null;
   let queue: Promise<void> = Promise.resolve();
+  let partialQueue: Promise<void> = Promise.resolve();
   let inflight = 0;
   let events: EngineEvents | null = null;
   let stopped = true;
+  let phraseId = 0;
 
   return {
     id: "local",
@@ -154,8 +173,23 @@ export function createLocalWhisperEngine(): VoiceEngine {
       if (stopped) return;
 
       capture = await startSegmentedCapture({
+        onPartial(pcm) {
+          if (stopped || inflight > 0) return;
+          const id = phraseId;
+          partialQueue = partialQueue.then(async () => {
+            if (stopped || id !== phraseId || inflight > 0) return;
+            try {
+              const text = cleanTranscript(await client.transcribe(pcm, language, true));
+              if (text && id === phraseId && inflight === 0) events?.onInterim(text);
+            } catch {
+              /* partial transcription is best-effort */
+            }
+          });
+        },
         onSegment(pcm) {
+          phraseId++;
           inflight++;
+          ev.onInterim("");
           events?.onStatus({ kind: "transcribing" });
           queue = queue.then(async () => {
             try {
@@ -183,6 +217,7 @@ export function createLocalWhisperEngine(): VoiceEngine {
       capture?.stop(); // flushes the phrase in progress into the queue
       capture = null;
       await queue;
+      await partialQueue;
       events?.onStatus({ kind: "idle" });
     },
   };

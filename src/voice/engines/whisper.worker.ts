@@ -3,7 +3,7 @@ import { pipeline, env } from "@huggingface/transformers";
 
 type Msg =
   | { type: "load"; repo: string }
-  | { type: "transcribe"; id: number; audio: Float32Array; language?: string };
+  | { type: "transcribe"; id: number; audio: Float32Array; language?: string; partial?: boolean };
 
 const ctx = self as unknown as {
   postMessage(message: unknown): void;
@@ -32,6 +32,37 @@ onnxEnv.wasm.wasmPaths = {
 
 let transcriber: any = null;
 let loadedRepo = "";
+let device = "wasm";
+let job: Promise<unknown> = Promise.resolve();
+
+async function build(repo: string, progress_callback: (p: unknown) => void) {
+  const gpu = typeof navigator !== "undefined" ? (navigator as any).gpu : undefined;
+  if (gpu) {
+    try {
+      const adapter = await gpu.requestAdapter();
+      if (adapter) {
+        const model = await (pipeline as any)("automatic-speech-recognition", repo, {
+          device: "webgpu",
+          dtype: "fp16",
+          progress_callback,
+        });
+        device = "webgpu";
+        return model;
+      }
+    } catch {
+      // Not all Whisper ONNX graphs run on WebGPU; fall back to the optimised WASM build.
+      ctx.postMessage({ type: "progress", p: { status: "reset" } });
+      ctx.postMessage({ type: "notice", message: "WebGPU is unavailable for this model — using WASM." });
+    }
+  }
+  const model = await (pipeline as any)("automatic-speech-recognition", repo, {
+    device: "wasm",
+    dtype: "q8",
+    progress_callback,
+  });
+  device = "wasm";
+  return model;
+}
 
 ctx.onmessage = async (e) => {
   const m = e.data;
@@ -39,24 +70,29 @@ ctx.onmessage = async (e) => {
     if (m.type === "load") {
       if (!transcriber || loadedRepo !== m.repo) {
         transcriber = null;
-        transcriber = await (pipeline as any)("automatic-speech-recognition", m.repo, {
-          device: "wasm",
-          dtype: "q8",
-          progress_callback: (p: unknown) => ctx.postMessage({ type: "progress", p }),
-        });
+        transcriber = await build(m.repo, (p: unknown) => ctx.postMessage({ type: "progress", p }));
         loadedRepo = m.repo;
       }
-      ctx.postMessage({ type: "ready" });
+      ctx.postMessage({ type: "ready", device });
     } else if (m.type === "transcribe") {
-      if (!transcriber) throw new Error("Speech model is not loaded");
-      const out = await transcriber(m.audio, {
-        ...(m.language ? { language: m.language } : {}),
-        task: "transcribe",
-        chunk_length_s: 30,
-        return_timestamps: false,
-      });
-      const text = Array.isArray(out) ? out.map((o: { text: string }) => o.text).join(" ") : out.text;
-      ctx.postMessage({ type: "result", id: m.id, text });
+      const id = m.id;
+      const partial = !!m.partial;
+      // One job at a time: the model cannot be called concurrently.
+      job = job
+        .then(async () => {
+          if (!transcriber) throw new Error("Speech model is not loaded");
+          const out = await transcriber(m.audio, {
+            ...(m.language ? { language: m.language } : {}),
+            task: "transcribe",
+            chunk_length_s: partial ? 10 : 15,
+            return_timestamps: false,
+          });
+          const text = Array.isArray(out) ? out.map((o: { text: string }) => o.text).join(" ") : out.text;
+          ctx.postMessage({ type: "result", id, text, partial });
+        })
+        .catch((err: unknown) => {
+          ctx.postMessage({ type: "error", id, message: err instanceof Error ? err.message : String(err) });
+        });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

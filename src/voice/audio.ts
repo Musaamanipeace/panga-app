@@ -49,6 +49,8 @@ export interface SegmenterOptions {
   maxSegmentMs?: number;
   /** Absolute floor for the speech-detection level (RMS, 0..1). */
   minThreshold?: number;
+  /** How often to emit a partial transcript of the phrase in progress. */
+  partialEveryMs?: number;
 }
 
 /**
@@ -66,24 +68,29 @@ export class Segmenter {
   private inSpeech = false;
   private voiced = 0;
   private silent = 0;
+  private partialMs = 0;
   private readonly onSegment: (pcm: Float32Array) => void;
   private readonly onSpeaking?: (speaking: boolean) => void;
+  private readonly onPartial?: (pcm: Float32Array) => void;
 
   constructor(
     onSegment: (pcm: Float32Array) => void,
     options: SegmenterOptions = {},
     onSpeaking?: (speaking: boolean) => void,
+    onPartial?: (pcm: Float32Array) => void,
   ) {
     this.onSegment = onSegment;
     this.onSpeaking = onSpeaking;
+    this.onPartial = onPartial;
     this.o = {
       sampleRate: TARGET_SAMPLE_RATE,
       frameMs: 30,
-      minSpeechMs: 250,
-      silenceMs: 700,
-      preRollMs: 300,
-      maxSegmentMs: 25000,
+      minSpeechMs: 180,
+      silenceMs: 450,
+      preRollMs: 250,
+      maxSegmentMs: 15000,
       minThreshold: 0.012,
+      partialEveryMs: 2000,
       ...options,
     };
     this.frameSize = Math.round((this.o.sampleRate * this.o.frameMs) / 1000);
@@ -126,6 +133,7 @@ export class Segmenter {
         this.preRoll = [];
         this.voiced = 1;
         this.silent = 0;
+        this.partialMs = 0;
       } else {
         this.preRoll.push(frame);
         const keep = Math.ceil(this.o.preRollMs / this.o.frameMs);
@@ -144,27 +152,42 @@ export class Segmenter {
     const totalMs = this.frames.length * this.o.frameMs;
     if (this.silent * this.o.frameMs >= this.o.silenceMs || totalMs >= this.o.maxSegmentMs) {
       this.finish();
+      return;
     }
+
+    this.partialMs += this.o.frameMs;
+    if (
+      this.onPartial &&
+      this.partialMs >= this.o.partialEveryMs &&
+      this.voiced * this.o.frameMs >= this.o.minSpeechMs
+    ) {
+      this.partialMs = 0;
+      this.onPartial(this.pcmFromFrames());
+    }
+  }
+
+  private pcmFromFrames(): Float32Array {
+    const total = this.frames.reduce((n, f) => n + f.length, 0);
+    const pcm = new Float32Array(total);
+    let off = 0;
+    for (const f of this.frames) {
+      pcm.set(f, off);
+      off += f.length;
+    }
+    return pcm;
   }
 
   private finish(): void {
     const voicedMs = this.voiced * this.o.frameMs;
-    const frames = this.frames;
+    const pcm = voicedMs >= this.o.minSpeechMs ? this.pcmFromFrames() : null;
     this.frames = [];
     this.inSpeech = false;
     this.voiced = 0;
     this.silent = 0;
+    this.partialMs = 0;
     this.preRoll = [];
     this.onSpeaking?.(false);
-    if (voicedMs < this.o.minSpeechMs) return;
-    const total = frames.reduce((n, f) => n + f.length, 0);
-    const pcm = new Float32Array(total);
-    let off = 0;
-    for (const f of frames) {
-      pcm.set(f, off);
-      off += f.length;
-    }
-    this.onSegment(pcm);
+    if (pcm) this.onSegment(pcm);
   }
 }
 
@@ -188,6 +211,7 @@ export function isCaptureSupported(): boolean {
 export async function startSegmentedCapture(opts: {
   onSegment: (pcm: Float32Array) => void;
   onSpeaking?: (speaking: boolean) => void;
+  onPartial?: (pcm: Float32Array) => void;
 }): Promise<CaptureHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -199,7 +223,7 @@ export async function startSegmentedCapture(opts: {
     if (ctx.state === "suspended") await ctx.resume();
 
     const resampler = new Resampler(ctx.sampleRate);
-    const segmenter = new Segmenter(opts.onSegment, {}, opts.onSpeaking);
+    const segmenter = new Segmenter(opts.onSegment, {}, opts.onSpeaking, opts.onPartial);
     const source = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, "pcm-capture");
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
