@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { useVoicePrefs, setVoicePrefs } from "./prefs";
-import { WHISPER_MODELS, LANGUAGES, type WhisperModelKey } from "./models";
+import {
+  WHISPER_MODELS,
+  WHISPER_QUALITY_OPTIONS,
+  LANGUAGES,
+  modelForQuality,
+  qualityForModel,
+  type WhisperModelKey,
+  type WhisperQuality,
+} from "./models";
 import { isEngineSupported, probeServerEngine } from "./engines";
-import { preloadWhisperModel } from "./engines/localWhisper";
+import { getWhisperRuntime, preloadWhisperModel } from "./engines/localWhisper";
+import { getWarmupState, subscribeWarmup, type WarmupState } from "./warmup";
 import type { EngineId } from "./types";
 
 const ENGINE_INFO: Record<EngineId, { title: string; detail: string }> = {
@@ -30,9 +39,11 @@ export default function VoiceSettings() {
     progress: null,
     error: null,
   });
+  const [warmup, setWarmup] = useState<WarmupState>(getWarmupState);
 
   useEffect(() => {
     void probeServerEngine().then(setServerOk);
+    return subscribeWarmup(setWarmup);
   }, []);
 
   const engines: EngineId[] = serverOk ? ["local", "browser", "server"] : ["local", "browser"];
@@ -108,15 +119,15 @@ export default function VoiceSettings() {
 
         {prefs.engine === "local" && (
           <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-            Offline model
+            Speed
             <select
-              value={prefs.model}
-              onChange={(e) => setVoicePrefs({ model: e.target.value as WhisperModelKey })}
+              value={qualityForModel(prefs.model)}
+              onChange={(e) => setVoicePrefs({ model: modelForQuality(e.target.value as WhisperQuality) })}
             >
-              {(Object.keys(WHISPER_MODELS) as WhisperModelKey[]).map((k) => (
-                <option key={k} value={k}>
-                  {WHISPER_MODELS[k].label} · ~{WHISPER_MODELS[k].approxMb} MB
-                  {prefs.ready[k] ? " · downloaded" : ""}
+              {WHISPER_QUALITY_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label} — {WHISPER_MODELS[o.model].label} (~{WHISPER_MODELS[o.model].approxMb} MB
+                  {prefs.ready[o.model] ? ", downloaded" : ""})
                 </option>
               ))}
             </select>
@@ -131,7 +142,7 @@ export default function VoiceSettings() {
             {needsMultilingual && (
               <strong style={{ color: "#b45309" }}>
                 {" "}
-                This model only understands English. Choose Base or Small for this language.
+                This model only understands English. Choose Balanced or Accurate for this language.
               </strong>
             )}
           </p>
@@ -153,11 +164,25 @@ export default function VoiceSettings() {
             )}
             {dl.error && <span style={{ fontSize: 13, color: "#b91c1c" }}>{dl.error}</span>}
           </div>
+          {warmup.phase !== "idle" && warmup.model === prefs.model && (
+            <p className="settings-help" style={{ marginBottom: 0 }} role="status">
+              {warmup.phase === "warming"
+                ? `Warming up speech model…${warmup.progress === null ? "" : ` ${Math.round(warmup.progress * 100)}%`}`
+                : warmup.phase === "ready"
+                  ? `✓ Speech model ready (${getWhisperRuntime().device === "webgpu" ? "WebGPU" : "WASM"})`
+                  : `Speech model could not load: ${warmup.message}`}
+            </p>
+          )}
           <p className="settings-help" style={{ marginBottom: 0 }}>
-            Without this step the model downloads automatically the first time you dictate, so that first use needs internet.
+            The selected model warms up on app start. The manual download above is only needed to guarantee offline use on a new device.
           </p>
         </>
       )}
+
+      <p className="settings-help" style={{ marginTop: 0 }}>
+        Lowest latency: browser speech recognition when you are online. On-device Whisper is private and works offline;
+        its partial words appear as you speak and the final text lands when you pause.
+      </p>
 
       <div style={{ marginTop: 14 }}>
         <label style={{ display: "block", fontSize: 13, marginBottom: 4 }}>Try it here</label>

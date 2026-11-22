@@ -5,6 +5,7 @@ import PangaHome from "./pages/PangaHome";
 import Settings from "./pages/Settings";
 import AppShell from "./components/AppShell";
 import VoiceProvider from "./voice/VoiceProvider";
+import { warmupVoiceModel } from "./voice/warmup";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
 import { startReminderScheduler } from "./data/reminders";
@@ -32,6 +33,7 @@ function App() {
         void startReminderScheduler();
       }
       setReady(true);
+      warmupVoiceModel();
     });
 
     const handleFocus = () => {
