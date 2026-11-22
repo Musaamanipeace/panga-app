@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { confirmDelete } from "./ui";
+import ReadAloudButton from "./ReadAloudButton";
 import { listThoughts, addThought, deleteThought, type ThoughtEntry } from "../data/thoughts";
 
 interface Props {
@@ -106,6 +107,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
                     minute: "2-digit",
                   })}
                 </time>
+                <ReadAloudButton text={th.text} />
                 <button
                   type="button"
                   className="btn-icon"
