@@ -693,10 +693,10 @@ export default function HomeResourcesTab() {
               <div className="inline-form" style={{ marginBottom: 0 }}>
                 <input
                   type="url"
-                  placeholder="https:// (Google Drive share link)"
+                  placeholder="https:// (share link)"
                   value={imgLink}
                   onChange={(e) => setImgLink(e.target.value)}
-                  data-tip="Paste a link to the image (e.g. Google Drive share link)"
+                  data-tip="Paste a link to the image from any cloud storage"
                 />
                 <button
                   type="button"
@@ -720,7 +720,7 @@ export default function HomeResourcesTab() {
               <div className="inline-form" style={{ marginBottom: 0 }}>
                 <input
                   type="url"
-                  placeholder="https:// (Google Drive share link)"
+                  placeholder="https:// (share link)"
                   value={pdfLink}
                   onChange={(e) => setPdfLink(e.target.value)}
                   data-tip="Paste a link to the PDF"

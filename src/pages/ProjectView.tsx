@@ -6,7 +6,7 @@ import { listResourcesForProject, createResource, updateResource, deleteResource
 import { listDocEntries, createDocEntry, updateDocEntry, deleteDocEntry, type DocEntry } from "../data/docs";
 import { listMilestones, createMilestone, updateMilestone, setMilestoneStatus, deleteMilestone, reconcileMilestoneStatuses, type Milestone } from "../data/milestones";
 import { listIssues, createIssue, updateIssue, setIssueStatus, deleteIssue, addIssueComment, deleteIssueComment, type Issue, type IssueSeverity } from "../data/issues";
-import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, type CalendarEvent, type CalendarEventSource } from "../data/calendar";
+import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, isImportedEvent, type CalendarEvent } from "../data/calendar";
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
 import { db, type Project } from "../data/db";
 import { newId, now } from "../data/utils";
@@ -1362,16 +1362,16 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* Image link input — paste a Drive/share link, never store the file */}
+        {/* Image link input — store the link, never the file */}
         {activeCategory === "images" && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>Image link</label>
             <input
               type="url"
-              placeholder="https:// (Google Drive share link)"
+              placeholder="https:// (share link)"
               value={imgLink}
               onChange={(e) => setImgLink(e.target.value)}
-              data-tip="Paste a link to the image (e.g. a Google Drive share link). We store the link, not the file."
+              data-tip="Paste a link to the image from any cloud storage. We store the link, not the file."
             />
             <button
               type="button"
@@ -1388,16 +1388,16 @@ function ResourcesTab({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* PDF link input — paste a Drive/share link + PDF-to-text helper */}
+        {/* PDF link input — store the link, plus PDF-to-text helper */}
         {activeCategory === "pdfs" && (
           <div className="field" style={{ flexBasis: "100%" }}>
             <label>PDF link</label>
             <input
               type="url"
-              placeholder="https:// (Google Drive share link)"
+              placeholder="https:// (share link)"
               value={pdfLink}
               onChange={(e) => setPdfLink(e.target.value)}
-              data-tip="Paste a link to the PDF (e.g. a Google Drive share link). We store the link, not the file."
+              data-tip="Paste a link to the PDF from any cloud storage. We store the link, not the file."
             />
             <button
               type="button"
@@ -2347,13 +2347,13 @@ function CalendarTab({ projectId }: { projectId: string }) {
         return;
       }
       const toImport = parsedEvents.map((ev) => ({
-        id: `google_${newId()}`,
+        id: `imported_${newId()}`,
         projectId,
         title: ev.title ?? "(no title)",
         description: ev.description ?? null,
         startAt: ev.startAt,
         endAt: ev.endAt,
-        source: "google" as CalendarEventSource,
+        source: "imported" as const,
         hangoutLink: ev.hangoutLink ?? null,
         syncedAt: Date.now(),
         createdAt: now(),
@@ -2449,10 +2449,9 @@ function CalendarTab({ projectId }: { projectId: string }) {
     <div>
       {/* Import .ics section */}
       <section className="dashboard-section">
-        <h3 className="section-heading">Import from Google Calendar</h3>
+        <h3 className="section-heading">Import from a calendar file</h3>
         <p className="form-note">
-          Export your Google Calendar as an .ics file (Google Calendar → Settings → Import &amp; export → Export),
-          then upload it here. The app will parse events and add them as local calendar events.
+          Export your calendar as an .ics file, then upload it here. Events are added as local calendar events.
         </p>
         {importStatus && (
           <p className={importStatus.type === "error" ? "otp-error" : "progress-label"} style={{ margin: "6px 0" }}>
@@ -2537,7 +2536,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
                 {dayEvents.map((e) => (
                   <div
                     key={e.id}
-                    className={`calendar-event-pill ${e.source === "google" ? "google" : ""}`}
+                    className={`calendar-event-pill ${isImportedEvent(e) ? "imported" : ""}`}
                     data-tip={`${new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${e.title}`}
                   >
                     {new Date(e.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} {e.title}
@@ -2569,7 +2568,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
         </div>
         <div className="field" style={{ flexBasis: "100%" }}>
           <label>Meet link (optional)</label>
-          <input type="url" placeholder="https://meet.google.com/..." value={hangoutLink} onChange={(e) => setHangoutLink(e.target.value)} data-tip="Google Meet or other video call link" />
+          <input type="url" placeholder="https://meet.example.com/..." value={hangoutLink} onChange={(e) => setHangoutLink(e.target.value)} data-tip="Video call link" />
         </div>
         <button type="submit" className="btn-primary clickable">+ Add event</button>
       </form>
@@ -2578,7 +2577,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
       {viewMode === "list" && (
         events.length === 0 ? (
           <p className="empty-state">
-            No events yet. Add a local event above or import from Google Calendar.
+            No events yet. Add a local event above or import an .ics file.
           </p>
         ) : (
           <ul className="resource-list">
@@ -2586,7 +2585,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
               .sort((a, b) => a.startAt - b.startAt)
               .map((e) => (
                 <li key={e.id} className="resource-item">
-                  <span className="resource-category-dot" style={{ backgroundColor: e.source === "google" ? "#4285f4" : "#3b82f6" }} />
+                  <span className="resource-category-dot" style={{ backgroundColor: isImportedEvent(e) ? "#8b5cf6" : "#3b82f6" }} />
                   <span className="resource-text">
                     <span className="resource-title">{e.title}</span>
                     <p className="resource-notes">
@@ -2594,7 +2593,7 @@ function CalendarTab({ projectId }: { projectId: string }) {
                       {e.hangoutLink && <a href={e.hangoutLink} target="_blank" rel="noreferrer" className="resource-value-link" data-tip="Open Meet link">📹 Meet</a>}
                       {e.description && <><br />{e.description}</>}
                     </p>
-                    <span className="chip-small">{e.source === "google" ? "Google Calendar" : "Local"}</span>
+                    <span className="chip-small">{isImportedEvent(e) ? "Imported" : "Local"}</span>
                   </span>
                   <CopyButton
                     text={() => `${e.title}\n${new Date(e.startAt).toLocaleString()} - ${new Date(e.endAt).toLocaleTimeString()}${e.hangoutLink ? `\nMeet: ${e.hangoutLink}` : ""}${e.description ? `\n\n${e.description}` : ""}`}

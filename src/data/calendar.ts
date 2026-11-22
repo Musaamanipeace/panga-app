@@ -58,7 +58,13 @@ export async function createLocalEvent(input: {
   return event;
 }
 
-export async function importGoogleEvents(events: GoogleCalendarEventLike[]): Promise<number> {
+/** True for events that came from a calendar file rather than being added here. */
+export function isImportedEvent(event: { source?: string }): boolean {
+  // Events imported by older builds still carry the legacy "google" source.
+  return event.source !== "local";
+}
+
+export async function importCalendarEvents(events: CalendarEventLike[]): Promise<number> {
   const local: CalendarEvent[] = [];
   for (const e of events) {
     const startAt = e.start?.dateTime
@@ -72,13 +78,13 @@ export async function importGoogleEvents(events: GoogleCalendarEventLike[]): Pro
         ? new Date(e.end.date).getTime()
         : 0;
     local.push({
-      id: `google_${e.id}`,
+      id: `imported_${e.id}`,
       projectId: null,
       title: e.summary ?? "(no title)",
       description: e.description ?? null,
       startAt,
       endAt,
-      source: "google",
+      source: "imported",
       hangoutLink: e.hangoutLink ?? null,
       syncedAt: Date.now(),
       createdAt: now(),
@@ -115,9 +121,9 @@ export async function deleteEventsForProject(projectId: string): Promise<void> {
   }
 }
 
-export async function pruneMissingGoogleEvents(seenIds: Set<string>): Promise<void> {
-  const allGoogle = await db.calendarEvents.where("source").equals("google").toArray();
-  const toDelete = allGoogle.filter((e) => !seenIds.has(e.id)).map((e) => e.id);
+export async function pruneMissingImportedEvents(seenIds: Set<string>): Promise<void> {
+  const imported = (await db.calendarEvents.toArray()).filter(isImportedEvent);
+  const toDelete = imported.filter((e) => !seenIds.has(e.id)).map((e) => e.id);
   if (toDelete.length) {
     await db.calendarEvents.bulkDelete(toDelete);
     for (const id of toDelete) {
@@ -126,7 +132,7 @@ export async function pruneMissingGoogleEvents(seenIds: Set<string>): Promise<vo
   }
 }
 
-export interface GoogleCalendarEventLike {
+export interface CalendarEventLike {
   id: string;
   summary?: string;
   description?: string;

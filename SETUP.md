@@ -12,12 +12,11 @@ npm run dev
 
 | Variable | Required? | Purpose |
 |----------|-----------|---------|
-| `VITE_GOOGLE_CLIENT_ID` | For Drive sync | Google Cloud OAuth Web client ID (`drive.appdata` scope) |
 | `VITE_SUPABASE_URL` | Optional | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Optional | Supabase anon key |
 | `GEMINI_API_KEY` | Optional | Server proxy only; prefer keys in **Settings → AI** |
 
-You can also enter Google Client ID, Supabase URL/key, and **all AI keys** in the app Settings UI (stored in IndexedDB).
+You can also enter Supabase URL/key and **all AI keys** in the app Settings UI (stored in IndexedDB).
 
 ## 3. Supabase (optional)
 
@@ -37,13 +36,6 @@ Local Dexie remains primary; Supabase is the multi-device sync + auth backend.
 3. Paste key → models load from the provider (no hard-coded free model names)  
 4. Optional: Gemini, OpenAI, Claude, Grok, Groq  
 
-## 5. Google Drive
-
-1. Google Cloud Console → OAuth client (Web)  
-2. Authorized JS origins: your app origin  
-3. Put Client ID in `.env` or Settings  
-4. Connect → Export once (enables auto-sync)
-
 ## Removed in this package
 
 - Workspaces / projects from the primary UX (legacy tables kept readable for one release)
@@ -53,6 +45,5 @@ Local Dexie remains primary; Supabase is the multi-device sync + auth backend.
 ## Kept
 
 - Offline-first Dexie
-- Google Drive AppData sync (legacy)
 - Local JSON snapshot download/upload
 - Supabase Auth + sync (task lists, nested tasks, link folders, links, notes, reminders)

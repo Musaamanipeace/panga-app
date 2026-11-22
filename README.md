@@ -77,7 +77,6 @@ npm start
 Panga is strictly local-first and **requires no `.env` variables to run**. All keys, tokens, and credentials are configured directly in your browser via the **Settings** menu:
 
 - **Gemini API Key**: Configure in **Settings &rarr; Gemini API Key** (free from [Google AI Studio](https://aistudio.google.com/apikey)). The key is passed directly client-side.
-- **Google Drive Sync**: Enter your **Google Client ID** in **Settings &rarr; Cloud Backup &amp; Sync &rarr; Google Drive**.
 - **GitHub Gist Sync**: Enter your **Personal Access Token** (classic or fine-grained with `gist` scope) directly in **Settings &rarr; Cloud Backup &amp; Sync &rarr; GitHub Gist**.
 - **Email Backup**: Configure your free **Resend** or **SendGrid** API key in **Settings &rarr; Email Dispatch Key**.
 
@@ -221,15 +220,11 @@ src/
 │   ├── ...             # Other entity modules
 │   └── utils.ts        # ID generation, timestamps
 ├── sync/
-│   ├── supabaseSync.ts   # Supabase push/pull + RLS mirroring
+│   ├── supabaseSync.ts   # Supabase auth, push/pull + RLS mirroring
 │   ├── sync.ts           # Local sync coordination
-│   ├── autoSync.ts       # Debounced auto-sync
 │   ├── snapshot.ts       # Export/import utilities
 │   ├── tombstones.ts     # Delete tracking for sync
-│   ├── crypto.ts         # Web Crypto API credential encryption
-│   ├── google.ts         # Google OAuth helpers
-│   ├── googleCalendar.ts # Google Calendar import
-│   └── googleDriveSync.ts # Google Drive AppData sync (legacy)
+│   └── crypto.ts         # Web Crypto API credential encryption
 ├── auth/
 │   └── session.ts        # Session + Supabase auth binding
 ├── search/
@@ -242,7 +237,6 @@ src/
 - **Local-first**: All writes go to IndexedDB first; sync is async and non-blocking
 - **Sync coordination**: `sync.ts` handles local status; `supabaseSync.ts` handles Supabase push/pull
 - **No direct Dexie imports outside `/data`**: Data modules export typed functions
-- **Debounced auto-sync**: `autoSyncIfNeeded()` called after mutations
 
 ### Running Tests
 
@@ -364,8 +358,7 @@ npm test     # caret-safe insertion, voice-activity detection, provider behaviou
 - **Email backup** (Resend/SendGrid route, Settings UI, package `@emailjs/browser`).
 
 ### Kept
-- **Google Drive** AppData sync (primary cloud backup option).
-- Local-first **Dexie / IndexedDB** as offline source of truth.
+- Local-first **Dexie / IndexedDB** as offline source of truth, with JSON snapshot download/upload and bring-your-own Supabase sync.
 
 ### Added
 1. **Supabase / Postgres**

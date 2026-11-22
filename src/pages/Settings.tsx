@@ -1,39 +1,20 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  getGoogleClientId,
-  setGoogleClientId,
-  getActiveSyncProvider,
-  setActiveSyncProvider,
-  getLastSyncInfo,
-  setLastSyncInfo,
   getAIProvider,
   setAIProvider,
   getAIApiKey,
   setAIApiKey,
   getAIModel,
   setAIModel,
-  type CloudSyncProvider,
-  type LastSyncInfo,
   type AIProviderId,
 } from "../data/settings";
 import {
   downloadSnapshot,
   readSnapshotFile,
   importSnapshot,
-  type Snapshot,
 } from "../sync/snapshot";
-import { syncAll } from "../sync/sync";
 import VoiceSettings from "../voice/VoiceSettings";
 import InstallSettings from "../components/InstallSettings";
-import { enableAutoSync } from "../sync/autoSync";
-import {
-  connectGoogleDrive,
-  disconnectGoogleDrive,
-  isGoogleDriveConnected,
-  getStoredToken,
-  syncNowToGoogleDrive,
-  fetchDriveBackupForRestore,
-} from "../sync/googleDriveSync";
 import {
   AI_PROVIDERS,
   fetchAvailableModels,
@@ -61,18 +42,6 @@ export default function Settings() {
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
 
-  const [, setActiveProviderState] = useState<CloudSyncProvider>("google_drive");
-  const [lastSync, setLastSync] = useState<LastSyncInfo | null>(null);
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
-  const [cloudSyncMessage, setCloudSyncMessage] = useState("");
-
-  const [googleClientId, setGoogleClientIdState] = useState("");
-  const [googleClientIdSaved, setGoogleClientIdSaved] = useState(false);
-  const [isDriveConnected, setIsDriveConnected] = useState(false);
-  const [driveTokenExpiresAt, setDriveTokenExpiresAt] = useState<number | null>(null);
-
-  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
-  const [restoreData, setRestoreData] = useState<Snapshot | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [aiProvider, setAiProviderState] = useState<AIProviderId>("openrouter");
@@ -90,20 +59,6 @@ export default function Settings() {
   const [supabaseStatus, setSupabaseStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   const loadSettings = useCallback(async () => {
-    const currentProvider = await getActiveSyncProvider();
-    setActiveProviderState(currentProvider);
-    const lastSyncInfo = await getLastSyncInfo();
-    setLastSync(lastSyncInfo);
-
-    const savedClientId = await getGoogleClientId();
-    const envClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
-    setGoogleClientIdState(savedClientId || envClientId || "");
-
-    const connected = await isGoogleDriveConnected();
-    setIsDriveConnected(connected);
-    const storedToken = await getStoredToken();
-    if (storedToken) setDriveTokenExpiresAt(storedToken.expires_at);
-
     const prov = await getAIProvider();
     setAiProviderState(prov);
     const key = (await getAIApiKey(prov)) ?? "";
@@ -176,104 +131,6 @@ export default function Settings() {
     setSupabaseConfigured(await isSupabaseConfigured());
     setSupabaseStatus("saved");
     setTimeout(() => setSupabaseStatus("idle"), 2500);
-  }
-
-  async function handleSaveGoogleClientId(e: React.FormEvent) {
-    e.preventDefault();
-    await setGoogleClientId(googleClientId.trim());
-    setGoogleClientIdSaved(true);
-    setTimeout(() => setGoogleClientIdSaved(false), 2500);
-  }
-
-  async function handleConnectDrive() {
-    setCloudSyncStatus("loading");
-    setCloudSyncMessage("Connecting to Google Drive…");
-    try {
-      if (googleClientId.trim()) await setGoogleClientId(googleClientId.trim());
-      await connectGoogleDrive(googleClientId.trim() || undefined);
-      setIsDriveConnected(true);
-      const token = await getStoredToken();
-      if (token) setDriveTokenExpiresAt(token.expires_at);
-      setCloudSyncStatus("ok");
-      setCloudSyncMessage("Connected to Google Drive.");
-    } catch (err: unknown) {
-      setCloudSyncStatus("error");
-      setCloudSyncMessage(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleDisconnectDrive() {
-    await disconnectGoogleDrive();
-    setIsDriveConnected(false);
-    setDriveTokenExpiresAt(null);
-    setCloudSyncMessage("Disconnected from Google Drive.");
-    setCloudSyncStatus("idle");
-  }
-
-  async function handleCloudExport() {
-    setCloudSyncStatus("loading");
-    setCloudSyncMessage("Exporting to Google Drive…");
-    try {
-      const res = await syncNowToGoogleDrive();
-      if (!res.ok) {
-        setCloudSyncStatus("error");
-        setCloudSyncMessage(res.message || "Export failed");
-        return;
-      }
-      await setActiveSyncProvider("google_drive");
-      setActiveProviderState("google_drive");
-      const info = { provider: "google_drive" as const, timestamp: Date.now(), message: "Exported to Google Drive" };
-      await setLastSyncInfo(info);
-      setLastSync(info);
-      enableAutoSync("google_drive");
-      setIsDriveConnected(true);
-      setCloudSyncStatus("ok");
-      setCloudSyncMessage("Exported. Auto-sync is on.");
-    } catch (err: unknown) {
-      setCloudSyncStatus("error");
-      setCloudSyncMessage(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleDownloadAndRestore() {
-    setCloudSyncStatus("loading");
-    setCloudSyncMessage("Downloading backup from Google Drive…");
-    try {
-      const res = await fetchDriveBackupForRestore();
-      if (res.ok) setIsDriveConnected(true);
-      if (!res.ok || !res.data) {
-        setCloudSyncStatus("error");
-        setCloudSyncMessage(res.message || "Failed to download");
-        return;
-      }
-      setRestoreData(res.data);
-      setRestoreConfirmOpen(true);
-      setCloudSyncStatus("idle");
-      setCloudSyncMessage("");
-    } catch (err: unknown) {
-      setCloudSyncStatus("error");
-      setCloudSyncMessage(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleRestoreConfirm() {
-    if (!restoreData) return;
-    setCloudSyncStatus("loading");
-    setCloudSyncMessage("Restoring snapshot…");
-    setRestoreConfirmOpen(false);
-    try {
-      await importSnapshot(restoreData);
-      await syncAll();
-      enableAutoSync("google_drive");
-      setCloudSyncStatus("ok");
-      setCloudSyncMessage("Restored. Reloading…");
-      setTimeout(() => window.location.reload(), 1200);
-    } catch (err: unknown) {
-      setCloudSyncStatus("error");
-      setCloudSyncMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRestoreData(null);
-    }
   }
 
   async function handleLocalDownload() {
@@ -437,57 +294,6 @@ export default function Settings() {
       </section>
 
       <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Google Drive backup</h2>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
-          Sync a full workspace snapshot to Drive App Data. Auto-sync runs after you export once on this device.
-        </p>
-        <form onSubmit={handleSaveGoogleClientId} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>
-            Google OAuth Client ID
-            <input
-              type="text"
-              value={googleClientId}
-              onChange={(e) => setGoogleClientIdState(e.target.value)}
-              placeholder="xxxx.apps.googleusercontent.com"
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px" }}
-            />
-          </label>
-          <button type="submit" className="btn-secondary btn-small clickable">
-            {googleClientIdSaved ? "Saved" : "Save Client ID"}
-          </button>
-        </form>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-          {!isDriveConnected ? (
-            <button type="button" className="btn-primary btn-small clickable" onClick={() => void handleConnectDrive()}>
-              Connect Google Drive
-            </button>
-          ) : (
-            <>
-              <button type="button" className="btn-primary btn-small clickable" onClick={() => void handleCloudExport()}>
-                Export / Sync now
-              </button>
-              <button type="button" className="btn-secondary btn-small clickable" onClick={() => void handleDownloadAndRestore()}>
-                Import from Drive
-              </button>
-              <button type="button" className="btn-secondary btn-small clickable" onClick={() => void handleDisconnectDrive()}>
-                Disconnect
-              </button>
-            </>
-          )}
-        </div>
-        <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
-          Status: {isDriveConnected ? "Connected" : "Not connected"}
-          {driveTokenExpiresAt ? ` · token expires ${new Date(driveTokenExpiresAt).toLocaleString()}` : ""}
-          {lastSync ? ` · last sync ${new Date(lastSync.timestamp).toLocaleString()}` : ""}
-        </div>
-        {cloudSyncMessage && (
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: cloudSyncStatus === "error" ? "var(--color-accent-issue, #b91c1c)" : "var(--color-text-muted)" }}>
-            {cloudSyncMessage}
-          </p>
-        )}
-      </section>
-
-      <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Local snapshot</h2>
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
           Download or upload a full JSON backup (no account required).
@@ -520,37 +326,6 @@ export default function Settings() {
 
       <VoiceSettings />
       <InstallSettings />
-
-      {restoreConfirmOpen && restoreData && (
-        <div
-          role="dialog"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div style={{ background: "var(--color-bg, #fff)", borderRadius: 12, padding: 24, maxWidth: 420, width: "100%" }}>
-            <h3 style={{ marginTop: 0 }}>Import from Google Drive?</h3>
-            <p style={{ fontSize: 14 }}>
-              Snapshot from {new Date(restoreData.metadata.exportedAt).toLocaleString()}. This replaces local data on this device.
-            </p>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" className="btn-secondary btn-small" onClick={() => { setRestoreConfirmOpen(false); setRestoreData(null); }}>
-                Cancel
-              </button>
-              <button type="button" className="btn-primary btn-small" onClick={() => void handleRestoreConfirm()}>
-                Restore
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

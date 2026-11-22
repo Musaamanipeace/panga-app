@@ -4,9 +4,8 @@ import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
 import ThoughtTrain from "./ThoughtTrain";
 import { ToastContainer, ConfirmDialogHost } from "./ui";
-import { SyncMenu, AutoSyncIndicator } from "./SyncMenu";
+import { SyncStatusIndicator } from "./SyncStatusIndicator";
 import InstallButton from "./InstallButton";
-import { subscribeAutoSync, startAutoSync, type AutoSyncState } from "../sync/autoSync";
 import SelectionCopy from "./SelectionCopy";
 import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
@@ -17,13 +16,10 @@ export default function AppShell() {
   const email = getSessionEmail();
   const guest = isGuest();
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
-  const [autoState, setAutoState] = useState<AutoSyncState>({ phase: "off", provider: null, at: null, message: "" });
 
   useEffect(() => {
-    startAutoSync();
     void migrateStash();
     startSupabaseSync();
-    return subscribeAutoSync(setAutoState);
   }, []);
 
   async function handleLogout() {
@@ -60,19 +56,18 @@ export default function AppShell() {
           <Link
             to="/settings"
             className="btn-secondary btn-small clickable"
-            data-tip="Settings: API keys, backup & sync (Google Drive)"
+            data-tip="Settings: API keys, Supabase account and JSON backups"
             data-tip-pos="bottom"
           >
             Settings
           </Link>
         <span
           className="user-email"
-          title={guest ? "Guest (offline)" : email || ""}
+          title={guest ? "Guest — data stays on this device" : email || ""}
         >
-          {guest ? "Guest · offline" : email || "Local"}
+          {guest ? "Guest" : email || "Local"}
         </span>
-        <SyncMenu />
-        <AutoSyncIndicator state={autoState} />
+        <SyncStatusIndicator />
         <InstallButton />
         <span
           className="offline-badge"

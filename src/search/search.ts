@@ -161,7 +161,6 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   // §6 — Settings results
   const settingEntries: { id: string; title: string; subtitle: string; target: string }[] = [
     { id: "gemini-key", title: "Gemini API Key", subtitle: "API key for Scheduler AI Plan mode", target: "gemini" },
-    { id: "google-calendar", title: "Google Calendar", subtitle: "OAuth connection for Calendar sync", target: "calendar" },
     { id: "secrets-vault", title: "Secrets Vault", subtitle: "Encrypted secret storage (PBKDF2 + AES-GCM)", target: "secrets" },
   ];
   for (const s of settingEntries) {
