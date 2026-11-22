@@ -9,8 +9,8 @@ import InstallButton from "./InstallButton";
 import SelectionCopy from "./SelectionCopy";
 import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
-import { startSupabaseSync } from "../sync/supabaseSync";
-import { getSessionEmail, isGuest, logout } from "../auth/session";
+import { signOut, startSupabaseSync } from "../sync/supabaseSync";
+import { getSessionEmail, isGuest } from "../auth/session";
 
 export default function AppShell() {
   const email = getSessionEmail();
@@ -23,7 +23,7 @@ export default function AppShell() {
   }, []);
 
   async function handleLogout() {
-    await logout();
+    await signOut();
   }
 
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;

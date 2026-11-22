@@ -8,7 +8,8 @@ import VoiceProvider from "./voice/VoiceProvider";
 import { ensureSeedData } from "./data/db";
 import { syncAll } from "./sync/sync";
 import { startReminderScheduler } from "./data/reminders";
-import { restoreSession, canUseApp } from "./auth/session";
+import { canUseApp } from "./auth/session";
+import { restoreAppSession } from "./sync/supabaseSync";
 import "./index.css";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,7 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void restoreSession().then(async () => {
+    void restoreAppSession().then(async () => {
       await ensureSeedData();
       if (canUseApp()) {
         try {
