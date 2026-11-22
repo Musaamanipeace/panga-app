@@ -2,7 +2,7 @@
 
 ## Current plan (5 ordered steps, from the user on 2026-11-22)
 1. [x] Remove Google Drive / every Google reference (issue #4, branch `refactor/4-remove-google-drive`)
-2. [ ] Harden sign-up / sign-in + per-user IndexedDB isolation + JSON identity restore (guest → Settings → Supabase keys → ask user what to do; snapshot = full login incl. session + API keys)
+2. [x] Harden sign-up / sign-in + per-user IndexedDB isolation + JSON identity restore (issue #6, branch `feat/6-auth-data-isolation`)
 3. [ ] Empty key fields by default + explicit "bring your own Supabase" messaging
 4. [ ] Voice transcription speed (Fast default, preload, VAD/chunking, WebGPU/WASM, partial results, loading progress, fastest-engine note)
 5. [ ] Read Aloud coverage on notes / long thoughts + stop-on-navigation polish
