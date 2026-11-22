@@ -1,8 +1,12 @@
 // src/sync/snapshot.ts
-// Local-first snapshot export/import. Serializes the IndexedDB contents
-// to a versioned JSON structure for backup and restore.
+// Local-first snapshot export/import. Serializes the IndexedDB contents to a
+// versioned JSON structure for backup and restore. A snapshot also carries
+// enough identity to put the user straight back into their own workspace.
 
 import { db, exportDbState, importDbState, hasLocalData } from "../data/db";
+import { getSessionEmail, getSessionUserId, isGuest, resetGuestSession, clearSupabaseAuthStorage, setSession } from "../auth/session";
+import { getSupabaseConfig } from "../data/supabase";
+import { getSupabaseSessionSnapshot, restoreSupabaseSession } from "./supabaseSync";
 
 export const SNAPSHOT_VERSION = "1.0";
 
@@ -13,8 +17,18 @@ export interface SnapshotMetadata {
   dbVersion: number;
 }
 
+export interface SnapshotIdentity {
+  /** Supabase user id for a signed-in export, or the guest id otherwise. */
+  userId: string;
+  username: string;
+  email: string;
+  loggedIn: boolean;
+  supabase?: { url: string; anonKey: string; session?: unknown } | null;
+}
+
 export interface Snapshot {
   metadata: SnapshotMetadata;
+  identity?: SnapshotIdentity;
   data: Record<string, any[]>;
 }
 
@@ -35,11 +49,17 @@ export function validateSnapshot(obj: unknown): Snapshot | null {
 }
 
 /**
- * Export the entire local database to a snapshot object.
- * Only table data is exported — no credentials, keys, or env vars.
+ * Export the whole local database plus the current identity and, when signed
+ * in, the Supabase session. Credentials travel with the file on purpose: the
+ * snapshot is meant to be a complete restore, not a redacted data dump.
  */
 export async function exportSnapshot(): Promise<Snapshot> {
-  const data = await exportDbState();
+  const data = await exportDbState({ includeSecrets: true });
+  const userId = getSessionUserId();
+  const email = getSessionEmail() ?? "guest@local";
+  const guest = isGuest();
+  const cfg = await getSupabaseConfig();
+  const session = guest ? null : await getSupabaseSessionSnapshot();
   return {
     metadata: {
       version: SNAPSHOT_VERSION,
@@ -47,16 +67,41 @@ export async function exportSnapshot(): Promise<Snapshot> {
       appName: "Panga",
       dbVersion: db.verno,
     },
+    identity: {
+      userId: userId ?? "guest@local",
+      username: guest ? "guest" : email.split("@")[0],
+      email,
+      loggedIn: !guest && !!userId,
+      supabase: cfg ? { url: cfg.url, anonKey: cfg.anonKey, session } : null,
+    },
     data,
   };
 }
 
 /**
- * Import (hydrate) a snapshot into IndexedDB.
- * Clears all user tables first, then bulk-loads every record.
+ * Import a snapshot. Identity is restored BEFORE the data so records land in
+ * the right user's isolated database. A signed-in snapshot also restores the
+ * Supabase session, making the import equivalent to logging in.
  */
 export async function importSnapshot(snapshot: Snapshot): Promise<void> {
-  await importDbState(snapshot.data);
+  const identity = snapshot.identity;
+  clearSupabaseAuthStorage();
+
+  if (identity?.loggedIn && identity.userId) {
+    await setSession(identity.userId, identity.email);
+    if (identity.supabase) {
+      await restoreSupabaseSession(identity.supabase.session, identity.supabase.url);
+    }
+  } else {
+    await resetGuestSession();
+    // Keep the configured Supabase project even for a guest snapshot so the
+    // user can sign in without re-entering the URL and key.
+    if (identity?.supabase) {
+      await restoreSupabaseSession(identity.supabase.session, identity.supabase.url);
+    }
+  }
+
+  await importDbState(snapshot.data, { includeSecrets: true });
 }
 
 /** Trigger a browser download of the snapshot as a .json file. */

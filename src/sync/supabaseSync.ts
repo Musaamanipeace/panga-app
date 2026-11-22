@@ -1,9 +1,16 @@
 // Username + password sign-in and cloud sync through Supabase.
 // Local IndexedDB stays the source of truth; this only mirrors tasks, thoughts and notes.
 // Clipboard clips and PDFs are never uploaded.
-import { getSupabase } from "../data/supabase";
+import { getSupabase, getSupabaseConfig, resetSupabaseClient } from "../data/supabase";
 import { db } from "../data/db";
-import { getUserScopedKey } from "../auth/session";
+import {
+  clearSupabaseAuthStorage,
+  getSessionUserId,
+  getUserScopedKey,
+  logoutAndStartGuest,
+  restoreSession,
+  setSession,
+} from "../auth/session";
 import { listTombstones, clearTombstones, type SyncKind } from "./tombstones";
 
 const DOMAIN_KEY = "panga_login_domain";
@@ -40,29 +47,71 @@ export function validateCredentials(login: string, password: string): string | n
   return null;
 }
 
-export async function signUp(login: string, password: string): Promise<{ error?: string; needsConfirm?: boolean }> {
+const NEEDS_SETUP = "Add your Supabase URL and anon key in Settings first. Choose “Continue as guest” to reach Settings, then sign up.";
+
+export async function signUp(login: string, password: string): Promise<{ error?: string; needsConfirm?: boolean; switched?: boolean }> {
   const bad = validateCredentials(login, password);
   if (bad) return { error: bad };
   const sb = await getSupabase();
-  if (!sb) return { error: "Add your Supabase URL and anon key first (Settings → Supabase)." };
-  const { data, error } = await sb.auth.signUp({ email: usernameToEmail(login), password });
+  if (!sb) return { error: NEEDS_SETUP };
+  const email = usernameToEmail(login);
+  const { data, error } = await sb.auth.signUp({ email, password });
   if (error) return { error: friendly(error.message) };
-  return { needsConfirm: !data.session };
+  if (!data.session) return { needsConfirm: true };
+  await setSession(data.session.user.id, email);
+  return { switched: true };
 }
 
-export async function signIn(login: string, password: string): Promise<{ error?: string }> {
+export async function signIn(login: string, password: string): Promise<{ error?: string; switched?: boolean }> {
   const bad = validateCredentials(login, password);
   if (bad) return { error: bad };
   const sb = await getSupabase();
-  if (!sb) return { error: "Add your Supabase URL and anon key first (Settings → Supabase)." };
-  const { error } = await sb.auth.signInWithPassword({ email: usernameToEmail(login), password });
+  if (!sb) return { error: NEEDS_SETUP };
+  const email = usernameToEmail(login);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { error: friendly(error.message) };
-  return {};
+  if (!data.session) return { error: "Sign-in did not return a session. Try again." };
+  await setSession(data.session.user.id, email);
+  return { switched: true };
 }
 
 export async function signOut(): Promise<void> {
   const sb = await getSupabase();
   await sb?.auth.signOut();
+  await logoutAndStartGuest();
+}
+
+/** Reconcile the local session with a persisted Supabase session on app start. */
+export async function restoreAppSession(): Promise<void> {
+  const account = await getAccount();
+  if (account && getSessionUserId() !== account.id) {
+    await setSession(account.id, account.login);
+    return;
+  }
+  await restoreSession();
+}
+
+/** Serialised Supabase auth session for a JSON snapshot (includes the refresh token). */
+export async function getSupabaseSessionSnapshot(): Promise<unknown | null> {
+  const sb = await getSupabase();
+  if (!sb) return null;
+  const { data } = await sb.auth.getSession();
+  return data.session ?? null;
+}
+
+/** Restore a snapshot's Supabase session before the client is created. */
+export async function restoreSupabaseSession(session: unknown, url?: string): Promise<void> {
+  if (!session) return;
+  const projectUrl = url ?? (await getSupabaseConfig())?.url;
+  if (!projectUrl) return;
+  clearSupabaseAuthStorage();
+  const ref = new URL(projectUrl).hostname.split(".")[0] || "supabase";
+  try {
+    localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(session));
+  } catch {
+    /* storage unavailable */
+  }
+  resetSupabaseClient();
 }
 
 export async function getAccount(): Promise<{ id: string; login: string } | null> {

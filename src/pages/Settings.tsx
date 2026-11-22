@@ -22,6 +22,7 @@ import {
   type AIModelInfo,
 } from "../ai/providers";
 import AccountPanel from "../components/AccountPanel";
+import { isGuest } from "../auth/session";
 import {
   getSupabaseConfig,
   setSupabaseConfig,
@@ -252,7 +253,7 @@ export default function Settings() {
         </form>
       </section>
 
-      <AccountPanel />
+      <AccountPanel promptUpgrade={isGuest() && supabaseConfigured} />
 
       <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
         <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Supabase (Postgres)</h2>

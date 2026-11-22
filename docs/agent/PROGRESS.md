@@ -1,5 +1,16 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-22 — Step 2: BYOK auth, isolation and JSON identity (issue #6, branch feat/6-auth-data-isolation)
+- [x] Issue #6 created; branch from up-to-date `main` (after PR #5 merged)
+- [x] `session.ts`: awaitable DB switching, guest flag cleared on sign-in, fresh guest id + Supabase auth storage cleanup on sign-out
+- [x] `supabaseSync.ts`: sign-up/sign-in adopt the Supabase user id and switch IndexedDB; sign-out clears Supabase session; app-start session reconciliation; snapshot session helpers
+- [x] `snapshot.ts`: export carries identity, login status, Supabase URL/anon key + auth session and all settings/API keys; import restores identity before loading data into the right isolated DB
+- [x] Landing imports via `importSnapshot` (no more ad-hoc email restore); Settings upload uses the same path
+- [x] Guest who saves Supabase keys gets an upgrade prompt: sign in / create account / not now, with an opt-in to move guest data into the account (`mergeDbState`)
+- [x] Added 4 regression tests for identity restore and account isolation
+- [x] Checks: `npm test` 13 files / 69 tests pass; `npm run lint` exit 0 (pre-existing warnings); `npm run build` succeeds
+- Commits: 7e0a911 (session binding), 1a50cfc (snapshot identity), 9922f89 (guest prompt), f4ac94c (tests)
+
 ## 2026-11-22 — Step 1: remove every Google/Drive reference (issue #4, branch refactor/4-remove-google-drive)
 - [x] Issue #4 created; branch from up-to-date `main`
 - [x] Deleted `googleDriveSync.ts`, `autoSync.ts`, `google.ts`, `googleCalendar.ts` (1,270 lines)

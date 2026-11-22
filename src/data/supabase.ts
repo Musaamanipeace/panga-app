@@ -47,3 +47,8 @@ export async function getSupabase(): Promise<SupabaseClient | null> {
 export async function isSupabaseConfigured(): Promise<boolean> {
   return (await getSupabaseConfig()) !== null;
 }
+
+/** Drop the cached client so the next getSupabase() reads the current config/session. */
+export function resetSupabaseClient(): void {
+  client = null;
+}
