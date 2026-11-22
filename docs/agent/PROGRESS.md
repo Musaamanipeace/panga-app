@@ -6,5 +6,5 @@
 - [x] AGENTS.md: skill index, non-negotiable rules, session start/end checklists
 - [x] 10 skills in `.agents/skills/`
 - [x] docs/agent: USER_RULES.md, DECISIONS.md, NEXT.md, PROGRESS.md
-- [ ] .github: ISSUE_TEMPLATE/{bug,feature,task}.md, pull_request_template.md, workflows/require-linked-issue.yml
-- [ ] CONTRIBUTING.md
+- [x] .github: ISSUE_TEMPLATE/{bug,feature,task}.md, pull_request_template.md, workflows/require-linked-issue.yml
+- [x] CONTRIBUTING.md
