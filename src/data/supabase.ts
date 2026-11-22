@@ -1,8 +1,8 @@
 /**
  * Supabase client (Postgres + Auth).
  * Local Dexie remains the offline-first source of truth.
- * This module is used for cloud sync / multi-device when the user configures
- * SUPABASE_URL + SUPABASE_ANON_KEY (or stores them in settings).
+ * This module is used for cloud sync / multi-device when the user saves their
+ * own project URL + anon key in Settings.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSetting, setSetting } from "./settings";
@@ -13,11 +13,9 @@ const SETTINGS_ANON = "supabaseAnonKey";
 let client: SupabaseClient | null = null;
 
 export async function getSupabaseConfig(): Promise<{ url: string; anonKey: string } | null> {
-  // Prefer env (Vite) then settings
-  const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-  if (envUrl && envKey) return { url: envUrl, anonKey: envKey };
-
+  // Bring your own project: only values the user saved in Settings count.
+  // Environment variables are deliberately ignored so the app never ships
+  // with a default Supabase instance.
   const url = (await getSetting<string>(SETTINGS_URL)) ?? null;
   const anonKey = (await getSetting<string>(SETTINGS_ANON)) ?? null;
   if (url && anonKey) return { url, anonKey };

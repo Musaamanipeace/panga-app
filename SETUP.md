@@ -12,20 +12,18 @@ npm run dev
 
 | Variable | Required? | Purpose |
 |----------|-----------|---------|
-| `VITE_SUPABASE_URL` | Optional | Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Optional | Supabase anon key |
 | `GEMINI_API_KEY` | Optional | Server proxy only; prefer keys in **Settings → AI** |
 
-You can also enter Supabase URL/key and **all AI keys** in the app Settings UI (stored in IndexedDB).
+Supabase URL/key and **all AI keys** are entered in the app Settings UI (stored in IndexedDB). No environment variable can supply a Supabase project.
 
-## 3. Supabase (optional)
+## 3. Supabase (bring your own)
 
 1. Create a project at https://supabase.com  
 2. SQL Editor → paste and run `supabase/schema.sql` then `supabase/panga_sync.sql`
    - `schema.sql` creates `task_lists`, `tasks`, `link_folders`, `links`, `notes`, `reminders` (+ legacy tables) with `user_id` and RLS policies.
    - `panga_sync.sql` creates `public.panga_records` (kind check extended to task/taskList/thought/note/link/linkFolder/reminder) with RLS.
 3. Authentication → Providers → Email: turn **Confirm email OFF** (usernames become `name@panga.invalid`, so no email is sent).
-4. Project Settings → API → copy URL + anon key into `.env` or Settings → Supabase.
+4. Project Settings → API → copy URL + anon key into **Settings → Bring your own Supabase project**. This is required before creating an account or syncing; there is no default instance.
 
 Local Dexie remains primary; Supabase is the multi-device sync + auth backend.
 

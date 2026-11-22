@@ -1,5 +1,13 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-22 — Step 3: empty secret fields + BYOK Supabase (issue #8, branch fix/8-empty-secret-fields)
+- [x] Supabase config no longer falls back to `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`; only user-saved settings count
+- [x] Settings Supabase section renamed "Bring your own Supabase project" with required-for-sign-up-and-sync wording
+- [x] Secret inputs remain empty until a real saved value is loaded (placeholders only)
+- [x] README/SETUP updated to remove env-based Supabase configuration
+- [x] Added a test proving env vars are ignored
+- Checks: `npm test` 14 files / 70 tests pass; `npm run lint` exit 0 (pre-existing warnings); `npm run build` succeeds
+
 ## 2026-11-22 — Step 2: BYOK auth, isolation and JSON identity (issue #6, branch feat/6-auth-data-isolation)
 - [x] Issue #6 created; branch from up-to-date `main` (after PR #5 merged)
 - [x] `session.ts`: awaitable DB switching, guest flag cleared on sign-in, fresh guest id + Supabase auth storage cleanup on sign-out

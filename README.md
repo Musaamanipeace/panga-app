@@ -124,7 +124,7 @@ From the Landing page, choose how you want to work:
 
 ### Cloud Sync (Supabase)
 
-Panga syncs to Supabase when you configure a project URL + anon key (in Settings or via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
+Panga syncs to the Supabase project you bring yourself: paste its URL + anon key in Settings. There is no default project and no environment-variable fallback.
 
 1. Create a project at https://supabase.com.
 2. SQL Editor → run `supabase/schema.sql` (creates task lists, tasks, link folders, links, notes, reminders with RLS) and `supabase/panga_sync.sql`.
@@ -333,7 +333,7 @@ docker compose up --build     # http://localhost:5173
 
 The `Dockerfile` is multi-stage (deps, build, production-only deps, runtime). The final image has no build tools or sources, runs as a non-root user, and has a `HEALTHCHECK` on `/health`. Your pipeline still just runs `docker build .`; BuildKit caches the dependency layers. Build with `--target test` to run the unit tests as part of the image build.
 
-Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `WHISPER_SERVER_URL`, `WHISPER_SERVER_MODEL`. Supabase URL/anon key are configured client-side in Settings (or via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
+Environment variables (all optional): `PORT`, `GEMINI_API_KEY`, `WHISPER_SERVER_URL`, `WHISPER_SERVER_MODEL`. Supabase URL/anon key are configured client-side in Settings only.
 
 `.github/workflows/ci.yml` is a template that lints, tests, builds, and publishes the image to GHCR on pushes to `main`.
 
@@ -363,7 +363,7 @@ npm test     # caret-safe insertion, voice-activity detection, provider behaviou
 ### Added
 1. **Supabase / Postgres**
    - Schema: `supabase/schema.sql` — tables for projects, tasks, resources, milestones, issues, contacts, reminders, calendar_events, insights, docs, conversations, messages, settings + RLS.
-   - Client: `src/data/supabase.ts` — configure via `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` or Settings.
+   - Client: `src/data/supabase.ts` — configured only from values saved in Settings.
    - Architecture remains offline-first: Dexie is primary; Supabase is the standard remote Postgres for multi-device sync (wire full sync in a follow-up).
 
 2. **Multi-provider AI** (`src/ai/providers.ts`)
