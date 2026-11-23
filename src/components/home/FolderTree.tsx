@@ -3,6 +3,8 @@
 // reminder home views. Renders nestable folders plus the items that belong to
 // each folder (unfiled items appear at root). The parent supplies data,
 // accessors, callbacks and domain-specific title/action rendering.
+// With `foldersAsGrid`, folders display as a scrollable grid of cards instead
+// of a list; items still render as list rows.
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 export interface FolderTreeProps<F, I> {
@@ -27,6 +29,7 @@ export interface FolderTreeProps<F, I> {
   renderItemTitle?: (i: I, selected: boolean) => ReactNode;
   renderItemActions?: (i: I, selected: boolean) => ReactNode;
   newFolderPlaceholder?: string;
+  foldersAsGrid?: boolean;
 }
 
 export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
@@ -52,6 +55,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     renderItemTitle,
     renderItemActions,
     newFolderPlaceholder = "New folder…",
+    foldersAsGrid = false,
   } = props;
 
   const [newTitle, setNewTitle] = useState("");
@@ -132,6 +136,60 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     },
     [draft, folders, folderId, folderTitle, onRenameFolder]
   );
+
+  const renderItemRow = (it: I): ReactNode => {
+    const itId = itemId(it);
+    const itSelected = selectedId === itId;
+    return (
+      <li key={itId} style={{ paddingLeft: 22, marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSelectItem(itId); }}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              textAlign: "left",
+              fontSize: "13px",
+              color: itSelected ? "var(--color-accent-primary)" : "inherit",
+              cursor: "pointer",
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            {renderItemTitle ? renderItemTitle(it, itSelected) : <span style={{ flex: 1, minWidth: 0 }}>{itemTitle(it)}</span>}
+          </button>
+          {renderItemActions ? renderItemActions(it, itSelected) : null}
+          {onItemAction && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onItemAction(it); }}
+              style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", marginLeft: "auto" }}
+              data-tip="Open item"
+            >
+              →
+            </button>
+          )}
+        </div>
+      </li>
+    );
+  };
+
+  const renderUnfiledItems = (): ReactNode => {
+    const unfiled = itemsByFolder.get(null) ?? [];
+    if (unfiled.length === 0) return null;
+    return (
+      <>
+        <p style={{ padding: "0 12px", fontSize: "12px", color: "var(--color-text-muted)" }}>Unfiled</p>
+        <ul style={{ paddingLeft: 22, marginTop: 4, listStyle: "none", padding: 0 }}>
+          {unfiled.map((it) => renderItemRow(it))}
+        </ul>
+      </>
+    );
+  };
 
   const renderFolder = (f: F, depth: number): ReactNode => {
     const id = folderId(f);
@@ -243,51 +301,129 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
         )}
         {isOpen && folderItems.length > 0 && (
           <ul style={{ paddingLeft: 22, marginTop: 6, listStyle: "none", padding: 0 }}>
-            {folderItems.map((it) => {
-              const itId = itemId(it);
-              const itSelected = selectedId === itId;
-              return (
-                <li key={itId} style={{ paddingLeft: 22, marginBottom: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onSelectItem(itId); }}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        padding: 0,
-                        textAlign: "left",
-                        fontSize: "13px",
-                        color: itSelected ? "var(--color-accent-primary)" : "inherit",
-                        cursor: "pointer",
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      {renderItemTitle ? renderItemTitle(it, itSelected) : <span style={{ flex: 1, minWidth: 0 }}>{itemTitle(it)}</span>}
-                    </button>
-                    {renderItemActions ? renderItemActions(it, itSelected) : null}
-                    {onItemAction && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onItemAction(it); }}
-                        style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", marginLeft: "auto" }}
-                        data-tip="Open item"
-                      >
-                        →
-                      </button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+            {folderItems.map((it) => renderItemRow(it))}
           </ul>
         )}
       </li>
     );
   };
+
+  const renderFolderGrid = (f: F, depth: number): ReactNode => {
+    const id = folderId(f);
+    const isOpen = openIds.has(id);
+    const kids = childrenByParent.get(id) ?? [];
+    const selected = selectedId === id;
+    const editing = editingId === id;
+
+    return (
+      <div key={id} className="folder-grid-item" style={{ marginBottom: 8 }}>
+        <div
+          className={`folder-card${selected ? " folder-card-selected" : ""}`}
+          style={{ paddingLeft: depth * 18 }}
+          onClick={() => onSelectFolder(id)}
+        >
+          {editing ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => commitRename(id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename(id);
+                if (e.key === "Escape") { setDraft(folderTitle(f)); setEditingId(null); }
+              }}
+              style={{ fontSize: "inherit" }}
+            />
+          ) : (
+            <>
+              <span className="folder-card-title">{folderTitle(f)}</span>
+              {renderFolderMeta && renderFolderMeta(f, selected)}
+            </>
+          )}
+          <span className="folder-card-actions">
+            {kids.length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleFolder(id); }}
+                data-tip={isOpen ? "Collapse" : "Expand"}
+              >
+                {isOpen ? "▾" : "▸"}
+              </button>
+            )}
+            {renderFolderActions ? renderFolderActions(f, selected) : null}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setEditingId(id); setDraft(folderTitle(f)); }}
+              data-tip="Rename folder"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); void onDeleteFolder(id); }}
+              style={{ color: "var(--color-accent-issue, #ef4444)" }}
+              data-tip="Delete folder"
+            >
+              ×
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setCreatingUnder(id); setSubTitle(""); }}
+              data-tip="Add subfolder"
+            >
+              +
+            </button>
+          </span>
+        </div>
+        {creatingUnder === id && (
+          <form onSubmit={(e) => handleCreateSubFolder(e, id)} style={{ marginLeft: depth * 18 + 24, marginTop: 4, display: "flex", gap: 4 }}>
+            <input
+              autoFocus
+              value={subTitle}
+              onChange={(e) => setSubTitle(e.target.value)}
+              placeholder={newFolderPlaceholder}
+              style={{ padding: "2px 6px", fontSize: "12px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)", flex: 1, minWidth: 0 }}
+            />
+            <button type="submit" style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }} disabled={!subTitle.trim()}>
+              +
+            </button>
+            <button type="button" onClick={() => setCreatingUnder(null)} style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }}>✕</button>
+          </form>
+        )}
+        {isOpen && kids.length > 0 && (
+          <div className="folder-grid" style={{ marginTop: 6 }}>
+            {kids.map((k) => renderFolderGrid(k, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (foldersAsGrid) {
+    return (
+      <>
+        <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 12px 8px" }}>
+          <input
+            autoFocus
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder={newFolderPlaceholder}
+            style={{ flex: 1, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
+          />
+          <button type="submit" disabled={!newTitle.trim()} style={{ padding: "6px 10px", fontSize: "13px", cursor: "pointer" }}>
+            +
+          </button>
+        </form>
+        {rootFolders.length === 0 && (
+          <p style={{ padding: "0 12px", fontSize: "13px", color: "var(--color-text-muted)" }}>
+            No folders yet. Add one above.
+          </p>
+        )}
+        <div className="folder-grid">{rootFolders.map((f) => renderFolderGrid(f, 0))}</div>
+        {renderUnfiledItems()}
+      </>
+    );
+  }
 
   return (
     <ul className="item-list" style={{ padding: 0, margin: 0, listStyle: "none" }}>
@@ -310,53 +446,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
       )}
       {rootFolders.map((f) => renderFolder(f, 0))}
       {/* Unfiled items at root */}
-      {itemsByFolder.get(null)?.length && (
-        <>
-          <li style={{ paddingLeft: 2, marginTop: 8, fontSize: "12px", color: "var(--color-text-muted)" }}>Unfiled</li>
-          <ul style={{ paddingLeft: 22, marginTop: 4, listStyle: "none", padding: 0 }}>
-            {itemsByFolder.get(null)!.map((it) => {
-              const itId = itemId(it);
-              const itSelected = selectedId === itId;
-              return (
-                <li key={itId} style={{ paddingLeft: 22, marginBottom: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onSelectItem(itId); }}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        padding: 0,
-                        textAlign: "left",
-                        fontSize: "13px",
-                        color: itSelected ? "var(--color-accent-primary)" : "inherit",
-                        cursor: "pointer",
-                        flex: 1,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      {renderItemTitle ? renderItemTitle(it, itSelected) : <span style={{ flex: 1, minWidth: 0 }}>{itemTitle(it)}</span>}
-                    </button>
-                    {renderItemActions ? renderItemActions(it, itSelected) : null}
-                    {onItemAction && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onItemAction(it); }}
-                        style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", marginLeft: "auto" }}
-                        data-tip="Open item"
-                      >
-                        →
-                      </button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+      {renderUnfiledItems()}
     </ul>
   );
 }
