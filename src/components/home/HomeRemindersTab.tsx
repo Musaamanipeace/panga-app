@@ -143,6 +143,12 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
     return { reminders, folders };
   }, []);
 
+  useEffect(() => {
+    const onUpdate = () => void reload();
+    window.addEventListener("panga-data-updated", onUpdate);
+    return () => window.removeEventListener("panga-data-updated", onUpdate);
+  }, [reload]);
+
   const [requestingPerm, setRequestingPerm] = useState(false);
   const [permGranted, setPermGranted] = useState<boolean | null>(null);
   const [message, setMessage] = useState("");

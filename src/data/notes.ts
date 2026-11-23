@@ -8,7 +8,7 @@ export type { Note };
 export async function listNotes(folderId: string | null = null): Promise<Note[]> {
   if (!db.isOpen()) await db.open();
   if (folderId === null) {
-    return db.notes.where("folderId").equals(null as unknown as string).toArray();
+    return db.notes.filter((n) => n.folderId === null).toArray();
   }
   return db.notes.where("folderId").equals(folderId).toArray();
 }

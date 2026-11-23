@@ -39,11 +39,20 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
     const [allFolders, allLinks] = await Promise.all([listLinkFolders(), listAllLinks()]);
     setFolders(allFolders);
     setLinks(allLinks);
-    if (selId && !folders.find((f) => f.id === selId) && !links.find((l) => l.id === selId)) {
-      setSelId(allFolders[0]?.id ?? null);
-      setSelType("folder");
-    }
-  }, [selId, folders, links]);
+    setSelId((prev) => {
+      if (prev && (allFolders.some((f) => f.id === prev) || allLinks.some((l) => l.id === prev))) {
+        return prev;
+      }
+      return allFolders[0]?.id ?? null;
+    });
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    const onUpdate = () => void reload();
+    window.addEventListener("panga-data-updated", onUpdate);
+    return () => window.removeEventListener("panga-data-updated", onUpdate);
+  }, [reload]);
 
   // A search result for a folder selects it directly.
   useEffect(() => {

@@ -69,7 +69,15 @@ export default function AppShell() {
       }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const onOpenThoughts = () => setThoughtsOpen(true);
+    const onOpenSearch = () => setSearchOpen(true);
+    window.addEventListener("panga-open-thoughts", onOpenThoughts);
+    window.addEventListener("panga-open-search", onOpenSearch);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("panga-open-thoughts", onOpenThoughts);
+      window.removeEventListener("panga-open-search", onOpenSearch);
+    };
   }, [navigate]);
 
   // Close popovers when clicking outside them.

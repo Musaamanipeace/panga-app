@@ -33,6 +33,12 @@ export default function TaskListsHome({
     return { lists, folders, tasks };
   }, []);
 
+  useEffect(() => {
+    const onUpdate = () => void reload();
+    window.addEventListener("panga-data-updated", onUpdate);
+    return () => window.removeEventListener("panga-data-updated", onUpdate);
+  }, [reload]);
+
   // Search results select the folder / task list directly.
   useEffect(() => {
     if (!data) return;
@@ -285,8 +291,14 @@ export default function TaskListsHome({
   }
 
   function TaskTree({ listId, reloadFn }: { listId: string; reloadFn: () => void }) {
-    const { data, error, loading } = useAsync(async () => getTaskTree(listId), [listId]);
+    const { data, error, loading, reload: reloadTree } = useAsync(async () => getTaskTree(listId), [listId]);
     const [newSubtask, setNewSubtask] = useState<{ parentId: string; title: string } | null>(null);
+
+    useEffect(() => {
+      const onUpdate = () => void reloadTree();
+      window.addEventListener("panga-data-updated", onUpdate);
+      return () => window.removeEventListener("panga-data-updated", onUpdate);
+    }, [reloadTree]);
 
     if (error) return <div className="error-banner" role="alert">{String(error)}</div>;
     if (loading) return <div className="empty-state">Loading tasks…</div>;

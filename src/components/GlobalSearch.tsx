@@ -39,7 +39,16 @@ export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Pro
       }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const onAssistantSearch = (e: Event) => {
+      const q = (e as CustomEvent<{ query?: string }>).detail?.query;
+      if (typeof q === "string") setQuery(q);
+      if (controlledOpen === undefined) setUncontrolledOpen(true);
+    };
+    window.addEventListener("panga-open-search", onAssistantSearch);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("panga-open-search", onAssistantSearch);
+    };
   }, [controlledOpen, onOpenChange, open]);
 
   useEffect(() => {

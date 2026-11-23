@@ -39,11 +39,20 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
     const [allFolders, allNotes] = await Promise.all([listNoteFolders(), listAllNotes()]);
     setFolders(allFolders);
     setNotes(allNotes);
-    if (selId && !folders.find((f) => f.id === selId) && !notes.find((n) => n.id === selId)) {
-      setSelId(allFolders[0]?.id ?? null);
-      setSelType("folder");
-    }
-  }, [selId, folders, notes]);
+    setSelId((prev) => {
+      if (prev && (allFolders.some((f) => f.id === prev) || allNotes.some((n) => n.id === prev))) {
+        return prev;
+      }
+      return allFolders[0]?.id ?? null;
+    });
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    const onUpdate = () => void reload();
+    window.addEventListener("panga-data-updated", onUpdate);
+    return () => window.removeEventListener("panga-data-updated", onUpdate);
+  }, [reload]);
 
   // A search result for a folder selects it directly.
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   listConversations,
   createConversation,
@@ -8,32 +9,33 @@ import {
   pruneExpiredConversations,
   type Message,
 } from "../data/conversations";
-import { chatCompletion } from "../ai/chat";
-import { listAllProjects, createProject } from "../data/projects";
-import { listAllTasks, createTask, updateTask, deleteTask } from "../data/tasks";
-import { createMilestone } from "../data/milestones";
-import { createReminder } from "../data/reminders";
-import { createInsight } from "../data/insights";
-import { createResource } from "../data/resources";
-import { db, type Milestone, type Project, type Task } from "../data/db";
+import { chatCompletion, type ChatMessage } from "../ai/chat";
+import {
+  buildAgentSystemInstruction,
+  executeAgentAction,
+  executeReadCalls,
+  executeUiCalls,
+  isDestructiveAction,
+  notifyWorkspaceUpdated,
+  parseAgentReply,
+  type AgentAction,
+} from "../ai/agent";
 import { newId } from "../data/utils";
-import { useAsync } from "../components/ui";
-import { getUserScopedKey } from "../auth/session";
+import { showToast, useAsync } from "../components/ui";
 
-interface ActionProposal {
-  type:
-    | "create_task"
-    | "update_task"
-    | "delete_task"
-    | "create_project"
-    | "create_milestone"
-    | "create_reminder"
-    | "create_insight"
-    | "create_link"
-    | "add_subcategory";
-  description: string;
-  data: any;
+interface PendingApproval {
+  id: string;
+  action: AgentAction;
+  destructive: boolean;
 }
+
+interface UndoEntry {
+  id: string;
+  summary: string;
+  undo: () => Promise<void>;
+}
+
+const MAX_READ_STEPS = 4;
 
 export default function AssistantPanel() {
   const [open, setOpen] = useState(false);
@@ -41,10 +43,12 @@ export default function AssistantPanel() {
   const [text, setText] = useState("");
   const [composing, setComposing] = useState(false);
   const [clarifying, setClarifying] = useState<{ question: string; options: string[] } | null>(null);
-  const [approvals, setApprovals] = useState<
-    { id: string; description: string; action: () => Promise<void> }[]
-  >([]);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [undoEntries, setUndoEntries] = useState<UndoEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const conversations = useAsync(listConversations, []);
   const messages = useAsync(
@@ -59,71 +63,31 @@ export default function AssistantPanel() {
   async function startNew() {
     const c = await createConversation("New conversation");
     setConversationId(c.id);
+    setApprovals([]);
+    setClarifying(null);
+    setError(null);
     setOpen(true);
     conversations.reload();
   }
 
-  async function buildSystemInstruction(): Promise<string> {
-    const [projects, tasks, milestones] = await Promise.all([
-      listAllProjects(),
-      listAllTasks(),
-      db.milestones.toArray(),
-    ]) as [Project[], Task[], Milestone[]];
-
-    const projList = projects
-      .map((p) => `- Project "${p.name}" (id: ${p.id}): ${p.description || "no description"} [status: ${p.status}]`)
-      .join("\n");
-    const taskList = tasks
-      .slice(0, 50)
-      .map(
-        (t) =>
-          `- Task "${t.title}" (id: ${t.id}, project: ${t.projectId}): [status: ${t.status}, executor: ${t.executor}${
-            t.scheduledAt ? `, scheduled: ${new Date(t.scheduledAt).toLocaleString()}` : ""
-          }]`
-      )
-      .join("\n");
-    const milestoneList = milestones
-      .map((m) => `- Milestone "${m.title}" (id: ${m.id}, project: ${m.projectId}): ${m.description || "no description"} [status: ${m.status}]`)
-      .join("\n");
-
-    return `You are Panga's intelligent personal assistant and agent.
-Panga is a personal, offline-first project and resource planner.
-
-Core principles & instructions:
-1. Upload & storage philosophy: Panga never stores binary files, only text and links. For images and PDFs, links to cloud storage are stored. For text documents (.txt, .md), their contents are parsed into text.
-2. PDF guidance: If asked about PDFs or ingesting PDF documents, explain the upload rule: recommend free, self-service tools such as ilovepdf.com/pdf_to_text to convert the PDF to plain text, and paste that text into Notes or Insights, or paste a link to the PDF in cloud storage.
-3. Milestones: Milestones are goals with a title and a description body context. Use them to understand user goals, suggest task breakdowns, set reminders, and schedule action items.
-4. Agent actions with user approval: You have the ability to read, write, edit, add subcategories, add projects, add tasks, delete tasks, check/tick off tasks, add milestones, add reminders, and save insights.
-Whenever the user asks you to perform an action (or when you suggest concrete actions that should be executed), explain what you are doing in your message, and append machine-readable ACTION blocks at the very end of your response, one per action, like this:
-ACTION:{"type":"create_task","description":"Add task '...' to project '...'","data":{"projectId":"...","title":"...","notes":"...","executor":"ai"|"manual","scheduledAt":null}}
-ACTION:{"type":"update_task","description":"Mark task '...' as completed","data":{"id":"...","status":"completed"}}
-ACTION:{"type":"delete_task","description":"Delete task '...'","data":{"id":"..."}}
-ACTION:{"type":"create_project","description":"Create project '...'","data":{"name":"...","description":"..."}}
-ACTION:{"type":"create_milestone","description":"Create milestone '...'","data":{"projectId":"...","title":"...","description":"..."}}
-ACTION:{"type":"create_reminder","description":"Set reminder '...'","data":{"message":"...","triggerAt":1234567890,"projectId":"..."}}
-ACTION:{"type":"create_insight","description":"Save insight '...'","data":{"projectId":"...","title":"...","body":"...","type":"note"}}
-ACTION:{"type":"create_link","description":"Save link '...'","data":{"url":"https://...","title":"...","description":"...","projectId":null}}
-ACTION:{"type":"add_subcategory","description":"Add shared subcategory '...'","data":{"category":"notes","name":"..."}}
-
-If the user's request is ambiguous or missing a critical choice, you can instead ask a clarifying question by starting your response with:
-CLARIFY: Question text || Option 1 || Option 2 || Option 3
-
-Current application state:
-Projects:
-${projList || "None"}
-
-Tasks:
-${taskList || "None"}
-
-Milestones:
-${milestoneList || "None"}
-`;
+  async function runUndo(entry: UndoEntry) {
+    try {
+      await entry.undo();
+      notifyWorkspaceUpdated();
+      setUndoEntries((prev) => prev.filter((u) => u.id !== entry.id));
+      if (conversationId) {
+        await addMessage(conversationId, "assistant", `Undid: ${entry.summary}`);
+        messages.reload();
+      }
+      showToast(`Undid: ${entry.summary}`, "info");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not undo that action.");
+    }
   }
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const userText = text.trim();
-    if (!userText) return;
+  async function sendMessage(rawText: string) {
+    const userText = rawText.trim();
+    if (!userText || composing) return;
 
     let convId = conversationId;
     if (!convId) {
@@ -134,6 +98,7 @@ ${milestoneList || "None"}
     }
 
     setError(null);
+    setClarifying(null);
     setComposing(true);
     await addMessage(convId, "user", userText);
     setText("");
@@ -141,69 +106,65 @@ ${milestoneList || "None"}
 
     try {
       const allMsgs = await listMessages(convId);
-      const systemInstruction = await buildSystemInstruction();
+      const currentRoute = `${location.pathname}${location.search}`;
+      const systemInstruction = await buildAgentSystemInstruction(currentRoute);
 
-      const chatMessages = allMsgs.map((m) => ({
-        role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+      const workingMessages: ChatMessage[] = allMsgs.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
         content: m.text,
       }));
 
-      const result = await chatCompletion(chatMessages, { system: systemInstruction });
-      const reply = result.text;
+      let finalCleanText = "";
+      let pendingActions: AgentAction[] = [];
+      let uiSummaries: string[] = [];
 
-      if (!reply) throw new Error("Empty response received from the assistant.");
+      for (let step = 0; step <= MAX_READ_STEPS; step++) {
+        const result = await chatCompletion(workingMessages, { system: systemInstruction });
+        const reply = result.text;
+        if (!reply) throw new Error("Empty response received from the assistant.");
 
-      // Check for clarification
-      if (reply.startsWith("CLARIFY:")) {
-        const parts = reply.replace("CLARIFY:", "").split("||");
-        setClarifying({
-          question: parts[0].trim(),
-          options: parts.slice(1).map((p: string) => p.trim()).filter(Boolean),
-        });
-        setComposing(false);
-        return;
-      }
+        const parsed = parseAgentReply(reply);
 
-      // Parse ACTION: blocks
-      const lines = reply.split(/\r?\n/);
-      const actionProposals: ActionProposal[] = [];
-      const cleanLines: string[] = [];
-
-      for (const line of lines) {
-        if (line.trim().startsWith("ACTION:")) {
-          try {
-            const rawJson = line.trim().slice(7).trim();
-            const parsed = JSON.parse(rawJson) as ActionProposal;
-            if (parsed && parsed.type) {
-              actionProposals.push(parsed);
-            }
-          } catch (e) {
-            console.warn("Failed to parse action line:", line, e);
-          }
-        } else {
-          cleanLines.push(line);
+        if (parsed.clarify) {
+          setClarifying(parsed.clarify);
+          return;
         }
+
+        if (parsed.uiCalls.length > 0) {
+          uiSummaries = [...uiSummaries, ...executeUiCalls(parsed.uiCalls, navigate)];
+        }
+
+        if (parsed.reads.length > 0 && step < MAX_READ_STEPS) {
+          const toolResults = await executeReadCalls(parsed.reads);
+          workingMessages.push({ role: "assistant", content: reply });
+          workingMessages.push({
+            role: "user",
+            content: `[Tool results]\n${toolResults}\n\nNow continue answering the user's request or propose ACTION: lines using the exact IDs above.`,
+          });
+          continue;
+        }
+
+        finalCleanText = parsed.cleanText;
+        pendingActions = parsed.actions;
+        break;
       }
 
-      const cleanReply = cleanLines.join("\n").trim();
-      if (cleanReply) {
-        await addMessage(convId, "assistant", cleanReply);
+      const displayReply = [finalCleanText, uiSummaries.length ? `(${uiSummaries.join(" · ")})` : ""]
+        .filter(Boolean)
+        .join("\n\n");
+
+      if (displayReply) {
+        await addMessage(convId, "assistant", displayReply);
         messages.reload();
       }
 
-      // Convert parsed actions to approval items
-      if (actionProposals.length > 0) {
-        const newApprovals = actionProposals.map((act) => ({
+      if (pendingActions.length > 0) {
+        const queued: PendingApproval[] = pendingActions.map((act) => ({
           id: newId(),
-          description: act.description || `Execute ${act.type}`,
-          action: async () => {
-            await executeAction(act);
-            await addMessage(convId!, "assistant", `Approved and executed: ${act.description}`);
-            window.dispatchEvent(new Event("panga-data-updated"));
-            messages.reload();
-          },
+          action: act,
+          destructive: isDestructiveAction(act.type),
         }));
-        setApprovals((prev) => [...prev, ...newApprovals]);
+        setApprovals((prev) => [...prev, ...queued]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Assistant error occurred.");
@@ -212,124 +173,49 @@ ${milestoneList || "None"}
     }
   }
 
-  async function executeAction(act: ActionProposal): Promise<void> {
-    const { type, data } = act;
-    switch (type) {
-      case "create_task": {
-        // Tasks no longer need a project: standalone tasks are the default.
-        await createTask({
-          projectId: data.projectId || null,
-          title: data.title,
-          notes: data.notes ?? "",
-          executor: data.executor ?? "manual",
-          scheduledAt: data.scheduledAt ? Number(data.scheduledAt) : null,
-          dueDate: data.dueDate ? Number(data.dueDate) : null,
-          tags: data.tags ?? [],
-        });
-        break;
-      }
-      case "update_task": {
-        if (!data.id) throw new Error("Task id missing.");
-        await updateTask(data.id, data);
-        break;
-      }
-      case "delete_task": {
-        if (!data.id) throw new Error("Task id missing.");
-        await deleteTask(data.id);
-        break;
-      }
-      case "create_project": {
-        await createProject({
-          name: data.name,
-          description: data.description ?? "",
-        });
-        break;
-      }
-      case "create_milestone": {
-        const defaultProj = (await listAllProjects())[0];
-        const projId = data.projectId || defaultProj?.id;
-        if (!projId) throw new Error("No project found to attach milestone to.");
-        await createMilestone({
-          projectId: projId,
-          title: data.title,
-          description: data.description ?? "",
-          targetDate: data.targetDate ? Number(data.targetDate) : null,
-        });
-        break;
-      }
-      case "create_reminder": {
-        const currentTime = Date.now();
-        await createReminder({
-          message: data.message,
-          triggerAt: data.triggerAt ? Number(data.triggerAt) : currentTime + 3600000,
-          linkedEntityType: null,
-          linkedEntityId: null,
-        });
-        break;
-      }
-      case "create_insight": {
-        const defaultProj = (await listAllProjects())[0];
-        const projId = data.projectId || defaultProj?.id;
-        if (!projId) throw new Error("No project found to attach insight to.");
-        await createInsight({
-          projectId: projId,
-          title: data.title,
-          body: data.body ?? null,
-          type: data.type ?? "note",
-          link: data.link ?? null,
-          tags: data.tags ?? [],
-        });
-        break;
-      }
-      case "create_link": {
-        await createResource({
-          category: "links",
-          title: data.title || data.url,
-          url: data.url,
-          body: data.description || data.body || null,
-          projectId: data.projectId || null,
-          tags: data.tags || [],
-          provider: data.provider || "other",
-        });
-        break;
-      }
-      case "add_subcategory": {
-        const cat = data.category || "notes";
-        const name = (data.name || "").trim().toLowerCase().replace(/\s+/g, "_");
-        if (name) {
-          const stored = localStorage.getItem(getUserScopedKey("panga-subcategories-global"));
-          const existing = stored ? JSON.parse(stored) : {};
-          existing[cat] = [...(existing[cat] || []), name].filter((v, i, a) => a.indexOf(v) === i);
-          localStorage.setItem(getUserScopedKey("panga-subcategories-global"), JSON.stringify(existing));
-        }
-        break;
-      }
-      default:
-        console.warn("Unknown action type:", type);
-    }
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void sendMessage(text);
   }
 
   function resolveClarify(option: string) {
-    if (!conversationId) return;
     setClarifying(null);
-    setText(`${text} [Selected: ${option}]`);
-    setComposing(true);
-    void handleSend({ preventDefault: () => {} } as React.FormEvent);
+    void sendMessage(`[Selected: ${option}]`);
   }
 
   function dismissClarify() {
     setClarifying(null);
   }
 
-  async function approve(id: string) {
+  async function approveOne(id: string) {
     const item = approvals.find((a) => a.id === id);
     if (!item) return;
     setApprovals((prev) => prev.filter((a) => a.id !== id));
     try {
-      await item.action();
-      messages.reload();
+      const exec = await executeAgentAction(item.action);
+      if (conversationId) {
+        await addMessage(conversationId, "assistant", `Approved: ${exec.summary}`);
+        messages.reload();
+      }
+      if (exec.undo) {
+        const entry: UndoEntry = { id: newId(), summary: exec.summary, undo: exec.undo };
+        setUndoEntries((prev) => [entry, ...prev].slice(0, 6));
+        showToast(exec.summary, "success", 6000, {
+          label: "Undo",
+          onClick: () => void runUndo(entry),
+        });
+      } else {
+        showToast(exec.summary, "success");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Approval failed.");
+      setError(err instanceof Error ? err.message : "Action failed.");
+    }
+  }
+
+  async function approveAllNonDestructive() {
+    const safe = approvals.filter((a) => !a.destructive);
+    for (const item of safe) {
+      await approveOne(item.id);
     }
   }
 
@@ -337,6 +223,7 @@ ${milestoneList || "None"}
     setApprovals((prev) => prev.filter((a) => a.id !== id));
   }
 
+  const safePendingCount = approvals.filter((a) => !a.destructive).length;
   const fabRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -432,10 +319,10 @@ ${milestoneList || "None"}
                   <div className="assistant-log" role="log" aria-live="polite">
                     {(messages.data ?? []).length === 0 ? (
                       <p className="empty-state" style={{ margin: "auto", textAlign: "center" }}>
-                        Ask me anything about your projects, tasks, schedule, or resources.
+                        Ask me to search, write, edit, copy, paste, organize folders, set reminders, or navigate Panga.
                         <br />
                         <span className="text-tiny" style={{ color: "var(--color-text-muted)" }}>
-                          I can plan tasks, schedule your day, search the web, and guide you on converting PDFs to text.
+                          Every write asks for your approval first and supports Undo.
                         </span>
                       </p>
                     ) : (
@@ -451,6 +338,43 @@ ${milestoneList || "None"}
                       ))
                     )}
                   </div>
+
+                  {undoEntries.length > 0 && (
+                    <div
+                      style={{
+                        padding: "6px 12px",
+                        borderTop: "1px solid var(--color-border)",
+                        background: "var(--color-bg-subtle)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                    >
+                      {undoEntries.slice(0, 3).map((u) => (
+                        <div
+                          key={u.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            fontSize: 12,
+                          }}
+                        >
+                          <span style={{ color: "var(--color-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {u.summary}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-secondary btn-small clickable"
+                            onClick={() => void runUndo(u)}
+                          >
+                            Undo
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {clarifying && (
                     <div className="clarify-box" role="alertdialog" aria-label="Clarification needed">
@@ -479,19 +403,19 @@ ${milestoneList || "None"}
                     </div>
                   )}
 
-                  <form className="assistant-composer" onSubmit={handleSend}>
+                  <form className="assistant-composer" onSubmit={handleSubmit}>
                     <div className="inline-form" style={{ flex: 1, marginBottom: 0 }}>
                       <input
                         type="text"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder="Ask, plan, or command actions..."
+                        placeholder="Search, write, edit, copy, paste, navigate…"
                         disabled={composing}
                         aria-label="Your message"
                       />
                     </div>
                     <button type="submit" className="btn-primary clickable" disabled={composing || !text.trim()}>
-                      {composing ? "Thinking..." : "Send"}
+                      {composing ? "Working…" : "Send"}
                     </button>
                   </form>
                 </>
@@ -500,16 +424,36 @@ ${milestoneList || "None"}
 
             {approvals.length > 0 && (
               <div className="approval-box" role="alertdialog" aria-label="Waiting for approval">
-                <h3>Agent Action Approval ({approvals.length})</h3>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>Confirm Action ({approvals.length})</h3>
+                  {safePendingCount > 1 && (
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small clickable"
+                      onClick={() => void approveAllNonDestructive()}
+                    >
+                      Approve all ({safePendingCount})
+                    </button>
+                  )}
+                </div>
                 <div className="approval-list">
                   {approvals.map((a) => (
-                    <div key={a.id} className="approval-item">
-                      <span>{a.description}</span>
+                    <div
+                      key={a.id}
+                      className="approval-item"
+                      style={a.destructive ? { borderColor: "var(--color-accent-issue)" } : undefined}
+                    >
+                      <span>{a.action.description}</span>
                       <div className="btn-row">
                         <button
                           type="button"
                           className="btn-primary btn-small clickable"
-                          onClick={() => approve(a.id)}
+                          style={
+                            a.destructive
+                              ? { background: "var(--color-accent-issue)", borderColor: "var(--color-accent-issue)" }
+                              : undefined
+                          }
+                          onClick={() => void approveOne(a.id)}
                           data-tip="Approve and execute this action"
                         >
                           Approve

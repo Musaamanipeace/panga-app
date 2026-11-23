@@ -7,7 +7,10 @@ export type { Link };
 
 export async function listLinks(folderId: string | null): Promise<Link[]> {
   if (!db.isOpen()) await db.open();
-  return db.links.where("folderId").equals(folderId as unknown as string).toArray();
+  if (folderId === null) {
+    return db.links.filter((l) => l.folderId === null).toArray();
+  }
+  return db.links.where("folderId").equals(folderId).toArray();
 }
 
 export async function listAllLinks(): Promise<Link[]> {
@@ -30,7 +33,9 @@ export async function createLink(input: {
 }): Promise<Link> {
   if (!db.isOpen()) await db.open();
   const t = now();
-  const siblings = await db.links.where("folderId").equals(input.folderId as unknown as string).toArray();
+  const siblings = input.folderId
+    ? await db.links.where("folderId").equals(input.folderId).toArray()
+    : await db.links.filter((l) => l.folderId === null).toArray();
   const order = input.order ?? (siblings.length ? Math.max(...siblings.map((l) => l.order)) + 1 : 0);
   const link: Link = {
     id: newId(),

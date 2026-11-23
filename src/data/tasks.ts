@@ -22,7 +22,7 @@ export async function listSubtasks(parentId: string): Promise<Task[]> {
 
 export async function listRootTasks(): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
-  return db.tasks.where("parentId").equals(null as unknown as string).toArray();
+  return db.tasks.filter((t) => t.parentId === null).toArray();
 }
 
 export async function getTask(id: string): Promise<Task | undefined> {
@@ -52,7 +52,7 @@ export async function createTask(input: {
     ? await db.tasks.where("parentId").equals(input.parentId).toArray()
     : input.listId
       ? await db.tasks.where("listId").equals(input.listId).and((task) => task.parentId === null).toArray()
-      : await db.tasks.where("listId").equals(null as unknown as string).and((task) => task.parentId === null).toArray();
+      : await db.tasks.filter((task) => task.listId === null && task.parentId === null).toArray();
   const order = input.order ?? (siblings.length ? Math.max(...siblings.map((s) => s.order)) + 1 : 0);
   const task: Task = {
     id: newId(),
@@ -176,7 +176,7 @@ export async function listAllTasks(): Promise<Task[]> {
 
 export async function listAllActiveTasks(): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
-  return db.tasks.where("completed").equals(false as unknown as string).toArray();
+  return db.tasks.filter((t) => !t.completed).toArray();
 }
 
 // ---------- Legacy compatibility wrappers (project-based UI, retired) ----------
