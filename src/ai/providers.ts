@@ -174,3 +174,56 @@ export async function fetchAvailableModels(
 export function filterFreeModels(models: AIModelInfo[]): AIModelInfo[] {
   return models.filter((m) => m.isFree === true || m.id.includes(":free"));
 }
+
+const DEFAULT_CHAT_MODELS: Record<AIProviderId, string> = {
+  openrouter: "openrouter/free",
+  gemini: "gemini-2.5-flash",
+  groq: "llama-3.3-70b-versatile",
+  openai: "gpt-4o-mini",
+  anthropic: "claude-sonnet-4-5",
+  xai: "grok-3-mini",
+};
+
+const resolvedModelCache = new Map<string, string>();
+
+/**
+ * Pick a sensible chat model automatically when the user only provides an API key.
+ * Free-tier providers try live model discovery first and fall back cleanly.
+ */
+export async function resolveDefaultModel(
+  providerId: AIProviderId,
+  apiKey: string
+): Promise<string> {
+  const cacheKey = `${providerId}:${apiKey}`;
+  const cached = resolvedModelCache.get(cacheKey);
+  if (cached) return cached;
+
+  let chosen = DEFAULT_CHAT_MODELS[providerId];
+
+  if (providerId === "openrouter") {
+    const models = filterFreeModels(await fetchAvailableModels(providerId, apiKey));
+    const chatCandidate =
+      models.find((m) => !/embed|whisper|audio|tts|image|vision/i.test(m.id)) ?? models[0];
+    if (chatCandidate) chosen = chatCandidate.id;
+  } else if (providerId === "gemini") {
+    const models = await fetchAvailableModels(providerId, apiKey);
+    const flashCandidate =
+      models.find((m) => /^gemini-.*flash/i.test(m.id) && !/tts|image/i.test(m.id)) ??
+      models.find((m) => /^gemini-/i.test(m.id) && !/embed|tts|image/i.test(m.id)) ??
+      models[0];
+    if (flashCandidate) chosen = flashCandidate.id;
+  } else if (providerId === "groq") {
+    const models = await fetchAvailableModels(providerId, apiKey);
+    const chatModels = models.filter((m) => !/whisper|tts|guard/i.test(m.id));
+    const preferred =
+      chatModels.find((m) => /llama/i.test(m.id)) ?? chatModels[0];
+    if (preferred) chosen = preferred.id;
+  }
+
+  resolvedModelCache.set(cacheKey, chosen);
+  return chosen;
+}
+
+export function clearResolvedModelCache(): void {
+  resolvedModelCache.clear();
+}

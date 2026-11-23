@@ -1,5 +1,9 @@
 # NEXT.md — next phase
 
+## Latest completed work (2026-11-23)
+- [x] Force-pulled `origin/main` (`7b07fae`) from `Musaamanipeace/panga-app`.
+- [x] Removed AI model selector from `Settings.tsx` and added automatic model resolution in `src/ai/providers.ts` / `src/ai/chat.ts` so users only need to enter API keys.
+
 ## Current plan (Panga master plan — ordered: 1, 3, 4, 5, 6, 7; Issue 2 on hold)
 1. [x] Issue 1: Blank page on `npm run dev` (circular import fix via `src/auth/sessionUserId.ts`)
 2. [ ] Issue 2: Routing (**ON HOLD** until author confirms the URL after a click that does nothing)

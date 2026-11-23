@@ -8,7 +8,7 @@ import {
   getAIModel,
   type AIProviderId,
 } from "../data/settings";
-import { AI_PROVIDERS } from "./providers";
+import { AI_PROVIDERS, resolveDefaultModel } from "./providers";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -30,10 +30,10 @@ export async function chatCompletion(
   if (!apiKey) {
     throw new Error(`No API key for ${AI_PROVIDERS[provider].label}. Add one in Settings → AI assistant.`);
   }
-  const model = opts?.model || (await getAIModel(provider)) || "";
-  if (!model) {
-    throw new Error(`No model selected for ${AI_PROVIDERS[provider].label}. Choose one in Settings.`);
-  }
+  const model =
+    opts?.model ||
+    (await getAIModel(provider)) ||
+    (await resolveDefaultModel(provider, apiKey));
 
   const cfg = AI_PROVIDERS[provider];
   const system = opts?.system;

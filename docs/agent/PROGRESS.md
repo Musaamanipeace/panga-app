@@ -1,5 +1,10 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-23 — Force pull repo & API-key-only AI settings
+- **Force pull from upstream**: Connected git remote `https://github.com/Musaamanipeace/panga-app.git` and hard-reset `main` to `origin/main` (`7b07fae chore: remove remaining Supabase sync UI and schema leftovers`), discarding the previous unrequested CSS/z-index edits and removing stale `.github/workflows/supabase-keepalive.yml`.
+- **Remove model selector (`Settings.tsx`, `src/ai/providers.ts`, `src/ai/chat.ts`)**: Removed the `Model` dropdown, `"Free only"` checkbox, and Settings model-fetch state/effect so users only choose a provider and enter their API key. Added cached `resolveDefaultModel()` in `src/ai/providers.ts` and wired `chatCompletion()` in `src/ai/chat.ts` to resolve a model automatically when no model is explicitly selected.
+- **Tests & checks**: Added `src/ai/__tests__/chat.test.ts` and `src/pages/__tests__/Settings.test.tsx`; `npx tsc -b`, `npx vitest run` (19 files / 93 tests), `npm run build` (`compile_applet`), and `oxlint` (`lint_applet`, 0 errors) all pass.
+
 ## 2026-11-23 — Panga master plan (Issues 1, 3, 4, 5, 6, 7 completed; Issue 2 on hold)
 - **Issue 1 (Blank page on `npm run dev`)**: Extracted `src/auth/sessionUserId.ts` (zero imports) to break the `db.ts` ↔ `session.ts` circular import; re-exported from `session.ts`.
 - **Issue 3 (Remove all remote DB logic)**: Deleted Supabase sync/tombstones/crypto modules, `SyncStatusIndicator`, `/supabase/*.sql`, and `@supabase/supabase-js`. Stripped sync hooks across data modules and UI. Kept unencrypted `snapshot.ts` with JSON account `username` save/restore, Download/Upload JSON, and local storage backup reminder in `AccountPanel` (`Settings.tsx`).
