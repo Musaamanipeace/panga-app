@@ -8,7 +8,7 @@ import {
   getAIModel,
   type AIProviderId,
 } from "../data/settings";
-import { AI_PROVIDERS, resolveDefaultModel } from "./providers";
+import { AI_PROVIDERS, resolveDefaultModel, shouldUseServerProxy } from "./providers";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -26,7 +26,7 @@ export async function chatCompletion(
   opts?: { system?: string; model?: string }
 ): Promise<ChatResult> {
   const provider = await getAIProvider();
-  const apiKey = await getAIApiKey(provider);
+  const apiKey = (await getAIApiKey(provider))?.trim() ?? "";
   if (!apiKey) {
     throw new Error(`No API key for ${AI_PROVIDERS[provider].label}. Add one in Settings → AI assistant.`);
   }
@@ -37,6 +37,27 @@ export async function chatCompletion(
 
   const cfg = AI_PROVIDERS[provider];
   const system = opts?.system;
+
+  if (shouldUseServerProxy()) {
+    const proxyRes = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, apiKey, model, messages, system }),
+    });
+    if (proxyRes.ok) {
+      return (await proxyRes.json()) as ChatResult;
+    }
+    if (proxyRes.status !== 404 && proxyRes.status !== 405) {
+      let detail = "";
+      try {
+        const errJson = (await proxyRes.json()) as { error?: string };
+        detail = errJson.error || "";
+      } catch {
+        detail = await proxyRes.text().catch(() => "");
+      }
+      throw new Error(detail || `${cfg.label} error ${proxyRes.status}`);
+    }
+  }
 
   if (provider === "gemini") {
     const contents = messages
@@ -68,6 +89,7 @@ export async function chatCompletion(
       method: "POST",
       headers: {
         ...cfg.authHeader(apiKey),
+        "anthropic-dangerous-direct-browser-access": "true",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

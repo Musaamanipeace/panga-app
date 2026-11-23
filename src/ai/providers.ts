@@ -96,11 +96,41 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderConfig> = {
   },
 };
 
+export function shouldUseServerProxy(): boolean {
+  if (typeof window === "undefined") return false;
+  if (
+    typeof import.meta !== "undefined" &&
+    (import.meta as { env?: { MODE?: string } }).env?.MODE === "test"
+  ) {
+    return false;
+  }
+  if (typeof process !== "undefined" && process.env?.VITEST) return false;
+  return window.location.protocol === "http:" || window.location.protocol === "https:";
+}
+
 /** Fetch live model list from a provider. Never hard-code free model names. */
 export async function fetchAvailableModels(
   providerId: AIProviderId,
   apiKey: string
 ): Promise<AIModelInfo[]> {
+  if (shouldUseServerProxy()) {
+    try {
+      const proxyRes = await fetch("/api/ai/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: providerId, apiKey }),
+      });
+      if (proxyRes.ok) {
+        const data = (await proxyRes.json()) as { models?: AIModelInfo[] };
+        if (Array.isArray(data.models)) return data.models;
+      } else if (proxyRes.status !== 404 && proxyRes.status !== 405) {
+        return [];
+      }
+    } catch {
+      // Fall through to direct fetch when backend proxy is unavailable
+    }
+  }
+
   const cfg = AI_PROVIDERS[providerId];
   if (!cfg.listModelsUrl) {
     // Anthropic: return a small known set of current paid models only as fallback
@@ -118,7 +148,6 @@ export async function fetchAvailableModels(
     let url = cfg.listModelsUrl;
     const headers: Record<string, string> = {
       ...cfg.authHeader(apiKey),
-      "Content-Type": "application/json",
     };
 
     if (providerId === "gemini") {
