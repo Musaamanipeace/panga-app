@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createNote,
   deleteNote,
@@ -17,7 +17,7 @@ import { confirmDelete, copyToClipboard } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
 import FolderTree from "./FolderTree";
 
-export default function NotesPanel() {
+export default function NotesPanel({ initialFolderId }: { initialFolderId?: string | null }) {
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selType, setSelType] = useState<"folder" | "note" | null>(null);
@@ -43,6 +43,16 @@ export default function NotesPanel() {
       setSelType("folder");
     }
   }, [selId, folders, notes]);
+
+  // A search result for a folder selects it directly.
+  useEffect(() => {
+    if (!initialFolderId) return;
+    const target = folders.find((f) => f.id === initialFolderId);
+    if (target) {
+      setSelType("folder");
+      setSelId(target.id);
+    }
+  }, [initialFolderId, folders]);
 
   const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
   const currentNote = useMemo(() => notes.find((n) => n.id === selId) ?? null, [notes, selId]);
@@ -155,6 +165,7 @@ export default function NotesPanel() {
           <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-note-folder-input")?.focus()} data-tip="New note folder">+</button>
         </div>
         <FolderTree
+          foldersAsGrid
           folders={folders}
           items={notes}
           folderId={(f) => f.id}

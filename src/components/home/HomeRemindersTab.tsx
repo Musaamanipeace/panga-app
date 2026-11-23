@@ -137,7 +137,7 @@ export function toLocalInput(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function HomeRemindersTab() {
+export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?: string | null }) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [reminders, folders] = await Promise.all([listPendingReminders(), listReminderFolders()]);
     return { reminders, folders };
@@ -161,6 +161,16 @@ export default function HomeRemindersTab() {
 
   const folderReminders = useMemo(() => allReminders.filter((r) => r.folderId === (currentFolder?.id ?? null)), [allReminders, currentFolder]);
   const buckets = useMemo(() => bucketReminders(folderReminders), [folderReminders]);
+
+  // A search result for a folder selects it directly.
+  useEffect(() => {
+    if (!initialFolderId) return;
+    const target = folders.find((f) => f.id === initialFolderId);
+    if (target) {
+      setSelType("folder");
+      setSelId(target.id);
+    }
+  }, [initialFolderId, folders]);
 
   useEffect(() => {
     void startReminderScheduler();
@@ -227,6 +237,7 @@ export default function HomeRemindersTab() {
           <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-reminder-folder-input")?.focus()} data-tip="New reminder folder">+</button>
         </div>
         <FolderTree
+          foldersAsGrid
           folders={folders}
           items={allReminders}
           folderId={(f) => f.id}

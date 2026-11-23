@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createTask,
   deleteTask,
@@ -21,11 +21,37 @@ import { createTaskListFolder, deleteTaskListFolder, listTaskListFolders, rename
 import FolderTree from "./FolderTree";
 import { confirmDelete, useAsync } from "../ui";
 
-export default function TaskListsHome() {
+export default function TaskListsHome({
+  initialFolderId,
+  initialListId,
+}: {
+  initialFolderId?: string | null;
+  initialListId?: string | null;
+}) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [lists, folders, tasks] = await Promise.all([listTaskLists(), listTaskListFolders(), listAllTasks()]);
     return { lists, folders, tasks };
   }, []);
+
+  // Search results select the folder / task list directly.
+  useEffect(() => {
+    if (!data) return;
+    const { lists, folders } = data;
+    if (initialFolderId) {
+      const target = folders.find((x) => x.id === initialFolderId);
+      if (target) {
+        setSelType("folder");
+        setSelId(target.id);
+      }
+    }
+    if (initialListId) {
+      const target = lists.find((x) => x.id === initialListId);
+      if (target) {
+        setSelType("taskList");
+        setSelId(target.id);
+      }
+    }
+  }, [data, initialFolderId, initialListId]);
 
   const [selType, setSelType] = useState<"folder" | "taskList" | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
@@ -135,6 +161,7 @@ export default function TaskListsHome() {
           <button type="submit" className="btn-action clickable" disabled={!newListTitle.trim()}>+</button>
         </form>
         <FolderTree
+          foldersAsGrid
           folders={folders}
           items={lists}
           folderId={(f) => f.id}
