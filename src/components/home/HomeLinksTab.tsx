@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createLink,
   deleteLink,
@@ -16,7 +16,7 @@ import {
 import { copyToClipboard, confirmDelete } from "../../components/ui";
 import FolderTree from "./FolderTree";
 
-export default function HomeLinksTab() {
+export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: string | null }) {
   const [folders, setFolders] = useState<LinkFolder[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [selType, setSelType] = useState<"folder" | "link" | null>(null);
@@ -43,6 +43,16 @@ export default function HomeLinksTab() {
       setSelType("folder");
     }
   }, [selId, folders, links]);
+
+  // A search result for a folder selects it directly.
+  useEffect(() => {
+    if (!initialFolderId) return;
+    const target = folders.find((f) => f.id === initialFolderId);
+    if (target) {
+      setSelType("folder");
+      setSelId(target.id);
+    }
+  }, [initialFolderId, folders]);
 
   const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
   const currentLink = useMemo(() => links.find((l) => l.id === selId) ?? null, [links, selId]);
@@ -163,6 +173,7 @@ export default function HomeLinksTab() {
           <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder">+</button>
         </div>
         <FolderTree
+          foldersAsGrid
           folders={folders}
           items={links}
           folderId={(f) => f.id}

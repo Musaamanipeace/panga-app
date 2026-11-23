@@ -17,6 +17,9 @@ export default function PangaHome() {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab");
   const tab: Tab = (TABS as readonly string[]).includes(raw ?? "") ? (raw as Tab) : "Task lists";
+  // Optional folder/list selection from a header search result.
+  const folderId = params.get("folder") ?? null;
+  const listId = params.get("list") ?? null;
 
   // Launched from the "Quick capture" app shortcut: put the cursor in the capture box.
   useEffect(() => {
@@ -52,10 +55,10 @@ export default function PangaHome() {
       </nav>
 
       <section className="pg-card">
-        {tab === "Task lists" && <TaskListsHome />}
-        {tab === "Links" && <HomeLinksTab />}
-        {tab === "Notes" && <NotesPanel />}
-        {tab === "Reminders" && <HomeRemindersTab />}
+        {tab === "Task lists" && <TaskListsHome initialFolderId={folderId} initialListId={listId} />}
+        {tab === "Links" && <HomeLinksTab initialFolderId={folderId} />}
+        {tab === "Notes" && <NotesPanel initialFolderId={folderId} />}
+        {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} />}
         {tab === "Clipboard" && <ClipboardPanel />}
       </section>
     </div>
