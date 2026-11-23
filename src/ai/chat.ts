@@ -8,7 +8,7 @@ import {
   getAIModel,
   type AIProviderId,
 } from "../data/settings";
-import { AI_PROVIDERS, resolveDefaultModel, shouldUseServerProxy } from "./providers";
+import { AI_PROVIDERS, isServerProxyAvailable, resolveDefaultModel } from "./providers";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -38,7 +38,7 @@ export async function chatCompletion(
   const cfg = AI_PROVIDERS[provider];
   const system = opts?.system;
 
-  if (shouldUseServerProxy()) {
+  if (await isServerProxyAvailable()) {
     const proxyRes = await fetch("/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -96,6 +96,8 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderConfig> = {
   },
 };
 
+let proxyAvailabilityPromise: Promise<boolean> | null = null;
+
 export function shouldUseServerProxy(): boolean {
   if (typeof window === "undefined") return false;
   if (
@@ -108,12 +110,24 @@ export function shouldUseServerProxy(): boolean {
   return window.location.protocol === "http:" || window.location.protocol === "https:";
 }
 
+export async function isServerProxyAvailable(): Promise<boolean> {
+  if (!shouldUseServerProxy()) return false;
+  if (!proxyAvailabilityPromise) {
+    proxyAvailabilityPromise = fetch("/api/voice/config", {
+      headers: { Accept: "application/json" },
+    })
+      .then((res) => res.ok && (res.headers.get("content-type") || "").includes("application/json"))
+      .catch(() => false);
+  }
+  return proxyAvailabilityPromise;
+}
+
 /** Fetch live model list from a provider. Never hard-code free model names. */
 export async function fetchAvailableModels(
   providerId: AIProviderId,
   apiKey: string
 ): Promise<AIModelInfo[]> {
-  if (shouldUseServerProxy()) {
+  if (await isServerProxyAvailable()) {
     try {
       const proxyRes = await fetch("/api/ai/models", {
         method: "POST",
