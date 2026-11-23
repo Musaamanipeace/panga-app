@@ -1,213 +1,130 @@
 // src/search/search.ts
-// This is the ONLY file that queries across multiple entity types for
-// search purposes. Simple substring matching for now — swappable for
-// FlexSearch's indexed engine later without touching any UI code,
-// since the UI only ever calls globalSearch().
+// Header search for the current model: folders, saved files and task lists.
+// Clicking a result takes the user straight to the saved item.
 
-import { db } from "../data/db";
+import { listAllResources } from "../data/resources";
+import { listNoteFolders } from "../data/noteFolders";
+import { listLinkFolders } from "../data/linkFolders";
+import { listTaskListFolders } from "../data/taskListFolders";
+import { listReminderFolders } from "../data/reminderFolders";
+import { listTaskLists } from "../data/taskLists";
 
-export type SearchResultType =
-  | "project"
-  | "task"
-  | "resource"
-  | "milestone"
-  | "issue"
-  | "docEntry"
-  | "setting"
-  | "savedFile"
-  | "insight";
+export type SearchResultType = "folder" | "file" | "taskList";
 
 export interface SearchResult {
   type: SearchResultType;
-  id: string;
-  projectId?: string | null;
-  projectName: string;
+  key: string;
   title: string;
-  subtitle?: string;
-  // For deep-linking results
-  action?: "navigate" | "openSettings";
-  target?: string; // route path or settings section
+  subtitle: string;
+  /** Route to navigate to when the result is clicked. */
+  route: string;
+}
+
+function matches(q: string, ...fields: (string | string[] | undefined | null)[]): boolean {
+  return fields.some((f) =>
+    Array.isArray(f)
+      ? f.some((x) => x.toLowerCase().includes(q))
+      : f?.toLowerCase().includes(q)
+  );
 }
 
 export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return [];
 
-  const [projects, tasks, resources, milestones, issues, docEntries, insights] = await Promise.all([
-    db.projects.toArray(),
-    db.tasks.toArray(),
-    db.resources.toArray(),
-    db.milestones.toArray(),
-    db.issues.toArray(),
-    db.docEntries.toArray(),
-    db.insights.toArray(),
-  ]);
-
-  const projectName = (id?: string | null) => (id ? projects.find((p) => p.id === id)?.name ?? "" : "Quick item");
-  const matches = (...fields: (string | string[] | undefined | null)[]) =>
-    fields.some((f) =>
-      Array.isArray(f) ? f.some((x) => x.toLowerCase().includes(q)) : f?.toLowerCase().includes(q)
-    );
+  const [noteFolders, linkFolders, taskListFolders, reminderFolders, resources, taskLists] =
+    await Promise.all([
+      listNoteFolders(),
+      listLinkFolders(),
+      listTaskListFolders(),
+      listReminderFolders(),
+      listAllResources(),
+      listTaskLists(),
+    ]);
 
   const results: SearchResult[] = [];
 
-  for (const p of projects) {
-    if (matches(p.name, p.description)) {
+  for (const f of noteFolders) {
+    if (matches(q, f.title)) {
       results.push({
-        type: "project",
-        id: p.id,
-        projectId: p.id,
-        projectName: p.name,
-        title: p.name,
-        subtitle: "Project",
-        action: "navigate",
-        target: `/project/${p.id}`,
+        type: "folder",
+        key: `folder-note-${f.id}`,
+        title: f.title,
+        subtitle: "Note folder",
+        route: `/home?tab=Notes&folder=${f.id}`,
       });
     }
   }
-  for (const t of tasks) {
-    if (matches(t.title, t.notes, t.tags)) {
+  for (const f of linkFolders) {
+    if (matches(q, f.title)) {
       results.push({
-        type: "task",
-        id: t.id,
-        projectId: t.projectId,
-        projectName: projectName(t.projectId),
-        title: t.title,
-        subtitle: `Task · ${t.status}`,
-        action: "navigate",
-        target: `/project/${t.projectId}?tab=Tasks`,
+        type: "folder",
+        key: `folder-link-${f.id}`,
+        title: f.title,
+        subtitle: "Link folder",
+        route: `/home?tab=Links&folder=${f.id}`,
       });
     }
   }
+  for (const f of taskListFolders) {
+    if (matches(q, f.title)) {
+      results.push({
+        type: "folder",
+        key: `folder-tasklist-${f.id}`,
+        title: f.title,
+        subtitle: "Task list folder",
+        route: `/home?tab=Task lists&folder=${f.id}`,
+      });
+    }
+  }
+  for (const f of reminderFolders) {
+    if (matches(q, f.title)) {
+      results.push({
+        type: "folder",
+        key: `folder-reminder-${f.id}`,
+        title: f.title,
+        subtitle: "Reminder folder",
+        route: `/home?tab=Reminders&folder=${f.id}`,
+      });
+    }
+  }
+
+  // Saved files: file attachments and images on resources.
   for (const r of resources) {
-    const imageNames = (r.images ?? []).map((i) => i.name + (i.alt ? " " + i.alt : ""));
-    const fileNames = (r.files ?? []).map((f) => f.name);
-    if (matches(r.title, r.url ?? undefined, r.body, r.tags, imageNames, fileNames)) {
-      results.push({
-        type: "resource",
-        id: r.id,
-        projectId: r.projectId,
-        projectName: projectName(r.projectId),
-        title: r.title,
-        subtitle: r.category === "links" ? `Link · ${r.url || ""}` : `Resource · ${r.category}`,
-        action: "navigate",
-        target: r.projectId
-          ? `/project/${r.projectId}?tab=Resources`
-          : r.category === "links"
-          ? `/home?tab=Links`
-          : `/home?tab=Resources`,
-      });
-    }
-  }
-  for (const m of milestones) {
-    if (matches(m.title)) {
-      results.push({
-        type: "milestone",
-        id: m.id,
-        projectId: m.projectId,
-        projectName: projectName(m.projectId),
-        title: m.title,
-        subtitle: `Milestone · ${m.status}`,
-        action: "navigate",
-        target: `/project/${m.projectId}?tab=Milestones`,
-      });
-    }
-  }
-  for (const i of issues) {
-    if (matches(i.title, i.description)) {
-      results.push({
-        type: "issue",
-        id: i.id,
-        projectId: i.projectId,
-        projectName: projectName(i.projectId),
-        title: i.title,
-        subtitle: `Issue · ${i.severity}`,
-        action: "navigate",
-        target: `/project/${i.projectId}?tab=Issues`,
-      });
-    }
-  }
-  for (const d of docEntries) {
-    if (matches(d.title, d.content)) {
-      results.push({
-        type: "docEntry",
-        id: d.id,
-        projectId: d.projectId,
-        projectName: projectName(d.projectId),
-        title: d.title,
-        subtitle: "Documentation",
-        action: "navigate",
-        target: `/project/${d.projectId}?tab=Documentation`,
-      });
-    }
-  }
-
-  // §7 — Insights results
-  for (const i of insights) {
-    if (matches(i.title, i.body, i.link, i.tags)) {
-      results.push({
-        type: "insight",
-        id: i.id,
-        projectId: i.projectId,
-        projectName: projectName(i.projectId),
-        title: i.title,
-        subtitle: `Insight · ${i.type}`,
-        action: "navigate",
-        target: `/project/${i.projectId}?tab=Insights`,
-      });
-    }
-  }
-
-  // §6 — Settings results
-  const settingEntries: { id: string; title: string; subtitle: string; target: string }[] = [
-    { id: "gemini-key", title: "Gemini API Key", subtitle: "API key for Scheduler AI Plan mode", target: "gemini" },
-    { id: "secrets-vault", title: "Secrets Vault", subtitle: "Encrypted secret storage (PBKDF2 + AES-GCM)", target: "secrets" },
-  ];
-  for (const s of settingEntries) {
-    if (matches(s.title, s.subtitle)) {
-      results.push({
-        type: "setting",
-        id: s.id,
-        projectId: "",
-        projectName: "",
-        title: s.title,
-        subtitle: s.subtitle,
-        action: "openSettings",
-        target: s.target,
-      });
-    }
-  }
-
-  // §6 — Saved files results (uploaded note/image attachments by filename)
-  const allResources = resources.filter((r) => r.files?.length > 0 || r.images?.length > 0);
-  for (const r of allResources) {
-    for (const f of (r.files ?? [])) {
+    const route = r.projectId ? `/project/${r.projectId}?tab=Resources` : "/home";
+    for (const f of r.files ?? []) {
       if (f.name.toLowerCase().includes(q)) {
         results.push({
-          type: "savedFile",
-          id: `file-${r.id}-${f.name}`,
-          projectId: r.projectId,
-          projectName: projectName(r.projectId),
+          type: "file",
+          key: `file-${r.id}-${f.name}`,
           title: f.name,
           subtitle: "File attachment",
-          action: "navigate",
-          target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
+          route,
         });
       }
     }
-    for (const img of (r.images ?? [])) {
+    for (const img of r.images ?? []) {
       if (img.name.toLowerCase().includes(q)) {
         results.push({
-          type: "savedFile",
-          id: `img-${r.id}-${img.name}`,
-          projectId: r.projectId,
-          projectName: projectName(r.projectId),
+          type: "file",
+          key: `img-${r.id}-${img.name}`,
           title: img.name,
           subtitle: "Image attachment",
-          action: "navigate",
-          target: r.projectId ? `/project/${r.projectId}?tab=Resources` : `/home?tab=Resources`,
+          route,
         });
       }
+    }
+  }
+
+  for (const tl of taskLists) {
+    if (matches(q, tl.title)) {
+      results.push({
+        type: "taskList",
+        key: `taskList-${tl.id}`,
+        title: tl.title,
+        subtitle: "Task list",
+        route: `/home?tab=Task lists&list=${tl.id}`,
+      });
     }
   }
 

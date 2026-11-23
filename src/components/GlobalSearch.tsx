@@ -3,15 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { globalSearch, type SearchResult } from "../search/search";
 
 const TYPE_ICON: Record<SearchResult["type"], string> = {
-  project: "[",
-  task: "-",
-  resource: "#",
-  milestone: "*",
-  issue: "!",
-  docEntry: "=",
-  setting: "@",
-  savedFile: "\u00e6", // file glyph
-  insight: "i",
+  folder: "[",
+  file: "\u00f6", // file glyph
+  taskList: "*",
 };
 
 export default function GlobalSearch() {
@@ -47,21 +41,18 @@ export default function GlobalSearch() {
     };
   }, [query]);
 
+  // Clicking a result takes you directly to the saved item.
   function goTo(result: SearchResult) {
     setOpen(false);
     setQuery("");
-    if (result.action === "openSettings") {
-      navigate("/settings", { state: { focus: result.target } });
-    } else if (result.action === "navigate" && result.target) {
-      navigate(result.target);
-    }
+    navigate(result.route);
   }
 
   return (
     <>
       <button
         className="global-search-trigger clickable"
-        data-tip="Global search: query settings, platform features, or open saved files"
+        data-tip="Search folders, files and task lists"
         data-tip-pos="bottom"
         onClick={() => setOpen(true)}
       >
@@ -75,28 +66,22 @@ export default function GlobalSearch() {
             <input
               ref={inputRef}
               type="text"
-              placeholder="Search projects, tasks, resources, milestones, issues, docs, settings, files..."
+              placeholder="Search folders, files, task lists…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
             <div className="search-results">
               {query.trim() === "" ? (
-                <p className="empty-state">Start typing to search across everything.</p>
+                <p className="empty-state">Start typing to search folders, files and task lists.</p>
               ) : results.length === 0 ? (
                 <p className="empty-state">No matches.</p>
               ) : (
                 results.map((r) => (
-                  <button
-                    key={`${r.type}-${r.id}`}
-                    className="search-result-row clickable"
-                    onClick={() => goTo(r)}
-                  >
-                    <span className="search-result-icon">{TYPE_ICON[r.type]}</span>
-                    <span className="search-result-text">
-                      <span className="search-result-title">{r.title}</span>
-                      <span className="search-result-subtitle">
-                        {r.subtitle} · {r.projectName}
-                      </span>
+                  <button key={r.key} className="search-card clickable" onClick={() => goTo(r)}>
+                    <span className="search-card-icon">{TYPE_ICON[r.type]}</span>
+                    <span className="search-card-body">
+                      <span className="search-card-title">{r.title}</span>
+                      <span className="search-card-sub">{r.subtitle}</span>
                     </span>
                   </button>
                 ))
