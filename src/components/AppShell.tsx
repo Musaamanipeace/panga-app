@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
@@ -18,6 +18,7 @@ export default function AppShell() {
   const guest = isGuest();
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     void migrateStash();
@@ -31,6 +32,7 @@ export default function AppShell() {
 
   async function handleLogout() {
     await signOut();
+    navigate("/");
   }
 
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
