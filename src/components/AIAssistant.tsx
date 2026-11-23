@@ -42,7 +42,7 @@ export default function AIAssistant() {
         <div className="ai-panel drawer-anim">
           <header className="ai-panel-header">
             <span>Assistant</span>
-            <button onClick={() => setOpen(false)} aria-label="Close">✕</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setOpen(false)} aria-label="Close">Close</button>
           </header>
 
           <div className="ai-panel-messages">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { confirmDelete } from "./ui";
 import ReadAloudButton from "./ReadAloudButton";
+import { ProofreadTrigger } from "./Proofread";
 import { listThoughts, addThought, deleteThought, type ThoughtEntry } from "../data/thoughts";
 
 interface Props {
@@ -63,8 +64,8 @@ export default function ThoughtTrain({ open, onClose }: Props) {
               Capture fleeting notes in a distracting workplace. Voice supported. Scroll back anytime.
             </p>
           </div>
-          <button type="button" className="btn-icon clickable" onClick={onClose} aria-label="Close">
-            ✕
+          <button type="button" className="btn-secondary btn-small clickable" onClick={onClose} aria-label="Close">
+            Close
           </button>
         </header>
 
@@ -86,6 +87,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
             >
               Add
             </button>
+            {draft.trim() && <ProofreadTrigger value={draft} onApply={setDraft} />}
           </div>
         </div>
 
@@ -110,8 +112,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
                 <ReadAloudButton text={th.text} />
                 <button
                   type="button"
-                  className="btn-icon"
-                  style={{ width: 22, height: 22, fontSize: 11 }}
+                  className="btn-secondary btn-small clickable"
                   title="Delete"
                   onClick={async () => {
                     if (!(await confirmDelete({ kind: "thought" }))) return;
@@ -119,7 +120,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
                     reload();
                   }}
                 >
-                  ×
+                  Delete
                 </button>
               </span>
             </li>

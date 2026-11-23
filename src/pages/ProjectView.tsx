@@ -10,7 +10,6 @@ import { listCalendarEvents, createLocalEvent, deleteCalendarEvent, isImportedEv
 import { listReminders, createReminder, updateReminder, dismissReminder, deleteReminder, type Reminder } from "../data/reminders";
 import { db, type Project } from "../data/db";
 import { newId, now } from "../data/utils";
-import { syncPushRecord } from "../sync/sync";
 import ProgressBar from "../components/ProgressBar";
 import { getUserScopedKey } from "../auth/session";
 import { showToast, CopyButton, confirmDelete } from "../components/ui";
@@ -2361,7 +2360,6 @@ function CalendarTab({ projectId }: { projectId: string }) {
         syncStatus: "pending" as const,
       }));
       await db.calendarEvents.bulkPut(toImport);
-      for (const ev of toImport) void syncPushRecord("calendar_events", ev);
       setImportStatus({ message: `Imported ${toImport.length} event(s) from .ics file.`, type: "success" });
       setIcsFile(null);
       refresh();

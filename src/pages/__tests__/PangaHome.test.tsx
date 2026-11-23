@@ -68,7 +68,7 @@ describe("Panga home (smoke)", () => {
   it("saves a categorised note", async () => {
     await mount("/home?tab=Notes");
     await settle(1000);
-    await click(byText("+ Add note"));
+    await click(byText("Add note"));
     await settle(50);
     const body = host.querySelector('textarea[placeholder="Write your note…"]') as HTMLTextAreaElement;
     await type(body, "remember the meeting agenda");

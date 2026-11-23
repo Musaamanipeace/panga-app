@@ -36,12 +36,12 @@ export default function CalendarPanel() {
   return (
     <div>
       <div className="pg-cal-head">
-        <button type="button" className="btn-secondary btn-small" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>
-          ‹
+        <button type="button" className="btn-secondary btn-small clickable" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}>
+          Prev
         </button>
         <strong>{cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</strong>
-        <button type="button" className="btn-secondary btn-small" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}>
-          ›
+        <button type="button" className="btn-secondary btn-small clickable" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}>
+          Next
         </button>
         <button
           type="button"

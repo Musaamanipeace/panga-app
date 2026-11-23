@@ -1,8 +1,6 @@
 // src/data/taskListFolders.ts
 import { db, type TaskListFolder } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
-import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { TaskListFolder };
@@ -36,7 +34,6 @@ export async function createTaskListFolder(input: {
     syncStatus: "pending",
   };
   await db.taskListFolders.add(folder);
-  void syncPushRecord("taskListFolders", folder);
   void logActivity({ entityType: "taskListFolder", entityId: folder.id, action: "created", description: `Created task list folder "${folder.title}"` });
   return folder;
 }
@@ -48,8 +45,6 @@ export async function updateTaskListFolder(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.taskListFolders.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.taskListFolders.get(id);
-  if (updated) void syncPushRecord("taskListFolders", updated);
 }
 
 export async function renameTaskListFolder(id: string, title: string): Promise<void> {
@@ -63,10 +58,6 @@ export async function reorderTaskListFolders(orderedIds: string[]): Promise<void
       await db.taskListFolders.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
-  for (const id of orderedIds) {
-    const updated = await db.taskListFolders.get(id);
-    if (updated) void syncPushRecord("taskListFolders", updated);
-  }
 }
 
 /** Delete a folder, reparenting subfolders and task lists to its parent (or root). */
@@ -79,17 +70,11 @@ export async function deleteTaskListFolder(id: string): Promise<void> {
   await db.transaction("rw", [db.taskLists, db.taskListFolders], async () => {
     for (const sf of subfolders) {
       await db.taskListFolders.update(sf.id, { parentFolderId: parentId, updatedAt: now(), syncStatus: "pending" });
-      const updated = await db.taskListFolders.get(sf.id);
-      if (updated) void syncPushRecord("taskListFolders", updated);
     }
     for (const list of lists) {
       await db.taskLists.update(list.id, { folderId: parentId, updatedAt: now(), syncStatus: "pending" });
-      const updated = await db.taskLists.get(list.id);
-      if (updated) void syncPushRecord("taskLists", updated);
     }
     await db.taskListFolders.delete(id);
   });
-  void syncDeleteRecord("taskListFolders", id);
-  recordTombstone("taskListFolder", id);
   void logActivity({ entityType: "taskListFolder", entityId: id, action: "deleted", description: "Task list folder deleted" });
 }

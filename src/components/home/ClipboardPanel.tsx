@@ -4,6 +4,7 @@ import { type Resource } from "../../data/resources";
 import { createTask } from "../../data/tasks";
 import { createNote } from "../../data/notes";
 import { confirmAction, copyToClipboard, showToast } from "../ui";
+import { ProofreadTrigger } from "../Proofread";
 import { pasteWithFeedback } from "../quickPaste";
 
 export default function ClipboardPanel() {
@@ -60,6 +61,7 @@ export default function ClipboardPanel() {
       />
       {box.trim() && (
         <div className="pg-actions">
+          <ProofreadTrigger value={box} onApply={setBox} />
           <button
             type="button"
             className="btn-secondary btn-small"
@@ -101,23 +103,23 @@ export default function ClipboardPanel() {
                   </button>
                     <button
                       type="button"
-                      className="btn-secondary btn-small"
+                      className="btn-secondary btn-small clickable"
                       onClick={async () => {
                         await createNote({ folderId: null, title: c.title, body: c.body ?? "" });
                         showToast("Saved as a note", "success");
                       }}
                     >
-                      → Note
+                      Save as note
                     </button>
                   <button
                     type="button"
-                    className="btn-secondary btn-small"
+                    className="btn-secondary btn-small clickable"
                     onClick={async () => {
                       await createTask({ listId: null, title: clipTitle(c.body ?? "") });
                       showToast("Saved as a task", "success");
                     }}
                   >
-                    → Task
+                    Save as task
                   </button>
                   <button type="button" className="btn-secondary btn-small" onClick={() => void removeClip(c.id)}>
                     Delete

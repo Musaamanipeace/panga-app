@@ -147,7 +147,7 @@ export default function TaskListsHome({
       <aside className="task-lists-sidebar" style={sx.sidebar}>
         <div style={sx.sidebarHeader}>
           <h2 style={sx.sidebarTitle}>Task lists</h2>
-          <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-list-input")?.focus()} data-tip="New task list">+</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-list-input")?.focus()} data-tip="New task list">New</button>
         </div>
         <form id="new-list-form" onSubmit={handleAddList} style={sx.addListForm}>
           <input
@@ -158,7 +158,7 @@ export default function TaskListsHome({
             autoFocus
             style={sx.addListInput}
           />
-          <button type="submit" className="btn-action clickable" disabled={!newListTitle.trim()}>+</button>
+          <button type="submit" className="btn-secondary btn-small clickable" disabled={!newListTitle.trim()}>Add</button>
         </form>
         <FolderTree
           foldersAsGrid
@@ -193,19 +193,20 @@ export default function TaskListsHome({
             <>
               <button
                 type="button"
+                className="btn-secondary btn-small clickable"
                 onClick={(e) => { e.stopPropagation(); setEditingList({ id: l.id, title: l.title }); }}
-                style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer" }}
                 data-tip="Rename list"
               >
-                ✎
+                Rename
               </button>
               <button
                 type="button"
+                className="btn-secondary btn-small clickable"
                 onClick={(e) => { e.stopPropagation(); void handleDeleteList(l.id); }}
-                style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", color: "var(--color-accent-issue)" }}
+                style={{ color: "var(--color-accent-issue)" }}
                 data-tip="Delete list"
               >
-                ×
+                Delete
               </button>
             </>
           )}
@@ -215,7 +216,7 @@ export default function TaskListsHome({
       <main className="task-list-main" style={sx.main}>
         {!list ? (
           <div className="empty-state" style={sx.emptyState}>
-            {inFolder ? `Select a task list under “{folder?.title}” to see its tasks.` : "Select a task list to see its tasks."}
+            {inFolder ? `Select a task list under “${folder?.title}” to see its tasks.` : "Select a task list to see its tasks."}
           </div>
         ) : (
           <>
@@ -237,20 +238,20 @@ export default function TaskListsHome({
                   <>
                     <button
                       type="button"
-                      className="btn-icon clickable"
+                      className="btn-secondary btn-small clickable"
                       onClick={() => setEditingList({ id: list.id, title: list.title })}
                       data-tip="Rename list"
                     >
-                      ✎
+                      Rename
                     </button>
                     <button
                       type="button"
-                      className="btn-icon clickable"
+                      className="btn-secondary btn-small clickable"
                       onClick={() => void handleDeleteList(list.id)}
                       data-tip="Delete list"
                       style={{ color: "var(--color-accent-issue)" }}
                     >
-                      ×
+                      Delete
                     </button>
                   </>
                 )}
@@ -261,7 +262,7 @@ export default function TaskListsHome({
                     autoFocus
                     style={sx.addTaskInput}
                   />
-                  <button type="submit" className="btn-action clickable">+</button>
+                  <button type="submit" className="btn-primary btn-small clickable">Add</button>
                 </form>
               </div>
             </header>
@@ -311,8 +312,8 @@ export default function TaskListsHome({
             await addSubtask(newSubtask.parentId);
           }} style={sx.subtaskForm}>
             <input value={newSubtask.title} onChange={(e) => setNewSubtask({ ...newSubtask!, title: e.target.value })} placeholder="Subtask title…" autoFocus style={sx.subtaskInput} />
-            <button type="submit" className="btn-action clickable" disabled={!newSubtask.title.trim()}>+</button>
-            <button type="button" className="btn-secondary btn-small" onClick={() => setNewSubtask(null)}>✕</button>
+            <button type="submit" className="btn-primary btn-small clickable" disabled={!newSubtask.title.trim()}>Add</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setNewSubtask(null)}>Cancel</button>
           </form>
         ) : (
           <form onSubmit={async (e) => {
@@ -325,7 +326,7 @@ export default function TaskListsHome({
             await reloadFn();
           }} style={sx.rootTaskForm}>
             <input name="root-task-title" placeholder="Add a task…" autoFocus style={sx.rootTaskInput} />
-            <button type="submit" className="btn-action clickable">+</button>
+            <button type="submit" className="btn-primary btn-small clickable">Add</button>
           </form>
         )}
         {roots.length === 0 && !newSubtask ? (
@@ -381,8 +382,8 @@ export default function TaskListsHome({
       <li key={task.id} className="item" style={{ ...sx.taskItem, paddingLeft: depth * 18 }}>
         <div style={sx.taskRow}>
           {node.children.length > 0 && (
-            <button type="button" className="btn-icon clickable" onClick={() => setOpen((v) => !v)} data-tip={open ? "Collapse" : "Expand"}>
-              {open ? "▾" : "▸"}
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setOpen((v) => !v)} data-tip={open ? "Hide subtasks" : "Show subtasks"}>
+              {open ? "Hide" : "Show"}
             </button>
           )}
           <input type="checkbox" checked={task.completed} onChange={() => onToggle(task)} aria-label="Tick off" />
@@ -401,8 +402,8 @@ export default function TaskListsHome({
           )}
           {task.dueDate && <span className="text-tiny">{new Date(task.dueDate).toLocaleDateString()}</span>}
           <span style={sx.taskActions}>
-            <button type="button" className="btn-icon clickable" onClick={() => onAddSubtask(task.id)} data-tip="Add subtask">+</button>
-            <button type="button" className="btn-icon clickable" onClick={() => onDelete(task)} data-tip="Delete task">×</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => onAddSubtask(task.id)} data-tip="Add subtask">Subtask</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => onDelete(task)} data-tip="Delete task">Delete</button>
           </span>
         </div>
         {open && node.children.length > 0 && (

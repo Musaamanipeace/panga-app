@@ -1,8 +1,6 @@
 // src/data/links.ts
 import { db, type Link } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
-import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { Link };
@@ -47,7 +45,6 @@ export async function createLink(input: {
     syncStatus: "pending",
   };
   await db.links.add(link);
-  void syncPushRecord("links", link);
   void logActivity({ entityType: "link", entityId: link.id, action: "created", description: `Created link "${link.title}"` });
   return link;
 }
@@ -59,15 +56,11 @@ export async function updateLink(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.links.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.links.get(id);
-  if (updated) void syncPushRecord("links", updated);
 }
 
 export async function deleteLink(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.links.delete(id);
-  void syncDeleteRecord("links", id);
-  recordTombstone("link", id);
   void logActivity({ entityType: "link", entityId: id, action: "deleted", description: "Link deleted" });
 }
 
@@ -78,8 +71,4 @@ export async function reorderLinks(_folderId: string | null, orderedIds: string[
       await db.links.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
-  for (const id of orderedIds) {
-    const updated = await db.links.get(id);
-    if (updated) void syncPushRecord("links", updated);
-  }
 }

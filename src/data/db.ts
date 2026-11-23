@@ -4,7 +4,7 @@
 // from this /data folder — never imports Dexie itself.
 
 import Dexie, { type Table } from "dexie";
-import { getSessionUserId } from "../auth/session";
+import { getSessionUserId } from "../auth/sessionUserId";
 import { newId } from "./utils";
 
 export type TaskStatus = "active" | "inactive" | "completed";

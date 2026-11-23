@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ThoughtStream from "../components/home/ThoughtStream";
 import { CAPTURE_INPUT_ID } from "../components/home/ThoughtStream";
 import CommandBox from "../components/home/CommandBox";
@@ -8,18 +8,24 @@ import HomeLinksTab from "../components/home/HomeLinksTab";
 import NotesPanel from "../components/home/NotesPanel";
 import HomeRemindersTab from "../components/home/HomeRemindersTab";
 import ClipboardPanel from "../components/home/ClipboardPanel";
-import { pasteWithFeedback } from "../components/quickPaste";
-
-const TABS = ["Task lists", "Links", "Notes", "Reminders", "Clipboard"] as const;
-type Tab = (typeof TABS)[number];
+import Proofread from "../components/Proofread";
+import { HOME_TABS, type HomeTabId } from "../shortcuts";
+import {
+  dismissReadAloudNotice,
+  getVoiceStatus,
+  isReadAloudNoticeDismissed,
+  type VoiceStatus,
+} from "../speech/tts";
 
 export default function PangaHome() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const raw = params.get("tab");
-  const tab: Tab = (TABS as readonly string[]).includes(raw ?? "") ? (raw as Tab) : "Task lists";
+  const tab: HomeTabId = HOME_TABS.some((t) => t.id === raw) ? (raw as HomeTabId) : "Task lists";
   // Optional folder/list selection from a header search result.
   const folderId = params.get("folder") ?? null;
   const listId = params.get("list") ?? null;
+  const [voiceNotice, setVoiceNotice] = useState<VoiceStatus | null>(null);
 
   // Launched from the "Quick capture" app shortcut: put the cursor in the capture box.
   useEffect(() => {
@@ -29,27 +35,84 @@ export default function PangaHome() {
     }
   }, [params]);
 
+  // First arrival at /home: one-time dismissible notice when Read aloud is not Ready offline.
+  useEffect(() => {
+    if (isReadAloudNoticeDismissed()) return;
+    let cancelled = false;
+    void getVoiceStatus(true).then(({ status }) => {
+      if (!cancelled && status.kind !== "ready") {
+        setVoiceNotice(status);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function dismissVoiceNotice() {
+    dismissReadAloudNotice();
+    setVoiceNotice(null);
+  }
+
   return (
     <div className="page pg-home">
       <header className="pg-head">
         <h1>Panga</h1>
         <div className="pg-actions">
-          <button type="button" className="btn-secondary btn-small clickable" onClick={() => void pasteWithFeedback()} title="Save what is on your clipboard">
-            📋 Paste
-          </button>
-          <button type="button" className="btn-secondary btn-small clickable" onClick={() => setParams(tab === "Task lists" ? {} : { tab: "Task lists" }, { replace: true })} title="Home">
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable"
+            onClick={() => setParams(tab === "Task lists" ? {} : { tab: "Task lists" }, { replace: true })}
+            title="Home"
+          >
             Home
           </button>
         </div>
       </header>
 
+      {voiceNotice && (
+        <section className="pg-card" role="status" aria-label="Read aloud status notice" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13 }}>
+            <strong>Read aloud:</strong>{" "}
+            {voiceNotice.kind === "online-only"
+              ? "Only online voices found. Install a local voice for offline reading."
+              : voiceNotice.kind === "no-voices"
+                ? "No voices found on this device for read-aloud."
+                : "Read-aloud speech synthesis is not supported in this browser."}
+          </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {voiceNotice.kind !== "not-supported" && (
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => {
+                  dismissVoiceNotice();
+                  navigate("/settings#read-aloud");
+                }}
+              >
+                Set up offline voice
+              </button>
+            )}
+            <button type="button" className="btn-secondary btn-small clickable" onClick={dismissVoiceNotice}>
+              Dismiss
+            </button>
+          </div>
+        </section>
+      )}
+
       <ThoughtStream />
       <CommandBox />
 
       <nav className="pg-chips" aria-label="Sections">
-        {TABS.map((t) => (
-          <button key={t} type="button" className={`chip ${tab === t ? "chip-active" : ""}`} onClick={() => setParams(t === "Task lists" ? {} : { tab: t }, { replace: true })}>
-            {t}
+        {HOME_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`chip ${tab === t.id ? "chip-active" : ""}`}
+            title={`Shortcut: ${t.shortcut}`}
+            onClick={() => setParams(t.id === "Task lists" ? {} : { tab: t.id }, { replace: true })}
+          >
+            {t.id}
           </button>
         ))}
       </nav>
@@ -60,6 +123,7 @@ export default function PangaHome() {
         {tab === "Notes" && <NotesPanel initialFolderId={folderId} />}
         {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} />}
         {tab === "Clipboard" && <ClipboardPanel />}
+        {tab === "Proofread" && <Proofread />}
       </section>
     </div>
   );

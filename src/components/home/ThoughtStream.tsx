@@ -6,6 +6,7 @@ import { listTaskLists, type TaskList } from "../../data/taskLists";
 import { listNoteFolders, type NoteFolder } from "../../data/noteFolders";
 import { confirmDelete, showToast } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
+import { ProofreadTrigger } from "../Proofread";
 
 export const CAPTURE_INPUT_ID = "panga-capture-input";
 
@@ -83,6 +84,7 @@ export default function ThoughtStream() {
         <button type="button" className="btn-primary" disabled={!draft.trim()} onClick={() => void submit()}>
           Add
         </button>
+        {draft.trim() && <ProofreadTrigger value={draft} onApply={setDraft} />}
       </div>
       {thoughts.length > 0 && (
         <ul className="pg-list">
@@ -95,9 +97,9 @@ export default function ThoughtStream() {
                   <time className="pg-muted"> · {new Date(th.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
                 </span>
                 {th.taskId ? (
-                  <span className="chip-small">task ✓</span>
+                  <span className="chip-small">In tasks</span>
                 ) : th.noteId ? (
-                  <span className="chip-small">note ✓</span>
+                  <span className="chip-small">In notes</span>
                 ) : promotingThis ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <select
@@ -105,8 +107,8 @@ export default function ThoughtStream() {
                       onChange={(e) => setPromoteAs(e.target.value as "task" | "note")}
                       style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
                     >
-                      <option value="task">→ task</option>
-                      <option value="note">→ note</option>
+                      <option value="task">Task</option>
+                      <option value="note">Note</option>
                     </select>
                     {promoteAs === "task" ? (
                       <>
@@ -122,7 +124,7 @@ export default function ThoughtStream() {
                             </option>
                           ))}
                         </select>
-                        <button type="button" className="btn-secondary btn-small" onClick={() => void toTask(th)}>Create</button>
+                        <button type="button" className="btn-secondary btn-small clickable" onClick={() => void toTask(th)}>Create</button>
                       </>
                     ) : (
                       <>
@@ -138,31 +140,31 @@ export default function ThoughtStream() {
                             </option>
                           ))}
                         </select>
-                        <button type="button" className="btn-secondary btn-small" onClick={() => void toNote(th)}>Create</button>
+                        <button type="button" className="btn-secondary btn-small clickable" onClick={() => void toNote(th)}>Create</button>
                       </>
                     )}
-                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting(null); setPromoteAs(null); setPromoteListId(null); setPromoteFolderId(null); }}>✕</button>
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => { setPromoting(null); setPromoteAs(null); setPromoteListId(null); setPromoteFolderId(null); }}>Cancel</button>
                   </div>
                 ) : (
                   <>
-                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("task"); }} title="Turn this into a task">
-                      → task
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("task"); }} title="Turn this into a task">
+                      To task
                     </button>
-                    <button type="button" className="btn-secondary btn-small" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("note"); }} title="Turn this into a note">
-                      → note
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => { setPromoting({ id: th.id, text: th.text }); setPromoteAs("note"); }} title="Turn this into a note">
+                      To note
                     </button>
                   </>
                 )}
                 <ReadAloudButton text={th.text} />
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-secondary btn-small clickable"
                   aria-label="Delete thought"
                   onClick={async () => {
                     if (await confirmDelete({ kind: "thought" })) await deleteThought(th.id);
                   }}
                 >
-                  ×
+                  Delete
                 </button>
               </li>
             );

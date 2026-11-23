@@ -1,6 +1,15 @@
 # NEXT.md — next phase
 
-## Current plan (5 ordered steps, from the user on 2026-11-22)
+## Current plan (Panga master plan — ordered: 1, 3, 4, 5, 6, 7; Issue 2 on hold)
+1. [x] Issue 1: Blank page on `npm run dev` (circular import fix via `src/auth/sessionUserId.ts`)
+2. [ ] Issue 2: Routing (**ON HOLD** until author confirms the URL after a click that does nothing)
+3. [x] Issue 3: Remove all remote DB logic (Supabase removal + JSON account & unencrypted snapshots)
+4. [x] Issue 4: Landing page (3 choices only: Start afresh, Continue local, Upload JSON)
+5. [x] Issue 5: Read-aloud (sentence Pause/Resume, 4-state voice status, Settings card, `/home` notice, toast CTA)
+6. [x] Issue 6: Proofread tool (`src/proofread/prompt.ts`, `src/components/Proofread.tsx`, `/home` tab & resource modal triggers)
+7. [x] Issue 7: Header, menu, shortcuts and design (`src/shortcuts.ts`, slim `AppShell` header with Shortcuts/Menu popovers, plain-word UI cleanup, CSS hover/touch polish)
+
+## Prior completed plan (5 ordered steps, from the user on 2026-11-22)
 1. [x] Remove Google Drive / every Google reference (issue #4, branch `refactor/4-remove-google-drive`)
 2. [x] Harden sign-up / sign-in + per-user IndexedDB isolation + JSON identity restore (issue #6, branch `feat/6-auth-data-isolation`)
 3. [x] Empty key fields by default + explicit "bring your own Supabase" messaging (issue #8, branch `fix/8-empty-secret-fields`)

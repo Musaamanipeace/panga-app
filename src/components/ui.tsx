@@ -314,11 +314,17 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]) {
 
 type ToastType = "info" | "success" | "error";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
   durationMs?: number;
+  action?: ToastAction;
 }
 
 const toastState: {
@@ -333,17 +339,26 @@ function emitChange() {
   toastState.listeners.forEach((l) => l());
 }
 
-export function showToast(message: string, type: ToastType = "info", durationMs = 2800) {
-  const toast: Toast = { id: crypto.randomUUID(), message, type, durationMs };
+export function dismissToast(id: string) {
+  const idx = toastState.toasts.findIndex((t) => t.id === id);
+  if (idx >= 0) {
+    toastState.toasts.splice(idx, 1);
+    emitChange();
+  }
+}
+
+export function showToast(
+  message: string,
+  type: ToastType = "info",
+  durationMs = 2800,
+  action?: ToastAction,
+) {
+  const toast: Toast = { id: crypto.randomUUID(), message, type, durationMs, action };
   toastState.toasts.push(toast);
   emitChange();
 
   setTimeout(() => {
-    const idx = toastState.toasts.findIndex((t) => t.id === toast.id);
-    if (idx >= 0) {
-      toastState.toasts.splice(idx, 1);
-      emitChange();
-    }
+    dismissToast(toast.id);
   }, durationMs);
 }
 
@@ -392,9 +407,24 @@ export function ToastContainer() {
             fontWeight: 500,
             boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
             animation: "slideIn 0.2s ease-out",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
           }}
         >
-          {t.message}
+          <span>{t.message}</span>
+          {t.action && (
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => {
+                dismissToast(t.id);
+                t.action?.onClick();
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -425,9 +455,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
 export function CopyButton({
   text,
-  label = "📋 Copy",
-  copiedLabel = "✓ Copied",
-  className = "btn-icon clickable",
+  label = "Copy",
+  copiedLabel = "Copied",
+  className = "btn-secondary btn-small clickable",
   tooltip = "Copy to clipboard",
   title = "Copy to clipboard",
   style,

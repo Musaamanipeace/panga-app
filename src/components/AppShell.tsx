@@ -1,28 +1,29 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import GlobalSearch from "./GlobalSearch";
 import AssistantPanel from "./AssistantPanel";
 import ThoughtTrain from "./ThoughtTrain";
-import { ToastContainer, ConfirmDialogHost } from "./ui";
-import { SyncStatusIndicator } from "./SyncStatusIndicator";
 import InstallButton from "./InstallButton";
 import SelectionCopy from "./SelectionCopy";
 import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
-import { signOut, startSupabaseSync } from "../sync/supabaseSync";
-import { getSessionEmail, isGuest } from "../auth/session";
+import { exitToLanding } from "../auth/session";
 import { stopSpeaking } from "../speech/tts";
+import { SHORTCUT_ENTRIES, homeTabRoute, matchShortcut } from "../shortcuts";
 
 export default function AppShell() {
-  const email = getSessionEmail();
-  const guest = isGuest();
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+  const shortcutsRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     void migrateStash();
-    startSupabaseSync();
   }, []);
 
   // Reading belongs to the page it started on; never let it follow navigation.
@@ -30,12 +31,68 @@ export default function AppShell() {
     stopSpeaking();
   }, [location.pathname]);
 
-  async function handleLogout() {
-    await signOut();
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  // Global keyboard shortcuts across tabs, search, and the shortcuts popover.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setShortcutsOpen(false);
+        setMenuOpen(false);
+        return;
+      }
+      const match = matchShortcut(e);
+      if (!match) return;
+      e.preventDefault();
+      if (match.type === "tab") {
+        setShortcutsOpen(false);
+        setMenuOpen(false);
+        setSearchOpen(false);
+        navigate(homeTabRoute(match.tabId));
+      } else if (match.type === "search") {
+        setShortcutsOpen(false);
+        setMenuOpen(false);
+        setSearchOpen((o) => !o);
+      } else if (match.type === "shortcuts") {
+        setMenuOpen(false);
+        setSearchOpen(false);
+        setShortcutsOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navigate]);
+
+  // Close popovers when clicking outside them.
+  useEffect(() => {
+    if (!shortcutsOpen && !menuOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node | null;
+      if (shortcutsOpen && shortcutsRef.current && target && !shortcutsRef.current.contains(target)) {
+        setShortcutsOpen(false);
+      }
+      if (menuOpen && menuRef.current && target && !menuRef.current.contains(target)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [shortcutsOpen, menuOpen]);
+
+  function handleExit() {
+    setMenuOpen(false);
+    exitToLanding();
     navigate("/");
   }
-
-  const online = typeof navigator !== "undefined" ? navigator.onLine : true;
 
   return (
     <div className="app-shell">
@@ -43,65 +100,103 @@ export default function AppShell() {
         <Link to="/home" className="app-logo clickable" data-tip="Home" data-tip-pos="bottom" data-tip-align="left">
           Panga
         </Link>
-        <GlobalSearch />
+
+        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+
         <button
           type="button"
-          className="btn-secondary btn-small clickable"
+          className="btn-secondary btn-small clickable header-btn"
           onClick={() => setThoughtsOpen(true)}
           data-tip="Thought train — capture notes quickly"
           data-tip-pos="bottom"
         >
           💭 Thoughts
         </button>
+
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable header-btn"
+          onClick={() => void pasteWithFeedback()}
+          data-tip="Save what is on your clipboard"
+          data-tip-pos="bottom"
+        >
+          📋 Paste
+        </button>
+
+        <div className="header-popover-wrap" ref={shortcutsRef}>
           <button
             type="button"
-            className="btn-secondary btn-small clickable"
-            onClick={() => void pasteWithFeedback()}
-            data-tip="Save what is on your clipboard"
-            data-tip-pos="bottom"
+            className="btn-secondary btn-small clickable header-btn"
+            aria-expanded={shortcutsOpen}
+            aria-haspopup="dialog"
+            onClick={() => {
+              setMenuOpen(false);
+              setShortcutsOpen((o) => !o);
+            }}
           >
-            📋 Paste
+            Shortcuts
           </button>
-          <Link
-            to="/settings"
-            className="btn-secondary btn-small clickable"
-            data-tip="Settings: API keys, Supabase account and JSON backups"
-            data-tip-pos="bottom"
+          {shortcutsOpen && (
+            <div className="header-popover dropdown-anim" role="dialog" aria-label="Keyboard shortcuts">
+              <div className="header-popover-title">Keyboard shortcuts</div>
+              <ul className="shortcut-list">
+                {SHORTCUT_ENTRIES.map((entry) => (
+                  <li key={`${entry.keys}-${entry.action}`} className="shortcut-row">
+                    <span>{entry.action}</span>
+                    <kbd>{entry.keys}</kbd>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="header-popover-wrap" ref={menuRef}>
+          <button
+            type="button"
+            className="btn-secondary btn-small clickable header-btn"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => {
+              setShortcutsOpen(false);
+              setMenuOpen((o) => !o);
+            }}
           >
-            Settings
-          </Link>
-        <span
-          className="user-email"
-          title={guest ? "Guest — data stays on this device" : email || ""}
-        >
-          {guest ? "Guest" : email || "Local"}
-        </span>
-        <SyncStatusIndicator />
-        <InstallButton />
-        <span
-          className="offline-badge"
-          style={{ color: online ? "var(--color-accent-resource)" : "var(--color-text-muted)" }}
-          title={online ? "Online — cloud sync available if configured" : "Offline — progress still saved on device"}
-        >
-          {online ? "● online" : "○ offline"}
-        </span>
-        <button
-          className="btn-secondary btn-small clickable logout-btn"
-          data-tip={guest ? "Exit guest mode" : "Log out"}
-          data-tip-pos="bottom"
-          data-tip-align="right"
-          onClick={handleLogout}
-        >
-          {guest ? "Exit" : "Logout"}
-        </button>
+            Menu
+          </button>
+          {menuOpen && (
+            <div className="header-popover dropdown-anim" role="menu" aria-label="App menu">
+              <Link
+                to="/settings"
+                className="header-menu-item clickable"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+              >
+                Settings
+              </Link>
+              <div className="header-menu-status" aria-live="polite">
+                {online ? "Online" : "Offline"}
+              </div>
+              <div className="header-menu-install">
+                <InstallButton />
+              </div>
+              <button
+                type="button"
+                className="header-menu-item header-menu-danger clickable"
+                role="menuitem"
+                onClick={handleExit}
+              >
+                Exit
+              </button>
+            </div>
+          )}
+        </div>
       </header>
       <main className="app-main">
         <Outlet />
       </main>
       <AssistantPanel />
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
-      <ToastContainer />
-      <ConfirmDialogHost />
       <SelectionCopy />
     </div>
   );

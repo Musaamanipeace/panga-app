@@ -1,9 +1,7 @@
 // src/data/tasks.ts
 import { db, type Task, type TaskStatus, type TaskHorizon, type SyncStatus } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 import { logActivity } from "./activity";
-import { recordTombstone } from "../sync/tombstones";
 
 export type { Task, TaskStatus, TaskHorizon };
 
@@ -77,7 +75,6 @@ export async function createTask(input: {
     horizon: input.horizon ?? "short",
   };
   await db.tasks.add(task);
-  void syncPushRecord("tasks", task);
   void logActivity({ entityType: "task", entityId: task.id, action: "created", description: `Created task "${task.title}"` });
   return task;
 }
@@ -103,8 +100,6 @@ export async function updateTask(
   if (changes.status !== undefined) next.completed = changes.status === "completed";
   if (changes.completed !== undefined) next.status = changes.completed ? "completed" : "active";
   await db.tasks.update(id, next);
-  const updated = await db.tasks.get(id);
-  if (updated) void syncPushRecord("tasks", updated);
 }
 
 export async function toggleTaskCompleted(id: string): Promise<void> {
@@ -129,10 +124,6 @@ export async function deleteTask(id: string): Promise<void> {
   await db.transaction("rw", db.tasks, async () => {
     for (const taskId of toDelete) await db.tasks.delete(taskId);
   });
-  for (const taskId of toDelete) {
-    void syncDeleteRecord("tasks", taskId);
-    recordTombstone("task", taskId);
-  }
   void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
 }
 
@@ -142,8 +133,6 @@ export async function moveTask(taskId: string, changes: { listId?: string | null
   if (changes.listId !== undefined) updates.listId = changes.listId;
   if (changes.parentId !== undefined) updates.parentId = changes.parentId;
   await db.tasks.update(taskId, updates);
-  const updated = await db.tasks.get(taskId);
-  if (updated) void syncPushRecord("tasks", updated);
 }
 
 export async function reorderTasks(orderedIds: string[]): Promise<void> {
@@ -153,10 +142,6 @@ export async function reorderTasks(orderedIds: string[]): Promise<void> {
       await db.tasks.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
-  for (const id of orderedIds) {
-    const updated = await db.tasks.get(id);
-    if (updated) void syncPushRecord("tasks", updated);
-  }
 }
 
 /** Build a nested task tree for a task list (roots = parentId === null). */
@@ -219,5 +204,4 @@ export function isOverdue(task: Task): boolean {
 export async function restoreTask(task: Task): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.tasks.put({ ...task, updatedAt: now(), syncStatus: "pending" });
-  void syncPushRecord("tasks", task);
 }

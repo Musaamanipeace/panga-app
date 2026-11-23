@@ -1,8 +1,6 @@
 // src/data/linkFolders.ts
 import { db, type LinkFolder } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
-import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { LinkFolder };
@@ -36,7 +34,6 @@ export async function createLinkFolder(input: {
     syncStatus: "pending",
   };
   await db.linkFolders.add(folder);
-  void syncPushRecord("linkFolders", folder);
   void logActivity({ entityType: "linkFolder", entityId: folder.id, action: "created", description: `Created link folder "${folder.title}"` });
   return folder;
 }
@@ -48,8 +45,6 @@ export async function updateLinkFolder(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.linkFolders.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.linkFolders.get(id);
-  if (updated) void syncPushRecord("linkFolders", updated);
 }
 
 export async function renameLinkFolder(id: string, title: string): Promise<void> {
@@ -63,10 +58,6 @@ export async function reorderLinkFolders(orderedIds: string[]): Promise<void> {
       await db.linkFolders.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
-  for (const id of orderedIds) {
-    const updated = await db.linkFolders.get(id);
-    if (updated) void syncPushRecord("linkFolders", updated);
-  }
 }
 
 /** Delete a folder, reparenting subfolders and links to its parent (or root). */
@@ -79,17 +70,11 @@ export async function deleteLinkFolder(id: string): Promise<void> {
   await db.transaction("rw", [db.links, db.linkFolders], async () => {
     for (const sf of subfolders) {
       await db.linkFolders.update(sf.id, { parentFolderId: parentId, updatedAt: now(), syncStatus: "pending" });
-      const updated = await db.linkFolders.get(sf.id);
-      if (updated) void syncPushRecord("linkFolders", updated);
     }
     for (const link of links) {
       await db.links.update(link.id, { folderId: parentId, updatedAt: now(), syncStatus: "pending" });
-      const updated = await db.links.get(link.id);
-      if (updated) void syncPushRecord("links", updated);
     }
     await db.linkFolders.delete(id);
   });
-  void syncDeleteRecord("linkFolders", id);
-  recordTombstone("linkFolder", id);
   void logActivity({ entityType: "linkFolder", entityId: id, action: "deleted", description: "Link folder deleted" });
 }

@@ -7,10 +7,9 @@ import AppShell from "./components/AppShell";
 import VoiceProvider from "./voice/VoiceProvider";
 import { warmupVoiceModel } from "./voice/warmup";
 import { ensureSeedData } from "./data/db";
-import { syncAll } from "./sync/sync";
 import { startReminderScheduler } from "./data/reminders";
-import { canUseApp } from "./auth/session";
-import { restoreAppSession } from "./sync/supabaseSync";
+import { canUseApp, restoreSession } from "./auth/session";
+import { ToastContainer, ConfirmDialogHost } from "./components/ui";
 import "./index.css";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -22,38 +21,14 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void restoreAppSession().then(async () => {
+    void restoreSession().then(async () => {
       await ensureSeedData();
       if (canUseApp()) {
-        try {
-          await syncAll();
-        } catch (e) {
-          console.warn("Initial sync error:", e);
-        }
         void startReminderScheduler();
       }
       setReady(true);
       warmupVoiceModel();
     });
-
-    const handleFocus = () => {
-      if (canUseApp()) {
-        void syncAll();
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    // Periodically save/sync every 2 minutes if active
-    const interval = setInterval(() => {
-      if (canUseApp()) {
-        void syncAll();
-      }
-    }, 120_000);
-
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-      clearInterval(interval);
-    };
   }, []);
 
   if (!ready) {
@@ -69,21 +44,23 @@ function App() {
 
   return (
     <VoiceProvider>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route
-          element={
-            <RequireAuth>
-              <AppShell />
-            </RequireAuth>
-          }
-        >
-          <Route path="/home" element={<PangaHome />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route
+            element={
+              <RequireAuth>
+                <AppShell />
+              </RequireAuth>
+            }
+          >
+            <Route path="/home" element={<PangaHome />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+        </Routes>
+        <ToastContainer />
+        <ConfirmDialogHost />
+      </BrowserRouter>
     </VoiceProvider>
   );
 }

@@ -11,7 +11,7 @@ export default function InstallSettings() {
         device either way.
       </p>
       {state.installed ? (
-        <p style={{ margin: 0, color: "green", fontSize: 14 }}>✓ Panga is installed on this device.</p>
+        <p style={{ margin: 0, color: "green", fontSize: 14 }}>Panga is installed on this device.</p>
       ) : (
         <InstallButton variant="large" />
       )}

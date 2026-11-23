@@ -15,6 +15,7 @@ import {
 } from "../../data/noteFolders";
 import { confirmDelete, copyToClipboard } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
+import { ProofreadTrigger } from "../Proofread";
 import FolderTree from "./FolderTree";
 
 export default function NotesPanel({ initialFolderId }: { initialFolderId?: string | null }) {
@@ -162,7 +163,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
       <aside className="note-folders-sidebar" style={sx.sidebar}>
         <div style={sx.sidebarHeader}>
           <h2 style={sx.sidebarTitle}>Note folders</h2>
-          <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-note-folder-input")?.focus()} data-tip="New note folder">+</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-note-folder-input")?.focus()} data-tip="New note folder">New</button>
         </div>
         <FolderTree
           foldersAsGrid
@@ -199,7 +200,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
             onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setBody(""); setError(null); }}
             data-tip="Add a note"
           >
-            + Add note
+            Add note
           </button>
         </header>
 
@@ -231,6 +232,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
               </div>
               {error && <p className="form-error">{error}</p>}
               <div style={sx.addFormActions}>
+                <ProofreadTrigger value={body} onApply={setBody} />
                 <button type="button" className="btn-secondary clickable" onClick={() => { setShowAddForm(false); setEditingId(null); setTitle(""); setBody(""); setError(null); }} disabled={saving}>
                   Cancel
                 </button>
@@ -256,7 +258,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
             <div className="empty-state" style={sx.emptyState}>
               <p>No notes in {currentFolder?.title ? `“${currentFolder.title}”` : "this folder"}.</p>
               <button type="button" className="btn-primary btn-small clickable" onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setBody(""); setError(null); }}>
-                + Add your first note
+                Add your first note
               </button>
             </div>
           ) : (
@@ -280,6 +282,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
                       style={sx.noteBodyTextarea}
                     />
                     <div className="pg-actions" style={sx.noteActions}>
+                      <ProofreadTrigger value={body} onApply={setBody} />
                       <button type="button" className="btn-primary btn-small" onClick={() => void handleSaveNote()}>
                         Save
                       </button>
@@ -292,7 +295,6 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
                   <li key={n.id} className="pg-note" style={sx.noteItem}>
                     <div style={sx.noteHeader}>
                       <strong style={sx.noteTitle}>{n.title}</strong>
-                      <button type="button" className="btn-icon clickable" onClick={() => startEdit(n)} data-tip="Edit note">✎</button>
                     </div>
                     {n.body && <p className="pg-body" style={sx.noteBody}>{n.body}</p>}
                     <div className="pg-actions" style={sx.noteActions}>

@@ -194,7 +194,7 @@ export default function InsightsTab({ projectId }: { projectId: string }) {
               {formData.type === "pdf" && (
                 <div className="form-note" style={{ marginTop: 4 }}>
                   <span data-tip="Convert PDF to plain text, then paste the result">
-                    💡 Need plain text from a PDF? Use a free converter like{" "}
+                    Need plain text from a PDF? Use a free converter like{" "}
                     <a href={PDF_HELPER_URL} target="_blank" rel="noreferrer">
                       ilovepdf.com/pdf_to_text
                     </a>

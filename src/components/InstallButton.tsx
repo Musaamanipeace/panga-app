@@ -97,7 +97,7 @@ export default function InstallButton({ variant = "compact" }: { variant?: "comp
         data-tip="Install Panga as an app on this device"
         data-tip-pos="bottom"
       >
-        <span aria-hidden="true">⬇ </span>Install app
+        Install app
       </button>
       {helpOpen && <InstallHelp onClose={() => setHelpOpen(false)} />}
     </>

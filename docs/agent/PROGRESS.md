@@ -1,5 +1,25 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-23 — Panga master plan (Issues 1, 3, 4, 5, 6, 7 completed; Issue 2 on hold)
+- **Issue 1 (Blank page on `npm run dev`)**: Extracted `src/auth/sessionUserId.ts` (zero imports) to break the `db.ts` ↔ `session.ts` circular import; re-exported from `session.ts`.
+- **Issue 3 (Remove all remote DB logic)**: Deleted Supabase sync/tombstones/crypto modules, `SyncStatusIndicator`, `/supabase/*.sql`, and `@supabase/supabase-js`. Stripped sync hooks across data modules and UI. Kept unencrypted `snapshot.ts` with JSON account `username` save/restore, Download/Upload JSON, and local storage backup reminder in `AccountPanel` (`Settings.tsx`).
+- **Issue 4 (Landing page)**: Simplified `Landing.tsx` to three choices only (`Continue local`, `Start afresh` with `confirmAction()`, `Upload JSON`); moved `ToastContainer` and `ConfirmDialogHost` to `App.tsx` root.
+- **Issue 5 (Read-aloud)**:
+  - Implemented sentence-level Pause/Resume (`tts.ts`) stopping speech and restarting from the remembered sentence (`Read` -> `Pause` + `Stop` -> `Resume` + `Stop`).
+  - Added 4-state voice status detection (`Ready offline (name)`, `Online voices only`, `No voices found`, `Not supported`) plus other-language local voice warning.
+  - Added dedicated `Read aloud` card (`ReadAloudSettings.tsx`) in `Settings.tsx` with status, Android/iPhone/Windows/Mac setup steps, `Test voice`, `Recheck`, voice/rate controls (removed duplicate controls from `VoiceSettings.tsx`).
+  - Added one-time dismissible notice on `/home` when not `Ready offline`, and actionable `"Set up offline voice"` toast when pressing `Read` with no local voice.
+- **Issue 6 (Proofread tool)**:
+  - Added verbatim system prompt and clarification parser (`src/proofread/prompt.ts`).
+  - Built `src/components/Proofread.tsx` (`Proofread` grammar/spelling mode, `Formatting` mode, inline clarification cards, locked result textarea with `Copy`, `Edit`, and modal `Apply` / `Close`).
+  - Wired Proofread as the 6th home tab (`PangaHome.tsx`) and global modal trigger in `NotesPanel.tsx`, `HomeTasksTab.tsx`, and `TaskListsHome.tsx`.
+- **Issue 7 (Header, menu, shortcuts and design)**:
+  - Added centralized shortcut registry (`src/shortcuts.ts`) mapping `Alt+T/L/N/R/C/P` via `e.code`, `Ctrl/Cmd+K` / `Alt+S` for search, and `?` for the shortcuts popover.
+  - Replaced `AppShell.tsx` header controls with `Panga`, `<GlobalSearch>` (`"Search"` + `Ctrl+K`), `💭 Thoughts`, `📋 Paste`, `Shortcuts` popover, and `Menu` popover (`Settings`, `Online`/`Offline`, `<InstallButton />`, `Exit` to `/`).
+  - Removed emojis and symbol-only icon buttons in favor of plain words across components and category seeds, keeping only `💭 Thoughts`, `📋 Paste`, and AI `✨` icons; eliminated duplicate header Paste and duplicate Notes Edit buttons per `ui-no-redundancy`.
+  - Updated `src/index.css` for larger clickable controls, darker hover states, 44px touch targets on coarse pointers, and clean responsive header wrapping.
+- **Checks**: `npx tsc -b` passes; `npx vitest run` passes (17 files / 89 tests, including `src/__tests__/shortcuts.test.ts` and `src/components/__tests__/AppShell.test.tsx`); `npx oxlint` 0 errors (0 warnings on touched files); `npm run build` passes.
+
 ## 2026-11-22 — Final state of the 5-step BYOK plan
 - All five steps implemented, reviewed by CI and merged to `main`:
   1. #4 / PR #5 — remove every Google/Drive integration and reference (local calendar kept).

@@ -107,7 +107,7 @@ export default function HomeActivityTab() {
             onClick={() => setProjectFilter("all")}
             data-tip="Clear project filter"
           >
-            ×
+            Clear
           </button>
         </div>
       )}

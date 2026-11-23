@@ -1,8 +1,6 @@
 // src/data/reminders.ts
 import { db, type Reminder } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
-import { recordTombstone } from "../sync/tombstones";
 
 export type { Reminder };
 export type ReminderBucket = "overdue" | "due" | "upcoming";
@@ -159,7 +157,6 @@ export async function createReminder(input: {
     syncStatus: "pending",
   };
   await db.reminders.add(reminder);
-  void syncPushRecord("reminders", reminder);
   return reminder;
 }
 
@@ -168,18 +165,12 @@ export async function updateReminder(
   changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status" | "folderId">>
 ): Promise<void> {
   await db.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
-  const updated = await db.reminders.get(id);
-  if (updated) void syncPushRecord("reminders", updated);
 }
 
 export async function dismissReminder(id: string): Promise<void> {
   await db.reminders.update(id, { status: "dismissed", updatedAt: now(), syncStatus: "pending" });
-  const updated = await db.reminders.get(id);
-  if (updated) void syncPushRecord("reminders", updated);
 }
 
 export async function deleteReminder(id: string): Promise<void> {
   await db.reminders.delete(id);
-  void syncDeleteRecord("reminders", id);
-  recordTombstone("reminder", id);
 }

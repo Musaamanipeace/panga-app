@@ -1,6 +1,5 @@
 import { db, type ThoughtEntry } from "./db";
 import { newId } from "./utils";
-import { recordTombstone } from "../sync/tombstones";
 
 export type { ThoughtEntry };
 
@@ -27,7 +26,6 @@ export async function addThought(text: string, projectContext: string | null = n
 export async function deleteThought(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.trainOfThought.delete(id);
-  recordTombstone("thought", id);
   window.dispatchEvent(new CustomEvent("panga-data-updated"));
 }
 

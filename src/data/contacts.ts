@@ -1,7 +1,6 @@
 // src/data/contacts.ts
 import { db, type Contact, type ContactType } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Contact, ContactType };
 
@@ -35,7 +34,6 @@ export async function createContact(input: {
     syncStatus: "pending",
   };
   await db.contacts.add(contact);
-  void syncPushRecord("contacts", contact);
   return contact;
 }
 
@@ -44,20 +42,16 @@ export async function updateContact(
   changes: Partial<Pick<Contact, "name" | "type" | "value" | "tags" | "linkedProjectIds">>
 ): Promise<void> {
   await db.contacts.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
-  const updated = await db.contacts.get(id);
-  if (updated) void syncPushRecord("contacts", updated);
 }
 
 export async function deleteContact(id: string): Promise<void> {
   await db.contacts.delete(id);
-  void syncDeleteRecord("contacts", id);
 }
 
 export async function deleteContactsForProject(projectId: string): Promise<void> {
   const contacts = await db.contacts.where("linkedProjectIds").equals(projectId).toArray();
   for (const c of contacts) {
     await db.contacts.delete(c.id);
-    void syncDeleteRecord("contacts", c.id);
   }
 }
 

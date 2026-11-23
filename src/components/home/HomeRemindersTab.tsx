@@ -234,7 +234,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
       <aside style={{ flex: "0 0 240px", borderRight: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Reminder folders</h2>
-          <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-reminder-folder-input")?.focus()} data-tip="New reminder folder">+</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-reminder-folder-input")?.focus()} data-tip="New reminder folder">New</button>
         </div>
         <FolderTree
           foldersAsGrid
@@ -321,7 +321,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
               </select>
               <button
                 type="button"
-                className="btn-icon"
+                className="btn-secondary btn-small clickable"
                 onClick={async () => {
                   await dismissReminder(currentReminder.id);
                   await refresh();
@@ -332,7 +332,8 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
               </button>
               <button
                 type="button"
-                className="btn-icon btn-icon-danger"
+                className="btn-secondary btn-small clickable"
+                style={{ color: "var(--color-accent-issue)" }}
                 onClick={async () => {
                   if (!(await confirmDelete({ kind: "reminder", name: currentReminder.message }))) return;
                   await deleteReminder(currentReminder.id);
@@ -340,7 +341,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
                 }}
                 data-tip="Delete this reminder"
               >
-                Del
+                Delete
               </button>
             </div>
           </section>
@@ -406,7 +407,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
                             </select>
                             <button
                               type="button"
-                              className="btn-icon"
+                              className="btn-secondary btn-small clickable"
                               onClick={async () => {
                                 await dismissReminder(reminder.id);
                                 await refresh();
@@ -418,7 +419,8 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
                             </button>
                             <button
                               type="button"
-                              className="btn-icon btn-icon-danger"
+                              className="btn-secondary btn-small clickable"
+                              style={{ color: "var(--color-accent-issue)" }}
                               onClick={async () => {
                                 if (!(await confirmDelete({ kind: "reminder", name: reminder.message }))) return;
                                 await deleteReminder(reminder.id);
@@ -427,7 +429,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
                               data-tip="Delete this reminder"
                               data-tip-edge="left"
                             >
-                              Del
+                              Delete
                             </button>
                           </span>
                         </li>

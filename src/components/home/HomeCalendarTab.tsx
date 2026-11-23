@@ -142,8 +142,6 @@ export default function HomeCalendarTab() {
         syncStatus: "pending" as const,
       }));
       await db.calendarEvents.bulkPut(toImport);
-      const { syncPushRecord } = await import("../../sync/sync");
-      for (const ev of toImport) void syncPushRecord("calendar_events", ev);
       setImportStatus({ message: `Successfully imported ${toImport.length} event(s) from .ics file.`, type: "success" });
       setIcsFile(null);
       refresh();
@@ -433,7 +431,7 @@ export default function HomeCalendarTab() {
                           data-tip="Open video call"
                           style={{ marginLeft: 8 }}
                         >
-                          📹 Meet
+                          Video call
                         </a>
                       )}
                       {e.description && (
@@ -453,12 +451,13 @@ export default function HomeCalendarTab() {
                         data-tip="Open project calendar"
                         style={{ marginLeft: 6, textDecoration: "none" }}
                       >
-                        📁 {projects[e.projectId]}
+                        {projects[e.projectId]}
                       </Link>
                     )}
                   </span>
                   <button
-                    className="btn-icon clickable"
+                    type="button"
+                    className="btn-secondary btn-small clickable"
                     data-tip="Delete event"
                     onClick={async () => {
                       if (!(await confirmDelete({ kind: "event", name: e.title }))) return;
@@ -466,7 +465,7 @@ export default function HomeCalendarTab() {
                       refresh();
                     }}
                   >
-                    ×
+                    Delete
                   </button>
                 </li>
               ))}

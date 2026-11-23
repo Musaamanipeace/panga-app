@@ -1,8 +1,6 @@
 // src/data/notes.ts
 import { db, type Note } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
-import { recordTombstone } from "../sync/tombstones";
 import { logActivity } from "./activity";
 
 export type { Note };
@@ -44,7 +42,6 @@ export async function createNote(input: {
     syncStatus: "pending",
   };
   await db.notes.add(note);
-  void syncPushRecord("notes", note);
   void logActivity({ entityType: "note", entityId: note.id, action: "created", description: `Created note "${note.title}"` });
   return note;
 }
@@ -56,15 +53,11 @@ export async function updateNote(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.notes.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.notes.get(id);
-  if (updated) void syncPushRecord("notes", updated);
 }
 
 export async function deleteNote(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.notes.delete(id);
-  void syncDeleteRecord("notes", id);
-  recordTombstone("note", id);
   void logActivity({ entityType: "note", entityId: id, action: "deleted", description: "Note deleted" });
 }
 

@@ -92,7 +92,7 @@ export default function PdfReader() {
   return (
     <div>
       <label className="btn-primary pg-file">
-        + Add PDF
+        Add PDF
         <input type="file" accept="application/pdf,.pdf" hidden onChange={(e) => void onFile(e.target.files)} />
       </label>
       <span className="pg-muted"> Stays on this device.</span>
@@ -107,7 +107,7 @@ export default function PdfReader() {
               <span className="pg-muted">{(d.size / 1024 / 1024).toFixed(1)} MB</span>
               <button
                 type="button"
-                className="btn-icon"
+                className="btn-secondary btn-small clickable"
                 aria-label="Delete PDF"
                 onClick={async () => {
                   if (!(await confirmDelete({ kind: "PDF", name: d.name }))) return;
@@ -120,7 +120,7 @@ export default function PdfReader() {
                   await reload();
                 }}
               >
-                ×
+                Delete
               </button>
             </li>
           ))}
@@ -130,29 +130,29 @@ export default function PdfReader() {
       {openDoc && (
         <section className="pg-card">
           <div className="pg-actions">
-            <button type="button" className="btn-secondary btn-small" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              ‹
+            <button type="button" className="btn-secondary btn-small clickable" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              Prev
             </button>
             <span>
               Page {page} / {pages.length || "…"}
             </span>
-            <button type="button" className="btn-secondary btn-small" disabled={page >= pages.length} onClick={() => setPage(page + 1)}>
-              ›
+            <button type="button" className="btn-secondary btn-small clickable" disabled={page >= pages.length} onClick={() => setPage(page + 1)}>
+              Next
             </button>
             <ReadAloudButton text={() => current} label="Read page" />
-            <button type="button" className="btn-secondary btn-small" disabled={!current} onClick={() => void copyToClipboard(current)}>
+            <button type="button" className="btn-secondary btn-small clickable" disabled={!current} onClick={() => void copyToClipboard(current)}>
               Copy page
             </button>
             <button
               type="button"
-              className="btn-secondary btn-small"
+              className="btn-secondary btn-small clickable"
               disabled={!current}
               onClick={async () => {
                 await createResource({ category: "notes", title: `${openDoc.name} p.${page}`, body: current, tags: ["cat:PDF"] });
                 showToast("Saved as a note", "success");
               }}
             >
-              → Note
+              Save as note
             </button>
           </div>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search this PDF…" />

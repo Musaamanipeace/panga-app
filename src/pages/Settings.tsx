@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   getAIProvider,
   setAIProvider,
@@ -8,11 +8,6 @@ import {
   setAIModel,
   type AIProviderId,
 } from "../data/settings";
-import {
-  downloadSnapshot,
-  readSnapshotFile,
-  importSnapshot,
-} from "../sync/snapshot";
 import VoiceSettings from "../voice/VoiceSettings";
 import InstallSettings from "../components/InstallSettings";
 import {
@@ -22,12 +17,7 @@ import {
   type AIModelInfo,
 } from "../ai/providers";
 import AccountPanel from "../components/AccountPanel";
-import { isGuest } from "../auth/session";
-import {
-  getSupabaseConfig,
-  setSupabaseConfig,
-  isSupabaseConfigured,
-} from "../data/supabase";
+import ReadAloudSettings from "../speech/ReadAloudSettings";
 
 const AI_PROVIDER_OPTIONS: { id: AIProviderId; label: string; hint: string }[] = [
   { id: "openrouter", label: "OpenRouter", hint: "Best free + paid (live model list)" },
@@ -39,12 +29,6 @@ const AI_PROVIDER_OPTIONS: { id: AIProviderId; label: string; hint: string }[] =
 ];
 
 export default function Settings() {
-  const [backupStatus, setBackupStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [backupMessage, setBackupMessage] = useState<string | null>(null);
-  const [backupLoading, setBackupLoading] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [aiProvider, setAiProviderState] = useState<AIProviderId>("openrouter");
   const [aiApiKey, setAiApiKeyState] = useState("");
   const [aiModel, setAiModelState] = useState("");
@@ -54,11 +38,6 @@ export default function Settings() {
   const [aiStatus, setAiStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [showFreeOnly, setShowFreeOnly] = useState(true);
 
-  const [supabaseUrl, setSupabaseUrl] = useState("");
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState("");
-  const [supabaseConfigured, setSupabaseConfigured] = useState(false);
-  const [supabaseStatus, setSupabaseStatus] = useState<"idle" | "saving" | "saved">("idle");
-
   const loadSettings = useCallback(async () => {
     const prov = await getAIProvider();
     setAiProviderState(prov);
@@ -66,13 +45,6 @@ export default function Settings() {
     setAiApiKeyState(key);
     const model = (await getAIModel(prov)) ?? "";
     setAiModelState(model);
-
-    const cfg = await getSupabaseConfig();
-    if (cfg) {
-      setSupabaseUrl(cfg.url);
-      setSupabaseAnonKey(cfg.anonKey);
-    }
-    setSupabaseConfigured(await isSupabaseConfigured());
   }, []);
 
   useEffect(() => {
@@ -123,48 +95,6 @@ export default function Settings() {
     const model = (await getAIModel(id)) ?? "";
     setAiModelState(model);
     setShowFreeOnly(id === "openrouter" || id === "groq" || id === "gemini");
-  }
-
-  async function handleSaveSupabase(e: React.FormEvent) {
-    e.preventDefault();
-    setSupabaseStatus("saving");
-    await setSupabaseConfig(supabaseUrl.trim(), supabaseAnonKey.trim());
-    setSupabaseConfigured(await isSupabaseConfigured());
-    setSupabaseStatus("saved");
-    setTimeout(() => setSupabaseStatus("idle"), 2500);
-  }
-
-  async function handleLocalDownload() {
-    setBackupLoading(true);
-    setBackupStatus("saving");
-    try {
-      await downloadSnapshot();
-      setBackupStatus("saved");
-      setBackupMessage("Snapshot downloaded.");
-    } catch (err: unknown) {
-      setBackupStatus("error");
-      setBackupMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBackupLoading(false);
-      setTimeout(() => setBackupStatus("idle"), 3000);
-    }
-  }
-
-  async function handleLocalUpload(file: File) {
-    setBackupLoading(true);
-    setBackupStatus("saving");
-    try {
-      const snap = await readSnapshotFile(file);
-      await importSnapshot(snap);
-      setBackupStatus("saved");
-      setBackupMessage("Snapshot imported. Reloading…");
-      setTimeout(() => window.location.reload(), 1200);
-    } catch (err: unknown) {
-      setBackupStatus("error");
-      setBackupMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBackupLoading(false);
-    }
   }
 
   const displayedModels =
@@ -253,79 +183,8 @@ export default function Settings() {
         </form>
       </section>
 
-      <AccountPanel promptUpgrade={isGuest() && supabaseConfigured} />
-
-      <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Bring your own Supabase project</h2>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
-          Required for sign-up and cloud sync. Create your own project, run <code>supabase/panga_sync.sql</code> in its SQL
-          editor, then paste its URL + anon key here. Panga ships with no default project; local IndexedDB stays the offline
-          source of truth.
-        </p>
-        <form onSubmit={handleSaveSupabase} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>
-            Project URL
-            <input
-              type="url"
-              value={supabaseUrl}
-              onChange={(e) => setSupabaseUrl(e.target.value)}
-              placeholder="https://xxxx.supabase.co"
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px" }}
-            />
-          </label>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>
-            Anon (public) key
-            <input
-              type="password"
-              value={supabaseAnonKey}
-              onChange={(e) => setSupabaseAnonKey(e.target.value)}
-              placeholder="eyJ…"
-              autoComplete="off"
-              style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px" }}
-            />
-          </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button type="submit" className="btn-primary btn-small clickable">
-              {supabaseStatus === "saving" ? "Saving…" : supabaseStatus === "saved" ? "Saved" : "Save Supabase"}
-            </button>
-            <span className="chip-small" style={{ background: supabaseConfigured ? "#dcfce7" : "#f3f4f6", color: supabaseConfigured ? "#166534" : "#6b7280" }}>
-              {supabaseConfigured ? "Configured" : "Not configured"}
-            </span>
-          </div>
-        </form>
-      </section>
-
-      <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Local snapshot</h2>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-text-muted)" }}>
-          Download or upload a full JSON backup (no account required).
-        </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button type="button" className="btn-primary btn-small clickable" disabled={backupLoading} onClick={() => void handleLocalDownload()}>
-            Download backup (.json)
-          </button>
-          <button type="button" className="btn-secondary btn-small clickable" disabled={backupLoading} onClick={() => fileInputRef.current?.click()}>
-            Upload snapshot
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleLocalUpload(f);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        {backupMessage && (
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: backupStatus === "error" ? "#b91c1c" : "var(--color-text-muted)" }}>
-            {backupMessage}
-          </p>
-        )}
-      </section>
-
+      <AccountPanel />
+      <ReadAloudSettings />
       <VoiceSettings />
       <InstallSettings />
     </div>

@@ -367,7 +367,7 @@ export default function HomeResourcesTab() {
                   }}
                 />
                 <button type="button" className="btn-primary clickable" onClick={() => handleAddCategory()}>
-                  + Add Category
+                  Add category
                 </button>
                 <button type="button" className="btn-secondary clickable" onClick={() => setShowAddCategory(false)}>
                   Cancel
@@ -386,7 +386,7 @@ export default function HomeResourcesTab() {
                           onClick={() => handleRemoveCategory(c.id)}
                           data-tip={`Delete ${c.label} category`}
                         >
-                          ×
+                          Delete
                         </button>
                       </span>
                     ))}
@@ -508,7 +508,7 @@ export default function HomeResourcesTab() {
                        />
                        <button
                          type="button"
-                         className="btn-icon clickable"
+                         className="btn-secondary btn-small clickable"
                          data-tip="Move up"
                          onClick={() => {
                            if (idx === 0) return;
@@ -517,11 +517,11 @@ export default function HomeResourcesTab() {
                            setListItems(updated);
                          }}
                        >
-                         ↑
+                         Up
                        </button>
                        <button
                          type="button"
-                         className="btn-icon clickable"
+                         className="btn-secondary btn-small clickable"
                          data-tip="Move down"
                          onClick={() => {
                            if (idx === listItems.length - 1) return;
@@ -530,15 +530,15 @@ export default function HomeResourcesTab() {
                            setListItems(updated);
                          }}
                        >
-                         ↓
+                         Down
                        </button>
                        <button
                          type="button"
-                         className="task-delete-btn"
+                         className="btn-secondary btn-small clickable"
                          data-tip="Delete this item"
                          onClick={() => setListItems(listItems.filter((_, i) => i !== idx))}
                        >
-                         ×
+                         Delete
                        </button>
                      </li>
                    ))}
@@ -599,7 +599,7 @@ export default function HomeResourcesTab() {
                       />
                       <button
                         type="button"
-                        className="task-delete-btn"
+                        className="btn-secondary btn-small clickable"
                         data-tip="Remove field"
                         onClick={() => {
                           const next = { ...customFields };
@@ -607,7 +607,7 @@ export default function HomeResourcesTab() {
                           setCustomFields(next);
                         }}
                       >
-                        ×
+                        Remove
                       </button>
                     </div>
                   ))}
@@ -828,11 +828,11 @@ export default function HomeResourcesTab() {
                         data-tip="Open project resources"
                         style={{ textDecoration: "none", color: "var(--color-accent-primary)" }}
                       >
-                        📁 {projectName}
+                        {projectName}
                       </Link>
                     ) : (
                       <span className="chip-small" style={{ background: "#fef3c7", color: "#92400e" }}>
-                        ⚡ Quick item
+                        Quick item
                       </span>
                     )}
                   </div>
@@ -864,7 +864,7 @@ export default function HomeResourcesTab() {
                              {item.title && <strong style={{ marginRight: 6 }}>{item.title}:</strong>}
                              {item.text}
                            </span>
-                           <CopyButton text={item.text} label="📋" copiedLabel="✓" tooltip="Copy item text" className="btn-icon btn-small clickable" />
+                           <CopyButton text={item.text} label="Copy" copiedLabel="Copied" tooltip="Copy item text" className="btn-secondary btn-small clickable" />
                          </li>
                        ))}
                      </ul>
@@ -922,31 +922,35 @@ export default function HomeResourcesTab() {
                 </span>
 
                  <button
-                   className="btn-icon clickable"
+                   type="button"
+                   className="btn-secondary btn-small clickable"
                    data-tip="Edit resource"
                    onClick={() => openEdit(r)}
                  >
                    Edit
                  </button>
                  <button
-                   className="btn-icon clickable"
+                   type="button"
+                   className="btn-secondary btn-small clickable"
                    data-tip="Copy resource title"
                    onClick={async () => { await copyToClipboard(r.title || ""); }}
                  >
-                   📋 Title
+                   Copy title
                  </button>
                  <button
-                   className="btn-icon clickable"
+                   type="button"
+                   className="btn-secondary btn-small clickable"
                    data-tip="Copy full resource text"
                    onClick={async () => {
                      const full = [r.title, r.body, r.url, ...(r.tags || [])].filter(Boolean).join("\n\n");
                      await copyToClipboard(full);
                    }}
                  >
-                   📋 Full
+                   Copy full
                  </button>
                  <button
-                   className="task-delete-btn"
+                   type="button"
+                   className="btn-secondary btn-small clickable"
                    data-tip="Delete resource"
                    onClick={async () => {
                      if (!(await confirmDelete({ kind: "resource", name: r.title }))) return;
@@ -954,7 +958,7 @@ export default function HomeResourcesTab() {
                      refresh();
                    }}
                  >
-                   ×
+                   Delete
                  </button>
               </li>
             );

@@ -81,7 +81,7 @@ export default function SelectionCopy() {
         setView(null);
       }}
     >
-      ⧉
+      Copy
     </button>
   );
 }

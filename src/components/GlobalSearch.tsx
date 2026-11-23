@@ -2,14 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { globalSearch, type SearchResult } from "../search/search";
 
-const TYPE_ICON: Record<SearchResult["type"], string> = {
-  folder: "[",
-  file: "\u00f6", // file glyph
-  taskList: "*",
+const TYPE_LABEL: Record<SearchResult["type"], string> = {
+  folder: "Folder",
+  file: "Item",
+  taskList: "Task list",
 };
 
-export default function GlobalSearch() {
-  const [open, setOpen] = useState(false);
+interface Props {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Props = {}) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next);
+    else setUncontrolledOpen(next);
+  };
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -17,15 +28,19 @@ export default function GlobalSearch() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // Standalone mode (if mounted without AppShell): still toggle on Ctrl/Cmd+K.
+      if (controlledOpen === undefined && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((o) => !o);
+        setUncontrolledOpen((o) => !o);
       }
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape" && open) {
+        if (onOpenChange) onOpenChange(false);
+        else setUncontrolledOpen(false);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [controlledOpen, onOpenChange, open]);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 0);
@@ -51,13 +66,14 @@ export default function GlobalSearch() {
   return (
     <>
       <button
+        type="button"
         className="global-search-trigger clickable"
         data-tip="Search folders, files and task lists"
         data-tip-pos="bottom"
         onClick={() => setOpen(true)}
       >
-        <span>[ Search ]</span>
-        <kbd>Ctrl K</kbd>
+        <span>Search</span>
+        <kbd>Ctrl+K</kbd>
       </button>
 
       {open && (
@@ -77,8 +93,8 @@ export default function GlobalSearch() {
                 <p className="empty-state">No matches.</p>
               ) : (
                 results.map((r) => (
-                  <button key={r.key} className="search-card clickable" onClick={() => goTo(r)}>
-                    <span className="search-card-icon">{TYPE_ICON[r.type]}</span>
+                  <button key={r.key} type="button" className="search-card clickable" onClick={() => goTo(r)}>
+                    <span className="search-card-icon">{TYPE_LABEL[r.type]}</span>
                     <span className="search-card-body">
                       <span className="search-card-title">{r.title}</span>
                       <span className="search-card-sub">{r.subtitle}</span>

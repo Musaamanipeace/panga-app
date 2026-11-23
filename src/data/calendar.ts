@@ -1,7 +1,6 @@
 // src/data/calendar.ts
 import { db, type CalendarEvent, type CalendarEventSource } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { CalendarEvent, CalendarEventSource };
 
@@ -54,7 +53,6 @@ export async function createLocalEvent(input: {
     syncStatus: "pending",
   };
   await db.calendarEvents.add(event);
-  void syncPushRecord("calendar_events", event);
   return event;
 }
 
@@ -93,9 +91,6 @@ export async function importCalendarEvents(events: CalendarEventLike[]): Promise
     });
   }
   await db.calendarEvents.bulkPut(local);
-  for (const ev of local) {
-    void syncPushRecord("calendar_events", ev);
-  }
   return local.length;
 }
 
@@ -104,21 +99,14 @@ export async function updateCalendarEvent(
   changes: Partial<Pick<CalendarEvent, "title" | "description" | "startAt" | "endAt" | "hangoutLink">>
 ): Promise<void> {
   await db.calendarEvents.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
-  const updated = await db.calendarEvents.get(id);
-  if (updated) void syncPushRecord("calendar_events", updated);
 }
 
 export async function deleteCalendarEvent(id: string): Promise<void> {
   await db.calendarEvents.delete(id);
-  void syncDeleteRecord("calendar_events", id);
 }
 
 export async function deleteEventsForProject(projectId: string): Promise<void> {
-  const rows = await db.calendarEvents.where("projectId").equals(projectId).toArray();
   await db.calendarEvents.where("projectId").equals(projectId).delete();
-  for (const row of rows) {
-    void syncDeleteRecord("calendar_events", row.id);
-  }
 }
 
 export async function pruneMissingImportedEvents(seenIds: Set<string>): Promise<void> {
@@ -126,9 +114,6 @@ export async function pruneMissingImportedEvents(seenIds: Set<string>): Promise<
   const toDelete = imported.filter((e) => !seenIds.has(e.id)).map((e) => e.id);
   if (toDelete.length) {
     await db.calendarEvents.bulkDelete(toDelete);
-    for (const id of toDelete) {
-      void syncDeleteRecord("calendar_events", id);
-    }
   }
 }
 

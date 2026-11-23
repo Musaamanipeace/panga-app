@@ -1,6 +1,5 @@
 // src/data/settings.ts
 import { db, SETTINGS_KEYS } from "./db";
-import { syncPushSetting } from "../sync/sync";
 
 export { SETTINGS_KEYS };
 
@@ -18,7 +17,6 @@ export async function setSetting(key: keyof typeof SETTINGS_KEYS | string, value
   if (!db.isOpen()) await db.open();
   const dbKey = (SETTINGS_KEYS as any)[key] || key;
   await db.settings.put({ key: dbKey, value });
-  void syncPushSetting(dbKey, value);
 }
 
 // ---------------------------------------------------------------------------

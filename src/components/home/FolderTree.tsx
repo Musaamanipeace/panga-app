@@ -166,11 +166,12 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           {onItemAction && (
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); onItemAction(it); }}
-              style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", marginLeft: "auto" }}
+              style={{ marginLeft: "auto" }}
               data-tip="Open item"
             >
-              →
+              Open
             </button>
           )}
         </div>
@@ -202,15 +203,15 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     const hasKids = kids.length > 0;
     return (
       <li key={id} style={{ paddingLeft: depth * 18, marginBottom: 2 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           {hasKids && (
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={() => toggleFolder(id)}
-              style={{ background: "none", border: "none", padding: 0, fontSize: "12px", cursor: "pointer" }}
-              data-tip={isOpen ? "Collapse" : "Expand"}
+              data-tip={isOpen ? "Hide subfolders" : "Show subfolders"}
             >
-              {isOpen ? "▾" : "▸"}
+              {isOpen ? "Hide" : "Show"}
             </button>
           )}
           <button
@@ -224,7 +225,8 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
               fontSize: "13px",
               color: "inherit",
               cursor: "pointer",
-              width: "100%",
+              flex: 1,
+              minWidth: 0,
               display: "flex",
               alignItems: "center",
               gap: 6,
@@ -255,27 +257,28 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             {renderFolderActions ? renderFolderActions(f, selected) : null}
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); setEditingId(id); setDraft(folderTitle(f)); }}
-              style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer" }}
               data-tip="Rename folder"
             >
-              ✎
+              Rename
             </button>
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); void onDeleteFolder(id); }}
-              style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer", color: "var(--color-accent-issue, #ef4444)" }}
+              style={{ color: "var(--color-accent-issue, #ef4444)" }}
               data-tip="Delete folder"
             >
-              ×
+              Delete
             </button>
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); setCreatingUnder(id); setSubTitle(""); }}
-              style={{ background: "none", border: "none", padding: 2, fontSize: "14px", cursor: "pointer" }}
               data-tip="Add subfolder"
             >
-              +
+              Subfolder
             </button>
           </span>
         </div>
@@ -288,10 +291,10 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
               placeholder={newFolderPlaceholder}
               style={{ padding: "2px 6px", fontSize: "12px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)", flex: 1, minWidth: 0 }}
             />
-            <button type="submit" style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }} disabled={!subTitle.trim()}>
-              +
+            <button type="submit" className="btn-secondary btn-small clickable" disabled={!subTitle.trim()}>
+              Add
             </button>
-            <button type="button" onClick={() => setCreatingUnder(null)} style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }}>✕</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setCreatingUnder(null)}>Cancel</button>
           </form>
         )}
         {isOpen && hasKids && (
@@ -344,34 +347,38 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             {kids.length > 0 && (
               <button
                 type="button"
+                className="btn-secondary btn-small clickable"
                 onClick={(e) => { e.stopPropagation(); toggleFolder(id); }}
-                data-tip={isOpen ? "Collapse" : "Expand"}
+                data-tip={isOpen ? "Hide subfolders" : "Show subfolders"}
               >
-                {isOpen ? "▾" : "▸"}
+                {isOpen ? "Hide" : "Show"}
               </button>
             )}
             {renderFolderActions ? renderFolderActions(f, selected) : null}
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); setEditingId(id); setDraft(folderTitle(f)); }}
               data-tip="Rename folder"
             >
-              ✎
+              Rename
             </button>
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); void onDeleteFolder(id); }}
               style={{ color: "var(--color-accent-issue, #ef4444)" }}
               data-tip="Delete folder"
             >
-              ×
+              Delete
             </button>
             <button
               type="button"
+              className="btn-secondary btn-small clickable"
               onClick={(e) => { e.stopPropagation(); setCreatingUnder(id); setSubTitle(""); }}
               data-tip="Add subfolder"
             >
-              +
+              Subfolder
             </button>
           </span>
         </div>
@@ -384,10 +391,10 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
               placeholder={newFolderPlaceholder}
               style={{ padding: "2px 6px", fontSize: "12px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)", flex: 1, minWidth: 0 }}
             />
-            <button type="submit" style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }} disabled={!subTitle.trim()}>
-              +
+            <button type="submit" className="btn-secondary btn-small clickable" disabled={!subTitle.trim()}>
+              Add
             </button>
-            <button type="button" onClick={() => setCreatingUnder(null)} style={{ padding: "2px 8px", fontSize: "12px", cursor: "pointer" }}>✕</button>
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setCreatingUnder(null)}>Cancel</button>
           </form>
         )}
         {isOpen && kids.length > 0 && (
@@ -410,8 +417,8 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             placeholder={newFolderPlaceholder}
             style={{ flex: 1, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
           />
-          <button type="submit" disabled={!newTitle.trim()} style={{ padding: "6px 10px", fontSize: "13px", cursor: "pointer" }}>
-            +
+          <button type="submit" className="btn-secondary btn-small clickable" disabled={!newTitle.trim()}>
+            Add
           </button>
         </form>
         {rootFolders.length === 0 && (
@@ -435,8 +442,8 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           placeholder={newFolderPlaceholder}
           style={{ flex: 1, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
         />
-        <button type="submit" disabled={!newTitle.trim()} style={{ padding: "6px 10px", fontSize: "13px", cursor: "pointer" }}>
-          +
+        <button type="submit" className="btn-secondary btn-small clickable" disabled={!newTitle.trim()}>
+          Add
         </button>
       </form>
       {rootFolders.length === 0 && (

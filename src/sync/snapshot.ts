@@ -1,14 +1,23 @@
 // src/sync/snapshot.ts
-// Local-first snapshot export/import. Serializes the IndexedDB contents to a
-// versioned JSON structure for backup and restore. A snapshot also carries
-// enough identity to put the user straight back into their own workspace.
+// Local-first JSON snapshot export/import. Serializes the IndexedDB contents
+// to an unencrypted, versioned JSON file for backup and restore, carrying the
+// JSON account username and workspace identity.
 
 import { db, exportDbState, importDbState, hasLocalData } from "../data/db";
-import { getSessionEmail, getSessionUserId, isGuest, resetGuestSession, clearSupabaseAuthStorage, setSession } from "../auth/session";
-import { getSupabaseConfig } from "../data/supabase";
-import { getSupabaseSessionSnapshot, restoreSupabaseSession } from "./supabaseSync";
+import { getSetting, setSetting } from "../data/settings";
+import {
+  getSessionEmail,
+  getSessionUserId,
+  getSessionUsername,
+  isGuest,
+  resetGuestSession,
+  setGuestMode,
+  setSession,
+  setSessionUsername,
+} from "../auth/session";
 
 export const SNAPSHOT_VERSION = "1.0";
+export const JSON_USERNAME_SETTING_KEY = "jsonAccountUsername";
 
 export interface SnapshotMetadata {
   version: string;
@@ -18,12 +27,10 @@ export interface SnapshotMetadata {
 }
 
 export interface SnapshotIdentity {
-  /** Supabase user id for a signed-in export, or the guest id otherwise. */
   userId: string;
   username: string;
   email: string;
   loggedIn: boolean;
-  supabase?: { url: string; anonKey: string; session?: unknown } | null;
 }
 
 export interface Snapshot {
@@ -48,18 +55,32 @@ export function validateSnapshot(obj: unknown): Snapshot | null {
   return root as Snapshot;
 }
 
+/** Get the saved JSON account username (from settings or session). */
+export async function getJsonAccountUsername(): Promise<string> {
+  const fromSetting = await getSetting<string>(JSON_USERNAME_SETTING_KEY);
+  if (typeof fromSetting === "string" && fromSetting.trim()) return fromSetting.trim();
+  return getSessionUsername();
+}
+
+/** Save the JSON account username in both local settings and session storage. */
+export async function setJsonAccountUsername(username: string): Promise<string> {
+  const clean = username.trim();
+  await setSetting(JSON_USERNAME_SETTING_KEY, clean);
+  setSessionUsername(clean);
+  return clean;
+}
+
 /**
- * Export the whole local database plus the current identity and, when signed
- * in, the Supabase session. Credentials travel with the file on purpose: the
- * snapshot is meant to be a complete restore, not a redacted data dump.
+ * Export the whole local database plus the JSON account identity.
+ * No encryption or password is applied.
  */
 export async function exportSnapshot(): Promise<Snapshot> {
   const data = await exportDbState({ includeSecrets: true });
   const userId = getSessionUserId();
   const email = getSessionEmail() ?? "guest@local";
   const guest = isGuest();
-  const cfg = await getSupabaseConfig();
-  const session = guest ? null : await getSupabaseSessionSnapshot();
+  const savedUsername = await getJsonAccountUsername();
+  const username = savedUsername || (guest ? "guest" : email.split("@")[0]);
   return {
     metadata: {
       version: SNAPSHOT_VERSION,
@@ -69,39 +90,38 @@ export async function exportSnapshot(): Promise<Snapshot> {
     },
     identity: {
       userId: userId ?? "guest@local",
-      username: guest ? "guest" : email.split("@")[0],
+      username,
       email,
       loggedIn: !guest && !!userId,
-      supabase: cfg ? { url: cfg.url, anonKey: cfg.anonKey, session } : null,
     },
     data,
   };
 }
 
 /**
- * Import a snapshot. Identity is restored BEFORE the data so records land in
- * the right user's isolated database. A signed-in snapshot also restores the
- * Supabase session, making the import equivalent to logging in.
+ * Import a JSON snapshot. Restores the workspace identity and JSON account
+ * username before loading the records into IndexedDB.
  */
 export async function importSnapshot(snapshot: Snapshot): Promise<void> {
   const identity = snapshot.identity;
-  clearSupabaseAuthStorage();
 
   if (identity?.loggedIn && identity.userId) {
-    await setSession(identity.userId, identity.email);
-    if (identity.supabase) {
-      await restoreSupabaseSession(identity.supabase.session, identity.supabase.url);
-    }
+    await setSession(identity.userId, identity.email || `${identity.username || "user"}@local`, identity.username || "");
   } else {
     await resetGuestSession();
-    // Keep the configured Supabase project even for a guest snapshot so the
-    // user can sign in without re-entering the URL and key.
-    if (identity?.supabase) {
-      await restoreSupabaseSession(identity.supabase.session, identity.supabase.url);
-    }
+    await setGuestMode();
   }
 
   await importDbState(snapshot.data, { includeSecrets: true });
+
+  // Restore JSON account username from identity or settings row
+  const fromIdentity = identity?.username && identity.username !== "guest" ? identity.username.trim() : "";
+  const settingsRows = Array.isArray(snapshot.data.settings) ? snapshot.data.settings : [];
+  const fromSettings = settingsRows.find((r: any) => r?.key === JSON_USERNAME_SETTING_KEY)?.value;
+  const restoredUsername = (typeof fromSettings === "string" && fromSettings.trim()) || fromIdentity;
+  if (restoredUsername) {
+    await setJsonAccountUsername(restoredUsername);
+  }
 }
 
 /** Trigger a browser download of the snapshot as a .json file. */
@@ -142,11 +162,7 @@ export async function readSnapshotFile(file: File): Promise<Snapshot> {
   });
 }
 
-/**
- * Quick check whether any user data exists in IndexedDB.
- * Used on the Landing page to decide whether to show the
- * "Quick Upload / Restore Snapshot" dropzone.
- */
+/** Quick check whether any user data exists in IndexedDB. */
 export async function hasAnyData(): Promise<boolean> {
   return hasLocalData();
 }

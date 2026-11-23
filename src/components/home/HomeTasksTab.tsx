@@ -125,7 +125,7 @@ export default function HomeTasksTab() {
           data-tip="Quick add a new task from here"
           data-tip-pos="bottom"
         >
-          + Add
+          Add task
         </button>
         {quickAdd ? (
           <form className="quick-add-bar" onSubmit={handleQuickAdd}>
@@ -149,16 +149,16 @@ export default function HomeTasksTab() {
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            <button type="submit" className="btn-action clickable" data-tip="Add task">
-              +
+            <button type="submit" className="btn-primary btn-small clickable" data-tip="Add task">
+              Add
             </button>
             <button
               type="button"
-              className="btn-secondary btn-small"
+              className="btn-secondary btn-small clickable"
               onClick={() => setQuickAdd(false)}
               data-tip="Cancel"
             >
-              ✕
+              Cancel
             </button>
           </form>
         ) : (
@@ -182,7 +182,7 @@ export default function HomeTasksTab() {
         <>
           {filtered.length === 0 ? (
             <p className="empty-state">
-              Nothing matches this filter. Click + Add to create a task from here.
+              Nothing matches this filter. Click Add task to create a task from here.
             </p>
           ) : (
             <ul className="item-list">
@@ -220,7 +220,7 @@ function TaskRow({
         data-tip={`Status: ${task.status}. Click to cycle (active → completed → inactive).`}
         onClick={() => onToggle(task)}
       >
-        {task.status === "completed" ? "✓ Done" : task.status === "inactive" ? "— Parked" : "○ Active"}
+        {task.status === "completed" ? "Done" : task.status === "inactive" ? "Parked" : "Active"}
       </button>
       <span className="item-body">
         <span className="item-title">{task.title}</span>
@@ -243,7 +243,7 @@ function TaskRow({
       <span className="item-actions">
         <Link
           to={`/project/${task.projectId}?tab=Tasks`}
-          className="btn-icon"
+          className="btn-secondary btn-small clickable"
           data-tip="Open this task in its project"
           data-tip-edge="left"
         >
@@ -251,11 +251,11 @@ function TaskRow({
         </Link>
         <button
           type="button"
-          className="btn-icon clickable"
+          className="btn-secondary btn-small clickable"
           data-tip="Copy task title to clipboard"
           onClick={async () => { await copyToClipboard(task.title); }}
         >
-          📋
+          Copy
         </button>
       </span>
     </li>

@@ -14,6 +14,7 @@ import {
   type LinkFolder,
 } from "../../data/linkFolders";
 import { copyToClipboard, confirmDelete } from "../../components/ui";
+import { ProofreadTrigger } from "../../components/Proofread";
 import FolderTree from "./FolderTree";
 
 export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: string | null }) {
@@ -170,7 +171,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
       <aside className="link-folders-sidebar" style={sx.sidebar}>
         <div style={sx.sidebarHeader}>
           <h2 style={sx.sidebarTitle}>Link folders</h2>
-          <button type="button" className="btn-icon clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder">+</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder">New</button>
         </div>
         <FolderTree
           foldersAsGrid
@@ -207,7 +208,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
             onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }}
             data-tip="Add a link"
           >
-            + Add link
+            Add link
           </button>
         </header>
 
@@ -261,6 +262,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
             </div>
             {error && <p className="form-error">{error}</p>}
             <div style={sx.addFormActions}>
+              <ProofreadTrigger value={notes} onApply={setNotes} />
               <button type="button" className="btn-secondary clickable" onClick={() => { setShowAddForm(false); setEditingId(null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }} disabled={saving}>
                 Cancel
               </button>
@@ -275,7 +277,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
           <div className="empty-state" style={sx.emptyLinks}>
             <p>No links in {currentFolder?.title ? `“${currentFolder.title}”` : "this folder"}.</p>
             <button type="button" className="btn-primary btn-small clickable" onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }}>
-              + Add your first link
+              Add your first link
             </button>
           </div>
         ) : (
@@ -292,13 +294,13 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
                       className="clickable"
                       data-tip="Open link"
                     >
-                      {link.title || link.url} ↗
+                      {link.title || link.url}
                     </a>
                   </div>
                   <div style={sx.linkActions}>
                     <button type="button" className="btn-secondary btn-small clickable" onClick={() => copyToClipboard(link.url)} data-tip="Copy link URL">Copy</button>
                     <button type="button" className="btn-secondary btn-small clickable" onClick={() => startEdit(link)} data-tip="Edit link">Edit</button>
-                    <button type="button" className="btn-icon clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" style={{ color: "var(--color-accent-issue)" }}>×</button>
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" style={{ color: "var(--color-accent-issue)" }}>Delete</button>
                   </div>
                 </div>
                 {link.url && (

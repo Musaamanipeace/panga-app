@@ -133,22 +133,22 @@ export default function TasksPanel() {
               {t.status !== "completed" && (
                 <button
                   type="button"
-                  className="btn-secondary btn-small"
+                  className="btn-secondary btn-small clickable"
                   title={t.status === "active" ? "Park (make inactive)" : "Make active"}
                   onClick={() => void act(() => setTaskStatus(t.id, t.status === "active" ? "inactive" : "active"))}
                 >
-                  {t.status === "active" ? "⏸" : "▶"}
+                  {t.status === "active" ? "Park" : "Activate"}
                 </button>
               )}
               <button
                 type="button"
-                className="btn-icon"
+                className="btn-secondary btn-small clickable"
                 aria-label="Delete task"
                 onClick={async () => {
                   if (await confirmDelete({ kind: "task", name: t.title })) await act(() => deleteTask(t.id));
                 }}
               >
-                ×
+                Delete
               </button>
             </li>
           ))}

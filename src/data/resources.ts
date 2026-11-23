@@ -1,7 +1,6 @@
 // src/data/resources.ts
 import { db, type Resource, type ResourceCategory, type ResourceImage, type ResourceFile, type ResourceProvider, type ResourceListItem } from "./db";
 import { newId, now } from "./utils";
-import { syncPushRecord, syncDeleteRecord } from "../sync/sync";
 
 export type { Resource, ResourceCategory, ResourceImage, ResourceFile, ResourceProvider, ResourceListItem };
 
@@ -17,18 +16,18 @@ export interface ResourceCategoryMeta {
 }
 
 export const PRELOADED_CATEGORIES: ResourceCategoryMeta[] = [
-  { id: "documents", label: "Documents", baseFormat: "note", description: "Project documentation, specs & READMEs", icon: "📄" },
-  { id: "clipboard", label: "Clipboard", baseFormat: "note", description: "Things you pasted or copied inside Panga", icon: "📎" },
-  { id: "notes", label: "Notes", baseFormat: "note", description: "Quick thoughts, memos & references", icon: "📝" },
-  { id: "links", label: "Links (URLs)", baseFormat: "url", description: "Web bookmarks & URL links", icon: "🔗" },
-  { id: "lists", label: "Lists", baseFormat: "list", description: "Itemized list with copy button on every element", icon: "📋" },
-  { id: "checklists", label: "Checklists", baseFormat: "checklist", description: "Actionable checklist with checkboxes", icon: "☑️" },
-  { id: "tasks", label: "Tasks", baseFormat: "checklist", description: "Task lists & actionable todos", icon: "📋" },
-  { id: "milestones", label: "Milestones", baseFormat: "checklist", description: "Phase checkpoints & milestones", icon: "🏁" },
-  { id: "issues", label: "Issues", baseFormat: "note", description: "Bugs, setbacks & blocker logs", icon: "⚠️" },
-  { id: "insights", label: "Insights", baseFormat: "note", description: "Analysis findings & research takeaways", icon: "💡" },
-  { id: "prompts", label: "Prompts", baseFormat: "note", description: "AI prompts & reusable templates", icon: "✨" },
-  { id: "scripts", label: "Scripts", baseFormat: "note", description: "Code scripts, SQL & CLI snippets", icon: "💻" },
+  { id: "documents", label: "Documents", baseFormat: "note", description: "Project documentation, specs & READMEs", icon: "" },
+  { id: "clipboard", label: "Clipboard", baseFormat: "note", description: "Things you pasted or copied inside Panga", icon: "" },
+  { id: "notes", label: "Notes", baseFormat: "note", description: "Quick thoughts, memos & references", icon: "" },
+  { id: "links", label: "Links (URLs)", baseFormat: "url", description: "Web bookmarks & URL links", icon: "" },
+  { id: "lists", label: "Lists", baseFormat: "list", description: "Itemized list with copy button on every element", icon: "" },
+  { id: "checklists", label: "Checklists", baseFormat: "checklist", description: "Actionable checklist with checkboxes", icon: "" },
+  { id: "tasks", label: "Tasks", baseFormat: "checklist", description: "Task lists & actionable todos", icon: "" },
+  { id: "milestones", label: "Milestones", baseFormat: "checklist", description: "Phase checkpoints & milestones", icon: "" },
+  { id: "issues", label: "Issues", baseFormat: "note", description: "Bugs, setbacks & blocker logs", icon: "" },
+  { id: "insights", label: "Insights", baseFormat: "note", description: "Analysis findings & research takeaways", icon: "" },
+  { id: "prompts", label: "Prompts", baseFormat: "note", description: "AI prompts & reusable templates", icon: "" },
+  { id: "scripts", label: "Scripts", baseFormat: "note", description: "Code scripts, SQL & CLI snippets", icon: "" },
 ];
 
 export async function getCustomCategories(): Promise<ResourceCategoryMeta[]> {
@@ -51,7 +50,7 @@ export async function addCustomCategory(cat: { label: string; baseFormat: BaseRe
     label: cat.label.trim(),
     baseFormat: cat.baseFormat,
     description: cat.description || `Custom ${cat.baseFormat} resource category`,
-    icon: cat.baseFormat === "checklist" ? "☑️" : cat.baseFormat === "url" ? "🔗" : "📁",
+    icon: "",
     isCustom: true,
   };
   const updated = [...existing.filter((c) => c.id !== id), newCat];
@@ -137,7 +136,6 @@ export async function createResource(input: CreateResourceInput): Promise<Resour
     syncStatus: "pending",
   };
   await db.resources.add(resource);
-  void syncPushRecord("resources", resource);
   return resource;
 }
 
@@ -153,23 +151,16 @@ export async function updateResource(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.resources.update(id, { ...changes, updatedAt, syncStatus: "pending" });
-  const updated = await db.resources.get(id);
-  if (updated) void syncPushRecord("resources", updated);
 }
 
 export async function deleteResource(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.resources.delete(id);
-  void syncDeleteRecord("resources", id);
 }
 
 export async function deleteResourcesForProject(projectId: string): Promise<void> {
   if (!db.isOpen()) await db.open();
-  const rows = await db.resources.where("projectId").equals(projectId).toArray();
   await db.resources.where("projectId").equals(projectId).delete();
-  for (const row of rows) {
-    void syncDeleteRecord("resources", row.id);
-  }
 }
 
 /** "Title: text" when the item has a title, otherwise just the text (used in whole-resource exports). */

@@ -281,13 +281,13 @@ export default function QuickAddResourceModal({
       >
         <header className="drawer-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>⚡ Quick Add Resource</h2>
+            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Quick Add Resource</h2>
             <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "var(--color-text-muted)" }}>
               Save any note, link, list, task, event or issue and peg it to a project
             </p>
           </div>
-          <button type="button" className="btn-icon clickable" onClick={onClose} aria-label="Close">
-            ✕
+          <button type="button" className="btn-secondary btn-small clickable" onClick={onClose} aria-label="Close">
+            Close
           </button>
         </header>
 
@@ -299,14 +299,14 @@ export default function QuickAddResourceModal({
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 6 }}>
               {[
-                { id: "note", label: "📝 Note", desc: "Markdown / text" },
-                { id: "link", label: "🔗 Link", desc: "Web URL bookmark" },
-                { id: "list", label: "☑️ List", desc: "Checklist items" },
-                { id: "task", label: "📋 Task", desc: "Actionable todo" },
-                { id: "event", label: "📅 Event", desc: "Calendar item" },
-                { id: "milestone", label: "🎯 Milestone", desc: "Project goal" },
-                { id: "issue", label: "⚠️ Issue", desc: "Bug or blocker" },
-                { id: "custom", label: "✨ Custom", desc: "Custom tab" },
+                { id: "note", label: "Note", desc: "Markdown / text" },
+                { id: "link", label: "Link", desc: "Web URL bookmark" },
+                { id: "list", label: "List", desc: "Checklist items" },
+                { id: "task", label: "Task", desc: "Actionable todo" },
+                { id: "event", label: "Event", desc: "Calendar item" },
+                { id: "milestone", label: "Milestone", desc: "Project goal" },
+                { id: "issue", label: "Issue", desc: "Bug or blocker" },
+                { id: "custom", label: "Custom", desc: "Custom tab" },
               ].map((t) => (
                 <button
                   key={t.id}
@@ -346,10 +346,10 @@ export default function QuickAddResourceModal({
                 fontSize: "0.9rem",
               }}
             >
-              <option value="">🌐 General / Global (Not tied to any project)</option>
+              <option value="">General / Global (Not tied to any project)</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  📁 {p.name}
+                  {p.name}
                 </option>
               ))}
             </select>
@@ -458,7 +458,7 @@ export default function QuickAddResourceModal({
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Checklist Items</label>
                 <button type="button" className="btn-secondary btn-small clickable" onClick={handleAddListItem}>
-                  + Add Item
+                  Add item
                 </button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
@@ -484,12 +484,12 @@ export default function QuickAddResourceModal({
                     {listItems.length > 1 && (
                       <button
                         type="button"
-                        className="btn-icon clickable"
+                        className="btn-secondary btn-small clickable"
                         onClick={() => handleRemoveListItem(item.id)}
                         style={{ color: "#ef4444" }}
                         title="Remove"
                       >
-                        ✕
+                        Remove
                       </button>
                     )}
                   </div>

@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 5173;
+const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 
 app.use(express.json({ limit: "10mb" }));
@@ -15,11 +15,10 @@ app.use(express.json({ limit: "10mb" }));
 // Basic security headers
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.supabase.co wss://*.supabase.co https://openrouter.ai https://api.openai.com https://api.anthropic.com https://api.x.ai https://generativelanguage.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; frame-ancestors 'none'; worker-src 'self'; manifest-src 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://openrouter.ai https://api.openai.com https://api.anthropic.com https://api.x.ai https://generativelanguage.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; object-src 'none'; worker-src 'self'; manifest-src 'self';"
   );
   next();
 });

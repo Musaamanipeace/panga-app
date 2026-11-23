@@ -350,7 +350,7 @@ ${milestoneList || "None"}
         aria-controls="assistant-panel"
         data-tip="Open the AI Assistant agent"
       >
-        AI
+        ✨ AI
       </button>
 
       {open && (
@@ -368,15 +368,15 @@ ${milestoneList || "None"}
               <div className="btn-row">
                 <button
                   type="button"
-                  className="btn-icon clickable"
+                  className="btn-secondary btn-small clickable"
                   onClick={startNew}
                   data-tip="Start a new conversation"
                 >
-                  +
+                  New
                 </button>
                 <button
                   type="button"
-                  className="btn-icon clickable"
+                  className="btn-secondary btn-small clickable"
                   onClick={() => setOpen(false)}
                   data-tip="Close the assistant"
                 >
@@ -547,7 +547,7 @@ function ConversationList({
   if (conversations.length === 0) {
     return (
       <div className="empty-state" style={{ textAlign: "center", padding: 24 }}>
-        No conversations yet. Click + to start one.
+        No conversations yet. Click New to start one.
       </div>
     );
   }
@@ -566,7 +566,7 @@ function ConversationList({
           </button>
           <button
             type="button"
-            className="btn-icon btn-icon-danger clickable"
+            className="btn-secondary btn-small clickable"
             onClick={(e) => {
               e.stopPropagation();
               onDelete(c.id);
@@ -574,7 +574,7 @@ function ConversationList({
             data-tip="Delete this conversation"
             data-tip-edge="left"
           >
-            Del
+            Delete
           </button>
         </li>
       ))}
