@@ -83,7 +83,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
   }
 
   async function handleRenameFolder(id: string, title: string) {
-    await updateLinkFolder(id, { title: title.trim(), parentFolderId: selType === "folder" ? selId : null });
+    await updateLinkFolder(id, { title: title.trim() });
     await reload();
   }
 

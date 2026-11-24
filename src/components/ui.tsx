@@ -504,9 +504,9 @@ export function CopyButton({
 
 /* -------------------------------------------------------------------------
    Confirm dialog — replaces the browser's native confirm()/alert popups.
-   Same look as the "Delete Project?" modal. Usage:
+   Usage:
 
-     if (!(await confirmDelete({ kind: "resource", name: r.title }))) return;
+     if (!(await confirmDelete({ kind: "note", name: n.title }))) return;
      if (!(await confirmAction({ title: "Replace data?", message: "…", confirmLabel: "Replace" }))) return;
 ------------------------------------------------------------------------- */
 

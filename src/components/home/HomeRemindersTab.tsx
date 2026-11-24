@@ -218,7 +218,7 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
   }
 
   async function handleRenameFolder(id: string, title: string) {
-    await updateReminderFolder(id, { title: title.trim(), parentFolderId: selType === "folder" ? selId : null });
+    await updateReminderFolder(id, { title: title.trim() });
     await reload();
   }
 

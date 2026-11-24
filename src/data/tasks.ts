@@ -1,9 +1,9 @@
 // src/data/tasks.ts
-import { db, type Task, type TaskStatus, type TaskHorizon, type SyncStatus } from "./db";
+import { db, type Task, type TaskStatus, type SyncStatus } from "./db";
 import { newId, now } from "./utils";
 import { logActivity } from "./activity";
 
-export type { Task, TaskStatus, TaskHorizon };
+export type { Task, TaskStatus };
 
 export interface TaskNode {
   task: Task;
@@ -38,13 +38,6 @@ export async function createTask(input: {
   dueDate?: number | null;
   tags?: string[];
   order?: number;
-  // Legacy project-model fields (not written by the primary UX, kept for
-  // backward compatibility during the transition).
-  projectId?: string | null;
-  executor?: "ai" | "manual";
-  scheduledAt?: number | null;
-  estimatedMinutes?: number | null;
-  horizon?: TaskHorizon;
 }): Promise<Task> {
   if (!db.isOpen()) await db.open();
   const t = now();
@@ -68,11 +61,6 @@ export async function createTask(input: {
     createdAt: t,
     updatedAt: t,
     syncStatus: "pending",
-    projectId: input.projectId ?? null,
-    executor: input.executor ?? "manual",
-    scheduledAt: input.scheduledAt ?? null,
-    estimatedMinutes: input.estimatedMinutes ?? null,
-    horizon: input.horizon ?? "short",
   };
   await db.tasks.add(task);
   void logActivity({ entityType: "task", entityId: task.id, action: "created", description: `Created task "${task.title}"` });
@@ -87,12 +75,7 @@ export async function addSubtask(parentId: string, title: string): Promise<Task>
 
 export async function updateTask(
   id: string,
-  changes: Partial<
-    Pick<
-      Task,
-      "title" | "notes" | "status" | "completed" | "dueDate" | "tags" | "projectId" | "executor" | "scheduledAt" | "estimatedMinutes" | "horizon"
-    >
-  >
+  changes: Partial<Pick<Task, "title" | "notes" | "status" | "completed" | "dueDate" | "tags">>
 ): Promise<void> {
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
@@ -177,28 +160,6 @@ export async function listAllTasks(): Promise<Task[]> {
 export async function listAllActiveTasks(): Promise<Task[]> {
   if (!db.isOpen()) await db.open();
   return db.tasks.filter((t) => !t.completed).toArray();
-}
-
-// ---------- Legacy compatibility wrappers (project-based UI, retired) ----------
-// Kept so legacy consumers (ProjectView, Dashboard, HomeTasksTab) still compile
-// while those screens are retired from the primary UX.
-
-export async function listTasksForProject(projectId: string): Promise<Task[]> {
-  if (!db.isOpen()) await db.open();
-  return db.tasks.where("projectId").equals(projectId).toArray();
-}
-
-export async function listScheduledTasks(): Promise<Task[]> {
-  if (!db.isOpen()) await db.open();
-  return db.tasks.where("scheduledAt").above(0).sortBy("scheduledAt");
-}
-
-export async function setTaskStatus(id: string, status: TaskStatus): Promise<void> {
-  await updateTask(id, { status });
-}
-
-export function isOverdue(task: Task): boolean {
-  return !task.completed && task.dueDate !== null && task.dueDate < Date.now();
 }
 
 export async function restoreTask(task: Task): Promise<void> {

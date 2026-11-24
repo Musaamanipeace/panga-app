@@ -9,15 +9,12 @@ import {
   pruneExpiredConversations,
   type Message,
 } from "../data/conversations";
-import { chatCompletion, type ChatMessage } from "../ai/chat";
+import { type ChatMessage } from "../ai/chat";
 import {
-  buildAgentSystemInstruction,
   executeAgentAction,
-  executeReadCalls,
-  executeUiCalls,
   isDestructiveAction,
   notifyWorkspaceUpdated,
-  parseAgentReply,
+  runAgentTurn,
   type AgentAction,
 } from "../ai/agent";
 import { newId } from "../data/utils";
@@ -34,8 +31,6 @@ interface UndoEntry {
   summary: string;
   undo: () => Promise<void>;
 }
-
-const MAX_READ_STEPS = 4;
 
 export default function AssistantPanel() {
   const [open, setOpen] = useState(false);
@@ -107,49 +102,19 @@ export default function AssistantPanel() {
     try {
       const allMsgs = await listMessages(convId);
       const currentRoute = `${location.pathname}${location.search}`;
-      const systemInstruction = await buildAgentSystemInstruction(currentRoute);
-
       const workingMessages: ChatMessage[] = allMsgs.map((m) => ({
         role: m.role === "user" ? "user" : "assistant",
         content: m.text,
       }));
 
-      let finalCleanText = "";
-      let pendingActions: AgentAction[] = [];
-      let uiSummaries: string[] = [];
+      const turn = await runAgentTurn(workingMessages, currentRoute, navigate);
 
-      for (let step = 0; step <= MAX_READ_STEPS; step++) {
-        const result = await chatCompletion(workingMessages, { system: systemInstruction });
-        const reply = result.text;
-        if (!reply) throw new Error("Empty response received from the assistant.");
-
-        const parsed = parseAgentReply(reply);
-
-        if (parsed.clarify) {
-          setClarifying(parsed.clarify);
-          return;
-        }
-
-        if (parsed.uiCalls.length > 0) {
-          uiSummaries = [...uiSummaries, ...executeUiCalls(parsed.uiCalls, navigate)];
-        }
-
-        if (parsed.reads.length > 0 && step < MAX_READ_STEPS) {
-          const toolResults = await executeReadCalls(parsed.reads);
-          workingMessages.push({ role: "assistant", content: reply });
-          workingMessages.push({
-            role: "user",
-            content: `[Tool results]\n${toolResults}\n\nNow continue answering the user's request or propose ACTION: lines using the exact IDs above.`,
-          });
-          continue;
-        }
-
-        finalCleanText = parsed.cleanText;
-        pendingActions = parsed.actions;
-        break;
+      if (turn.clarify) {
+        setClarifying(turn.clarify);
+        return;
       }
 
-      const displayReply = [finalCleanText, uiSummaries.length ? `(${uiSummaries.join(" · ")})` : ""]
+      const displayReply = [turn.cleanText, turn.uiSummaries.length ? `(${turn.uiSummaries.join(" · ")})` : ""]
         .filter(Boolean)
         .join("\n\n");
 
@@ -158,8 +123,8 @@ export default function AssistantPanel() {
         messages.reload();
       }
 
-      if (pendingActions.length > 0) {
-        const queued: PendingApproval[] = pendingActions.map((act) => ({
+      if (turn.actions.length > 0) {
+        const queued: PendingApproval[] = turn.actions.map((act) => ({
           id: newId(),
           action: act,
           destructive: isDestructiveAction(act.type),
@@ -187,12 +152,12 @@ export default function AssistantPanel() {
     setClarifying(null);
   }
 
-  async function approveOne(id: string) {
+  async function approveOne(id: string): Promise<boolean> {
     const item = approvals.find((a) => a.id === id);
-    if (!item) return;
-    setApprovals((prev) => prev.filter((a) => a.id !== id));
+    if (!item) return false;
     try {
       const exec = await executeAgentAction(item.action);
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
       if (conversationId) {
         await addMessage(conversationId, "assistant", `Approved: ${exec.summary}`);
         messages.reload();
@@ -207,15 +172,18 @@ export default function AssistantPanel() {
       } else {
         showToast(exec.summary, "success");
       }
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed.");
+      return false;
     }
   }
 
   async function approveAllNonDestructive() {
     const safe = approvals.filter((a) => !a.destructive);
     for (const item of safe) {
-      await approveOne(item.id);
+      const ok = await approveOne(item.id);
+      if (!ok) break;
     }
   }
 

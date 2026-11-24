@@ -88,4 +88,37 @@ describe("Panga home (smoke)", () => {
     await settle(120);
     expect(host.textContent).toContain("copied snippet 123");
   });
+
+  it("displays task lists nested inside a folder and shows their tasks", async () => {
+    const { createTaskListFolder } = await import("../../data/taskListFolders");
+    const { createTaskList } = await import("../../data/taskLists");
+    const { createTask } = await import("../../data/tasks");
+
+    const folder = await createTaskListFolder({ title: "clean" });
+    const list = await createTaskList({ title: "compound", folderId: folder.id });
+    await createTask({ listId: list.id, title: "sweep" });
+    await createTask({ listId: list.id, title: "mop" });
+    await createTask({ listId: list.id, title: "dig" });
+
+    await mount("/home?tab=Task%20lists");
+    await settle(120);
+    expect(host.textContent).toContain("clean");
+
+    const folderCard = [...host.querySelectorAll(".folder-card")].find((el) => el.textContent?.includes("clean"));
+    await click(folderCard);
+    await settle(80);
+    expect(host.textContent).toContain("compound");
+
+    const showBtn = folderCard ? [...folderCard.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Show") : null;
+    await click(showBtn);
+    await settle(60);
+    expect(folderCard?.parentElement?.textContent).toContain("compound");
+
+    const listBtn = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "compound");
+    await click(listBtn);
+    await settle(80);
+    expect(host.textContent).toContain("sweep");
+    expect(host.textContent).toContain("mop");
+    expect(host.textContent).toContain("dig");
+  });
 });

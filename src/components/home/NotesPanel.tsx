@@ -86,7 +86,7 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
   }
 
   async function handleRenameFolder(id: string, title: string) {
-    await updateNoteFolder(id, { title: title.trim(), parentFolderId: selType === "folder" ? selId : null });
+    await updateNoteFolder(id, { title: title.trim() });
     await reload();
   }
 

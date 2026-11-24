@@ -168,6 +168,7 @@ export default function TaskListsHome({
         </form>
         <FolderTree
           foldersAsGrid
+          showItemsInGrid
           folders={folders}
           items={lists}
           folderId={(f) => f.id}
@@ -221,9 +222,72 @@ export default function TaskListsHome({
 
       <main className="task-list-main" style={sx.main}>
         {!list ? (
-          <div className="empty-state" style={sx.emptyState}>
-            {inFolder ? `Select a task list under “${folder?.title}” to see its tasks.` : "Select a task list to see its tasks."}
-          </div>
+          inFolder && folder ? (
+            <>
+              <header className="page-header" style={sx.header}>
+                <div>
+                  <h1 style={sx.headerTitle}>{folder.title}</h1>
+                </div>
+                <form onSubmit={handleAddList} style={sx.addTaskForm}>
+                  <input
+                    value={newListTitle}
+                    onChange={(e) => setNewListTitle(e.target.value)}
+                    placeholder={`New list in "${folder.title}"…`}
+                    style={sx.addTaskInput}
+                  />
+                  <button type="submit" className="btn-primary btn-small clickable" disabled={!newListTitle.trim()}>Add list</button>
+                </form>
+              </header>
+              {(() => {
+                const folderLists = lists.filter((l) => l.folderId === folder.id);
+                if (folderLists.length === 0) {
+                  return (
+                    <div className="empty-state" style={sx.emptyState}>
+                      No task lists in “{folder.title}” yet. Add one above.
+                    </div>
+                  );
+                }
+                return (
+                  <ul className="pg-list" style={{ padding: 16, margin: 0 }}>
+                    {folderLists.map((l) => (
+                      <li key={l.id} className="pg-row">
+                        <button
+                          type="button"
+                          className="pg-link pg-grow"
+                          onClick={() => { setSelType("taskList"); setSelId(l.id); }}
+                        >
+                          <strong>{l.title}</strong>
+                        </button>
+                        <span className="pg-muted">
+                          {counts[l.id]?.active ?? 0} active
+                          {(counts[l.id]?.completed ?? 0) > 0 ? ` · ${counts[l.id]?.completed ?? 0} done` : ""}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary btn-small clickable"
+                          onClick={() => setEditingList({ id: l.id, title: l.title })}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary btn-small clickable"
+                          onClick={() => void handleDeleteList(l.id)}
+                          style={{ color: "var(--color-accent-issue)" }}
+                        >
+                          Delete
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </>
+          ) : (
+            <div className="empty-state" style={sx.emptyState}>
+              Select a task list or folder to see its tasks.
+            </div>
+          )
         ) : (
           <>
             <header className="page-header" style={sx.header}>
@@ -279,15 +343,15 @@ export default function TaskListsHome({
     </div>
   );
 
-  function handleAddTask(e: React.FormEvent) {
+  async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();
     if (!list) return;
     const input = e.currentTarget.querySelector('input[name="task-title"]') as HTMLInputElement | null;
     const title = input?.value.trim();
     if (!title || !input) return;
-    void createTask({ listId: list.id, title });
+    await createTask({ listId: list.id, title });
     input.value = "";
-    void reload();
+    await reload();
   }
 
   function TaskTree({ listId, reloadFn }: { listId: string; reloadFn: () => void }) {

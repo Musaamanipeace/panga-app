@@ -57,6 +57,7 @@ function App() {
             <Route path="/home" element={<PangaHome />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
+          <Route path="*" element={<Navigate to={canUseApp() ? "/home" : "/"} replace />} />
         </Routes>
         <ToastContainer />
         <ConfirmDialogHost />

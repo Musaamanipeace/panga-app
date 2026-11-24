@@ -1,5 +1,5 @@
 // src/data/activity.ts
-// Activity log for tracking CRUD actions across projects, tasks, resources, and docs.
+// Activity log for tracking CRUD actions across task lists, tasks, links, notes, and reminders.
 import { db, type ActivityLog } from "./db";
 import { newId } from "./utils";
 import { getSessionUserId } from "../auth/session";
@@ -7,30 +7,21 @@ import { getSessionUserId } from "../auth/session";
 export type { ActivityLog };
 
 export type ActivityEntityType =
-  | "project"
   | "task"
   | "taskList"
+  | "taskListFolder"
   | "link"
   | "linkFolder"
   | "note"
   | "noteFolder"
-  | "taskListFolder"
-  | "reminderFolder"
-  | "resource"
-  | "docEntry"
-  | "milestone"
-  | "issue"
-  | "contact"
   | "reminder"
-  | "insight"
-  | "calendarEvent";
+  | "reminderFolder";
 
 export type ActivityAction = "created" | "updated" | "deleted" | "status_changed";
 
 export async function logActivity(input: {
   entityType: ActivityEntityType;
   entityId?: string | null;
-  projectId?: string | null;
   action: ActivityAction;
   description: string;
 }): Promise<ActivityLog> {
@@ -40,7 +31,7 @@ export async function logActivity(input: {
       id: newId(),
       entityType: input.entityType,
       entityId: input.entityId ?? null,
-      projectId: input.projectId ?? null,
+      projectId: null,
       action: input.action,
       description: input.description,
       timestamp: Date.now(),
@@ -54,7 +45,7 @@ export async function logActivity(input: {
       id: newId(),
       entityType: input.entityType,
       entityId: input.entityId ?? null,
-      projectId: input.projectId ?? null,
+      projectId: null,
       action: input.action,
       description: input.description,
       timestamp: Date.now(),
@@ -66,16 +57,6 @@ export async function logActivity(input: {
 export async function getRecentActivity(limit = 50): Promise<ActivityLog[]> {
   if (!db.isOpen()) await db.open();
   return db.activityLog.orderBy("timestamp").reverse().limit(limit).toArray();
-}
-
-export async function getActivityForProject(projectId: string, limit = 30): Promise<ActivityLog[]> {
-  if (!db.isOpen()) await db.open();
-  return db.activityLog
-    .where("projectId")
-    .equals(projectId)
-    .reverse()
-    .sortBy("timestamp")
-    .then((list) => list.slice(0, limit));
 }
 
 export async function getActivityByEntityType(
@@ -100,7 +81,6 @@ export async function clearActivityLog(): Promise<void> {
 export async function logActivityAndRefresh(input: {
   entityType: ActivityEntityType;
   entityId?: string | null;
-  projectId?: string | null;
   action: ActivityAction;
   description: string;
 }): Promise<void> {

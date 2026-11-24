@@ -184,7 +184,7 @@ export default function Proofread({ initialText = "", onApply, onClose }: Props)
           style={{
             padding: 12,
             borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--color-accent-milestone)",
+            border: "1px solid #f59e0b",
             background: "#fffbeb",
             display: "flex",
             flexDirection: "column",

@@ -30,6 +30,7 @@ export interface FolderTreeProps<F, I> {
   renderItemActions?: (i: I, selected: boolean) => ReactNode;
   newFolderPlaceholder?: string;
   foldersAsGrid?: boolean;
+  showItemsInGrid?: boolean;
 }
 
 export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
@@ -56,6 +57,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     renderItemActions,
     newFolderPlaceholder = "New folder…",
     foldersAsGrid = false,
+    showItemsInGrid = false,
   } = props;
 
   const [newTitle, setNewTitle] = useState("");
@@ -315,6 +317,8 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     const id = folderId(f);
     const isOpen = openIds.has(id);
     const kids = childrenByParent.get(id) ?? [];
+    const folderItems = itemsByFolder.get(id) ?? [];
+    const hasExpandable = kids.length > 0 || (showItemsInGrid && folderItems.length > 0);
     const selected = selectedId === id;
     const editing = editingId === id;
 
@@ -344,12 +348,12 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             </>
           )}
           <span className="folder-card-actions">
-            {kids.length > 0 && (
+            {hasExpandable && (
               <button
                 type="button"
                 className="btn-secondary btn-small clickable"
                 onClick={(e) => { e.stopPropagation(); toggleFolder(id); }}
-                data-tip={isOpen ? "Hide subfolders" : "Show subfolders"}
+                data-tip={isOpen ? "Hide contents" : "Show contents"}
               >
                 {isOpen ? "Hide" : "Show"}
               </button>
@@ -397,6 +401,11 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             <button type="button" className="btn-secondary btn-small clickable" onClick={() => setCreatingUnder(null)}>Cancel</button>
           </form>
         )}
+        {isOpen && showItemsInGrid && folderItems.length > 0 && (
+          <ul style={{ paddingLeft: 12, marginTop: 6, marginBottom: 4, listStyle: "none" }}>
+            {folderItems.map((it) => renderItemRow(it))}
+          </ul>
+        )}
         {isOpen && kids.length > 0 && (
           <div className="folder-grid" style={{ marginTop: 6 }}>
             {kids.map((k) => renderFolderGrid(k, depth + 1))}
@@ -411,7 +420,6 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
       <>
         <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 12px 8px" }}>
           <input
-            autoFocus
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder={newFolderPlaceholder}
@@ -436,7 +444,6 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     <ul className="item-list" style={{ padding: 0, margin: 0, listStyle: "none" }}>
       <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 12px 8px" }}>
         <input
-          autoFocus
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder={newFolderPlaceholder}
