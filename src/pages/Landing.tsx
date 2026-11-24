@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import InstallButton from "../components/InstallButton";
 import { useNavigate } from "react-router-dom";
-import { canUseApp, resetGuestSession, setGuestMode } from "../auth/session";
+import { canUseApp, resetGuestSession, resumeLocalSession } from "../auth/session";
 import { clearAllLocalData } from "../data/db";
 import { importSnapshot, readSnapshotFile } from "../sync/snapshot";
 import { confirmAction } from "../components/ui";
@@ -65,7 +65,7 @@ export default function Landing() {
     setError(null);
     setLoading(true);
     try {
-      await setGuestMode();
+      await resumeLocalSession();
       navigate("/home");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not open local workspace.");

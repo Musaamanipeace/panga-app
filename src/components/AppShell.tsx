@@ -7,7 +7,11 @@ import InstallButton from "./InstallButton";
 import SelectionCopy from "./SelectionCopy";
 import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
-import { exitToLanding } from "../auth/session";
+import { clearAllLocalData } from "../data/db";
+import { exitToLanding, resetGuestSession } from "../auth/session";
+import { importSnapshot, readSnapshotFile } from "../sync/snapshot";
+import { notifyWorkspaceUpdated } from "../ai/agent";
+import { confirmAction, showToast } from "./ui";
 import { stopSpeaking } from "../speech/tts";
 import { SHORTCUT_ENTRIES, homeTabRoute, matchShortcut } from "../shortcuts";
 
@@ -16,9 +20,11 @@ export default function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
   const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const shortcutsRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -99,7 +105,43 @@ export default function AppShell() {
   function handleExit() {
     setMenuOpen(false);
     exitToLanding();
-    navigate("/");
+    navigate("/", { replace: true });
+  }
+
+  async function handleMenuUploadJson(file: File) {
+    try {
+      const snapshot = await readSnapshotFile(file);
+      await importSnapshot(snapshot);
+      notifyWorkspaceUpdated();
+      setWorkspaceEpoch((n) => n + 1);
+      showToast("JSON backup restored.", "success");
+      navigate("/home");
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Failed to import JSON backup.", "error");
+    }
+  }
+
+  async function handleMenuStartAfresh() {
+    setMenuOpen(false);
+    const confirmed = await confirmAction({
+      title: "Start afresh?",
+      message: "This will wipe all existing local tasks, notes, links, reminders, and settings on this device.",
+      confirmLabel: "Start afresh",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      await clearAllLocalData();
+      await resetGuestSession();
+      notifyWorkspaceUpdated();
+      setWorkspaceEpoch((n) => n + 1);
+      showToast("Started a fresh workspace.", "info");
+      navigate("/home");
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Could not start fresh workspace.", "error");
+    }
   }
 
   return (
@@ -182,6 +224,25 @@ export default function AppShell() {
               >
                 Settings
               </Link>
+              <button
+                type="button"
+                className="header-menu-item clickable"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  jsonInputRef.current?.click();
+                }}
+              >
+                Upload JSON
+              </button>
+              <button
+                type="button"
+                className="header-menu-item header-menu-danger clickable"
+                role="menuitem"
+                onClick={() => void handleMenuStartAfresh()}
+              >
+                Start afresh
+              </button>
               <div className="header-menu-status" aria-live="polite">
                 {online ? "Online" : "Offline"}
               </div>
@@ -200,8 +261,20 @@ export default function AppShell() {
           )}
         </div>
       </header>
+      <input
+        ref={jsonInputRef}
+        type="file"
+        accept=".json,application/json"
+        aria-label="Upload JSON backup"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleMenuUploadJson(f);
+          e.target.value = "";
+        }}
+      />
       <main className="app-main">
-        <Outlet />
+        <Outlet key={workspaceEpoch} />
       </main>
       <AssistantPanel />
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />

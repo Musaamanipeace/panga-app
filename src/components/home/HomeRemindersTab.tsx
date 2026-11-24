@@ -137,7 +137,13 @@ export function toLocalInput(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?: string | null }) {
+export default function HomeRemindersTab({
+  initialFolderId,
+  initialReminderId,
+}: {
+  initialFolderId?: string | null;
+  initialReminderId?: string | null;
+}) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [reminders, folders] = await Promise.all([listPendingReminders(), listReminderFolders()]);
     return { reminders, folders };
@@ -168,15 +174,23 @@ export default function HomeRemindersTab({ initialFolderId }: { initialFolderId?
   const folderReminders = useMemo(() => allReminders.filter((r) => r.folderId === (currentFolder?.id ?? null)), [allReminders, currentFolder]);
   const buckets = useMemo(() => bucketReminders(folderReminders), [folderReminders]);
 
-  // A search result for a folder selects it directly.
+  // A search result or shortcut for a folder/reminder selects it directly.
   useEffect(() => {
+    if (initialReminderId) {
+      const targetReminder = allReminders.find((r) => r.id === initialReminderId);
+      if (targetReminder) {
+        setSelType("reminder");
+        setSelId(targetReminder.id);
+        return;
+      }
+    }
     if (!initialFolderId) return;
     const target = folders.find((f) => f.id === initialFolderId);
     if (target) {
       setSelType("folder");
       setSelId(target.id);
     }
-  }, [initialFolderId, folders]);
+  }, [initialFolderId, initialReminderId, folders, allReminders]);
 
   useEffect(() => {
     void startReminderScheduler();

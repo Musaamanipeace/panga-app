@@ -4,7 +4,17 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import AppShell from "../AppShell";
-import { isGuest } from "../../auth/session";
+import Landing from "../../pages/Landing";
+import { ConfirmDialogHost, ToastContainer } from "../ui";
+import { db } from "../../data/db";
+import {
+  canUseApp,
+  getSessionUserId,
+  isGuest,
+  isLoggedIn,
+  setGuestMode,
+  setSession,
+} from "../../auth/session";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,7 +28,13 @@ function LocationTracker() {
   return <div data-testid="route">{latestLocation}</div>;
 }
 
-async function mount(initial = "/home") {
+function LandingWithTracker() {
+  const loc = useLocation();
+  latestLocation = `${loc.pathname}${loc.search}`;
+  return <Landing />;
+}
+
+async function mount(initial = "/home", opts?: { realLanding?: boolean }) {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -26,19 +42,21 @@ async function mount(initial = "/home") {
     root!.render(
       <MemoryRouter initialEntries={[initial]}>
         <Routes>
-          <Route path="/" element={<LocationTracker />} />
+          <Route path="/" element={opts?.realLanding ? <LandingWithTracker /> : <LocationTracker />} />
           <Route element={<AppShell />}>
             <Route path="/home" element={<LocationTracker />} />
             <Route path="/settings" element={<LocationTracker />} />
           </Route>
         </Routes>
+        <ToastContainer />
+        <ConfirmDialogHost />
       </MemoryRouter>
     );
   });
   await settle();
 }
 
-async function settle(ms = 30) {
+async function settle(ms = 40) {
   await act(async () => {
     await new Promise((r) => setTimeout(r, ms));
   });
@@ -101,12 +119,14 @@ describe("AppShell header, menus and shortcuts", () => {
     expect(dialog!.textContent).toContain("?");
   });
 
-  it("opens Menu with Settings link, Online/Offline status and Exit to /", async () => {
+  it("opens Menu with Settings, Upload JSON, Start afresh, status and Exit to /", async () => {
     await mount("/home");
     await click(buttonByText("Menu"));
     const menu = host.querySelector('[role="menu"][aria-label="App menu"]');
     expect(menu).not.toBeNull();
     expect(menu!.textContent).toContain("Settings");
+    expect(menu!.textContent).toContain("Upload JSON");
+    expect(menu!.textContent).toContain("Start afresh");
     expect(menu!.textContent).toMatch(/Online|Offline/);
     const exitBtn = [...menu!.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Exit");
     expect(exitBtn).toBeDefined();
@@ -114,6 +134,131 @@ describe("AppShell header, menus and shortcuts", () => {
     await click(exitBtn);
     expect(latestLocation).toBe("/");
     expect(isGuest()).toBe(false);
+    expect(canUseApp()).toBe(false);
+  });
+
+  it("Exit from guest session lands and stays on real Landing page, and Continue local preserves workspace", async () => {
+    await setGuestMode();
+    const guestId = getSessionUserId();
+    expect(guestId).toBeTruthy();
+
+    await mount("/home", { realLanding: true });
+    await click(buttonByText("Menu"));
+    const exitBtn = [...host.querySelectorAll('[role="menu"] button')].find((b) => b.textContent?.trim() === "Exit");
+    await click(exitBtn);
+
+    expect(latestLocation).toBe("/");
+    expect(canUseApp()).toBe(false);
+    expect(isLoggedIn()).toBe(false);
+    expect(isGuest()).toBe(false);
+    expect(host.textContent).toContain("Continue local");
+    expect(host.textContent).toContain("Upload JSON");
+
+    await click(buttonByText("Continue local"));
+    expect(latestLocation).toBe("/home");
+    expect(canUseApp()).toBe(true);
+    expect(getSessionUserId()).toBe(guestId);
+  });
+
+  it("Exit from named JSON session lands on real Landing page, and Continue local restores logged-in identity", async () => {
+    await setSession("usr_amani_1", "amani@local", "amani");
+
+    await mount("/home", { realLanding: true });
+    await click(buttonByText("Menu"));
+    const exitBtn = [...host.querySelectorAll('[role="menu"] button')].find((b) => b.textContent?.trim() === "Exit");
+    await click(exitBtn);
+
+    expect(latestLocation).toBe("/");
+    expect(canUseApp()).toBe(false);
+    expect(isLoggedIn()).toBe(false);
+    expect(host.textContent).toContain("Continue local");
+
+    await click(buttonByText("Continue local"));
+    expect(latestLocation).toBe("/home");
+    expect(getSessionUserId()).toBe("usr_amani_1");
+    expect(isLoggedIn()).toBe(true);
+    expect(isGuest()).toBe(false);
+  });
+
+  it("Start afresh in Menu clears local data after confirmation", async () => {
+    await setGuestMode();
+    await db.notes.put({
+      id: "old-note",
+      folderId: null,
+      title: "Old Note",
+      body: "Delete me",
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+      syncStatus: "pending",
+    });
+    expect(await db.notes.get("old-note")).toBeDefined();
+
+    await mount("/settings");
+    await click(buttonByText("Menu"));
+    const startAfreshBtn = [...host.querySelectorAll('[role="menu"] button')].find(
+      (b) => b.textContent?.trim() === "Start afresh"
+    );
+    await click(startAfreshBtn);
+
+    const dialog = host.querySelector('[role="dialog"][aria-label="Start afresh?"]');
+    expect(dialog).not.toBeNull();
+    const confirmBtn = [...dialog!.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Start afresh"
+    );
+    await click(confirmBtn);
+
+    expect(latestLocation).toBe("/home");
+    expect(await db.notes.get("old-note")).toBeUndefined();
+  });
+
+  it("Upload JSON in Menu restores snapshot and opens /home", async () => {
+    await setGuestMode();
+    await mount("/settings");
+
+    const fileInput = host.querySelector('input[type="file"][aria-label="Upload JSON backup"]') as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+
+    const snapshot = {
+      metadata: {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        appName: "Panga",
+        dbVersion: 13,
+      },
+      identity: {
+        userId: "usr_menu_restore",
+        username: "mira",
+        email: "mira@local",
+        loggedIn: true,
+      },
+      data: {
+        notes: [
+          {
+            id: "restored-from-menu",
+            folderId: null,
+            title: "Menu Restored Note",
+            body: "Hello",
+            tags: [],
+            createdAt: 1,
+            updatedAt: 1,
+            syncStatus: "pending",
+          },
+        ],
+        settings: [],
+      },
+    };
+    const file = new File([JSON.stringify(snapshot)], "backup.json", { type: "application/json" });
+    Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle(100);
+
+    expect(latestLocation).toBe("/home");
+    expect(getSessionUserId()).toBe("usr_menu_restore");
+    expect((await db.notes.get("restored-from-menu"))?.title).toBe("Menu Restored Note");
   });
 
   it("navigates via Alt+tab shortcuts, toggles search via Ctrl+K, toggles shortcuts via ?, and closes on Escape", async () => {

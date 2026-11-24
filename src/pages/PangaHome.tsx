@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import ThoughtStream from "../components/home/ThoughtStream";
 import { CAPTURE_INPUT_ID } from "../components/home/ThoughtStream";
 import CommandBox from "../components/home/CommandBox";
+import ShortcutsBar from "../components/home/ShortcutsBar";
 import TaskListsHome from "../components/home/TaskListsHome";
 import HomeLinksTab from "../components/home/HomeLinksTab";
 import NotesPanel from "../components/home/NotesPanel";
@@ -22,9 +23,11 @@ export default function PangaHome() {
   const navigate = useNavigate();
   const raw = params.get("tab");
   const tab: HomeTabId = HOME_TABS.some((t) => t.id === raw) ? (raw as HomeTabId) : "Task lists";
-  // Optional folder/list selection from a header search result.
+  // Optional folder/list/item selection from header search or quick shortcuts.
   const folderId = params.get("folder") ?? null;
   const listId = params.get("list") ?? null;
+  const noteId = params.get("note") ?? null;
+  const reminderId = params.get("reminder") ?? null;
   const [voiceNotice, setVoiceNotice] = useState<VoiceStatus | null>(null);
 
   // Launched from the "Quick capture" app shortcut: put the cursor in the capture box.
@@ -102,6 +105,7 @@ export default function PangaHome() {
 
       <ThoughtStream />
       <CommandBox />
+      <ShortcutsBar />
 
       <nav className="pg-chips" aria-label="Sections">
         {HOME_TABS.map((t) => (
@@ -120,8 +124,8 @@ export default function PangaHome() {
       <section className="pg-card">
         {tab === "Task lists" && <TaskListsHome initialFolderId={folderId} initialListId={listId} />}
         {tab === "Links" && <HomeLinksTab initialFolderId={folderId} />}
-        {tab === "Notes" && <NotesPanel initialFolderId={folderId} />}
-        {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} />}
+        {tab === "Notes" && <NotesPanel initialFolderId={folderId} initialNoteId={noteId} />}
+        {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} initialReminderId={reminderId} />}
         {tab === "Clipboard" && <ClipboardPanel />}
         {tab === "Proofread" && <Proofread />}
       </section>

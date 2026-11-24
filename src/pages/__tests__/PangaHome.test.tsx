@@ -121,4 +121,13 @@ describe("Panga home (smoke)", () => {
     expect(host.textContent).toContain("mop");
     expect(host.textContent).toContain("dig");
   });
+
+  it("renders the Shortcuts card immediately below the AI CommandBox section", async () => {
+    await mount("/home");
+    const cards = [...host.querySelectorAll(".pg-home > section.pg-card")];
+    const aiIdx = cards.findIndex((c) => c.querySelector('textarea[placeholder*="Tell Panga what to do"]'));
+    const shortcutsIdx = cards.findIndex((c) => c.getAttribute("aria-label") === "Shortcuts");
+    expect(aiIdx).toBeGreaterThanOrEqual(0);
+    expect(shortcutsIdx).toBe(aiIdx + 1);
+  });
 });

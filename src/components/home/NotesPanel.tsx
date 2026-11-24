@@ -18,7 +18,13 @@ import ReadAloudButton from "../ReadAloudButton";
 import { ProofreadTrigger } from "../Proofread";
 import FolderTree from "./FolderTree";
 
-export default function NotesPanel({ initialFolderId }: { initialFolderId?: string | null }) {
+export default function NotesPanel({
+  initialFolderId,
+  initialNoteId,
+}: {
+  initialFolderId?: string | null;
+  initialNoteId?: string | null;
+}) {
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selType, setSelType] = useState<"folder" | "note" | null>(null);
@@ -54,15 +60,23 @@ export default function NotesPanel({ initialFolderId }: { initialFolderId?: stri
     return () => window.removeEventListener("panga-data-updated", onUpdate);
   }, [reload]);
 
-  // A search result for a folder selects it directly.
+  // A search result or shortcut for a folder/note selects it directly.
   useEffect(() => {
+    if (initialNoteId) {
+      const targetNote = notes.find((n) => n.id === initialNoteId);
+      if (targetNote) {
+        setSelType("note");
+        setSelId(targetNote.id);
+        return;
+      }
+    }
     if (!initialFolderId) return;
     const target = folders.find((f) => f.id === initialFolderId);
     if (target) {
       setSelType("folder");
       setSelId(target.id);
     }
-  }, [initialFolderId, folders]);
+  }, [initialFolderId, initialNoteId, folders, notes]);
 
   const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
   const currentNote = useMemo(() => notes.find((n) => n.id === selId) ?? null, [notes, selId]);
