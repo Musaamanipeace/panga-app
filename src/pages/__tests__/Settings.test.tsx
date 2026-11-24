@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import Settings from "../Settings";
 import { db } from "../../data/db";
-import { getAIApiKey, getAIProvider } from "../../data/settings";
+import { AI_PROVIDER_IDS, getAIApiKey, getAIProvider } from "../../data/settings";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,55 +28,93 @@ async function mountSettings() {
   });
 }
 
-afterEach(async () => {
+async function unmountSettings() {
   if (root) {
     await act(async () => root!.unmount());
     root = null;
   }
   host?.remove();
   host = null;
+}
+
+afterEach(async () => {
+  await unmountSettings();
   await db.settings.clear();
 });
 
 describe("Settings AI configuration", () => {
-  it("omits model selection UI and lets users save provider and API key directly", async () => {
+  it("renders all providers with individual text boxes and persistent Saved state without a dropdown", async () => {
     await mountSettings();
 
     expect(host!.textContent).not.toContain("Select a model");
     expect(host!.textContent).not.toContain("Free only");
 
     const aiSection = host!.querySelector("section.settings-section")!;
-    const selects = aiSection.querySelectorAll("select");
-    expect(selects).toHaveLength(1);
+    expect(aiSection.querySelectorAll("select")).toHaveLength(0);
 
-    const providerSelect = selects[0] as HTMLSelectElement;
-    const keyInput = aiSection.querySelector('input[type="password"]') as HTMLInputElement;
-    const form = aiSection.querySelector("form") as HTMLFormElement;
-
-    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
-    await act(async () => {
-      selectSetter.call(providerSelect, "gemini");
-      providerSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    for (const id of AI_PROVIDER_IDS) {
+      expect(aiSection.querySelector(`form[data-provider="${id}"]`)).not.toBeNull();
+      expect(aiSection.querySelector(`[data-testid="ai-status-${id}"]`)?.textContent).toBe("Not saved");
+    }
 
     const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    await act(async () => {
-      inputSetter.call(keyInput, "gemini-key-123");
-      keyInput.dispatchEvent(new Event("input", { bubbles: true }));
-      keyInput.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+
+    // Type a Gemini key and let auto-save persist it (even without clicking Save)
+    const geminiForm = aiSection.querySelector('form[data-provider="gemini"]')!;
+    const geminiInput = geminiForm.querySelector('input[type="password"]') as HTMLInputElement;
 
     await act(async () => {
-      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      inputSetter.call(geminiInput, "gemini-key-123");
+      geminiInput.dispatchEvent(new Event("input", { bubbles: true }));
+      geminiInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 320));
+    });
+
+    expect(await getAIApiKey("gemini")).toBe("gemini-key-123");
+    expect(await getAIProvider()).toBe("gemini");
+    expect(aiSection.querySelector('[data-testid="ai-status-gemini"]')?.textContent).toBe("Saved");
+
+    // Save an OpenAI key too and switch active provider
+    const openaiForm = aiSection.querySelector('form[data-provider="openai"]')!;
+    const openaiInput = openaiForm.querySelector('input[type="password"]') as HTMLInputElement;
+    await act(async () => {
+      inputSetter.call(openaiInput, "openai-key-456");
+      openaiInput.dispatchEvent(new Event("input", { bubbles: true }));
+      openaiInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      openaiForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 40));
     });
 
-    expect(await getAIProvider()).toBe("gemini");
-    expect(await getAIApiKey("gemini")).toBe("gemini-key-123");
+    expect(await getAIApiKey("openai")).toBe("openai-key-456");
+    expect(aiSection.querySelector('[data-testid="ai-status-openai"]')?.textContent).toBe("Saved");
+
+    // Remount Settings and confirm both keys stay Saved persistently
+    await unmountSettings();
+    await mountSettings();
+
+    const reloadedSection = host!.querySelector("section.settings-section")!;
+    expect(reloadedSection.querySelector('[data-testid="ai-status-gemini"]')?.textContent).toBe("Saved");
+    expect(reloadedSection.querySelector('[data-testid="ai-status-openai"]')?.textContent).toBe("Saved");
+    expect(reloadedSection.querySelector('[data-testid="ai-status-groq"]')?.textContent).toBe("Not saved");
+
+    // Clear OpenAI key and verify state returns to Not saved
+    const reloadedOpenAiForm = reloadedSection.querySelector('form[data-provider="openai"]')!;
+    const clearBtn = [...reloadedOpenAiForm.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Clear");
+    await act(async () => {
+      clearBtn?.click();
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+
+    expect(await getAIApiKey("openai")).toBeNull();
+    expect(reloadedSection.querySelector('[data-testid="ai-status-openai"]')?.textContent).toBe("Not saved");
+    expect(reloadedSection.querySelector('[data-testid="ai-status-gemini"]')?.textContent).toBe("Saved");
   });
 });

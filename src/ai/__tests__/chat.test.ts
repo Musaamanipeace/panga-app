@@ -67,10 +67,30 @@ describe("chatCompletion with API key only", () => {
     expect(body.model).toBe("gpt-4o-mini");
   });
 
-  it("throws when the active provider has no API key", async () => {
+  it("throws when no provider has an API key", async () => {
     await setAIProvider("gemini");
     await expect(chatCompletion([{ role: "user", content: "Hi" }])).rejects.toThrow(
       /No API key for Google Gemini/
     );
+  });
+
+  it("falls back to another configured provider when active provider has no key", async () => {
+    await setAIProvider("openrouter");
+    await setAIApiKey("openai", "sk-openai-only");
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "Fallback worked" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const res = await chatCompletion([{ role: "user", content: "Hi" }]);
+    expect(res).toEqual({
+      text: "Fallback worked",
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

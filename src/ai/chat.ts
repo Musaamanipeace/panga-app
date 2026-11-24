@@ -3,6 +3,7 @@
  * Uses settings (provider + key + model). Free model ids come only from live list.
  */
 import {
+  findConfiguredAIProvider,
   getAIProvider,
   getAIApiKey,
   getAIModel,
@@ -25,10 +26,17 @@ export async function chatCompletion(
   messages: ChatMessage[],
   opts?: { system?: string; model?: string }
 ): Promise<ChatResult> {
-  const provider = await getAIProvider();
-  const apiKey = (await getAIApiKey(provider))?.trim() ?? "";
+  let provider = await getAIProvider();
+  let apiKey = (await getAIApiKey(provider))?.trim() ?? "";
   if (!apiKey) {
-    throw new Error(`No API key for ${AI_PROVIDERS[provider].label}. Add one in Settings → AI assistant.`);
+    const fallback = await findConfiguredAIProvider();
+    if (fallback) {
+      provider = fallback;
+      apiKey = (await getAIApiKey(fallback))?.trim() ?? "";
+    }
+  }
+  if (!apiKey) {
+    throw new Error(`No API key for ${AI_PROVIDERS[provider].label}. Add an API key in Settings → AI assistant.`);
   }
   const model =
     opts?.model ||

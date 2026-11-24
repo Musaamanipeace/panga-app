@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../data/db";
 import { getSessionUserId, getSessionUsername, isGuest, resetGuestSession, setSession } from "../../auth/session";
-import { setSetting } from "../../data/settings";
+import { getAIApiKey, getAIProvider, setAIApiKey, setAIProvider, setSetting } from "../../data/settings";
 import {
   exportSnapshot,
   getJsonAccountUsername,
@@ -44,15 +44,29 @@ beforeEach(async () => {
 });
 
 describe("snapshot identity", () => {
-  it("exports the JSON account username and local settings without encryption", async () => {
+  it("exports and restores the JSON account username and all provider API keys", async () => {
     await setJsonAccountUsername("amani");
-    await setSetting("geminiApiKey", "a-test-key");
+    await setAIProvider("groq");
+    await setAIApiKey("gemini", "gem-key-1");
+    await setAIApiKey("openrouter", "or-key-2");
+    await setAIApiKey("groq", "groq-key-3");
+    await setSetting("geminiApiKey", "gem-key-1");
     const snapshot = await exportSnapshot();
 
     expect(snapshot.identity?.loggedIn).toBe(false);
     expect(snapshot.identity?.username).toBe("amani");
-    const storedKey = snapshot.data.settings.find((r: any) => r.key === "geminiApiKey");
-    expect(storedKey?.value).toBe("a-test-key");
+    expect(snapshot.data.settings.find((r: any) => r.key === "aiApiKey_gemini")?.value).toBe("gem-key-1");
+    expect(snapshot.data.settings.find((r: any) => r.key === "aiApiKey_openrouter")?.value).toBe("or-key-2");
+    expect(snapshot.data.settings.find((r: any) => r.key === "aiApiKey_groq")?.value).toBe("groq-key-3");
+    expect(snapshot.data.settings.find((r: any) => r.key === "aiProvider")?.value).toBe("groq");
+
+    // Clear DB and restore from JSON snapshot
+    await db.settings.clear();
+    await importSnapshot(JSON.parse(JSON.stringify(snapshot)));
+    expect(await getAIProvider()).toBe("groq");
+    expect(await getAIApiKey("gemini")).toBe("gem-key-1");
+    expect(await getAIApiKey("openrouter")).toBe("or-key-2");
+    expect(await getAIApiKey("groq")).toBe("groq-key-3");
   });
 
   it("restores a named JSON account identity and username before loading its data", async () => {
