@@ -66,7 +66,7 @@ describe("Settings AI configuration", () => {
 
     // Type a Gemini key and let auto-save persist it (even without clicking Save)
     const geminiForm = aiSection.querySelector('form[data-provider="gemini"]')!;
-    const geminiInput = geminiForm.querySelector('input[type="password"]') as HTMLInputElement;
+    const geminiInput = geminiForm.querySelector('input[aria-label="Google Gemini API key"]') as HTMLInputElement;
 
     await act(async () => {
       inputSetter.call(geminiInput, "gemini-key-123");
@@ -83,7 +83,7 @@ describe("Settings AI configuration", () => {
 
     // Save an OpenAI key too and switch active provider
     const openaiForm = aiSection.querySelector('form[data-provider="openai"]')!;
-    const openaiInput = openaiForm.querySelector('input[type="password"]') as HTMLInputElement;
+    const openaiInput = openaiForm.querySelector('input[aria-label="OpenAI API key"]') as HTMLInputElement;
     await act(async () => {
       inputSetter.call(openaiInput, "openai-key-456");
       openaiInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -129,15 +129,16 @@ describe("Settings AI configuration", () => {
     const aiSection = host!.querySelector("section.settings-section")!;
     for (const id of AI_PROVIDER_IDS) {
       const form = aiSection.querySelector(`form[data-provider="${id}"]`)!;
-      const input = form.querySelector("input[type='password']") as HTMLInputElement;
+      const input = form.querySelector('input[aria-label$="API key"]') as HTMLInputElement;
       expect(input.value).toBe("");
+      expect(input.type).toBe("text");
       expect(input.getAttribute("autocomplete")).toBe("new-password");
       expect(input.readOnly).toBe(true);
       expect(form.querySelector(`button[aria-label^="View "]`)).toBeNull();
     }
 
     const geminiForm = aiSection.querySelector('form[data-provider="gemini"]')!;
-    const geminiInput = geminiForm.querySelector("input[type='password']") as HTMLInputElement;
+    const geminiInput = geminiForm.querySelector('input[aria-label="Google Gemini API key"]') as HTMLInputElement;
 
     await act(async () => {
       geminiInput.focus();
@@ -149,6 +150,7 @@ describe("Settings AI configuration", () => {
       inputSetter.call(geminiInput, "AIza-human-key");
       geminiInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    expect(geminiInput.type).toBe("password");
     await act(async () => {
       geminiForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });

@@ -44,6 +44,14 @@ export function setAccountSetting(key: string, value: unknown): void {
 export function clearAccountSettings(): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   localStorage.removeItem(storeKey());
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(`${STORE_KEY}_`)) keysToRemove.push(k);
+  }
+  for (const k of keysToRemove) {
+    localStorage.removeItem(k);
+  }
 }
 
 export function getAllAccountSettings(): Record<string, unknown> {

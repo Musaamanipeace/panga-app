@@ -231,7 +231,7 @@ export default function Settings() {
 
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <input
-                    type={isRevealed ? "text" : "password"}
+                    type={draft.length === 0 || isRevealed ? "text" : "password"}
                     name={`panga_ai_token_${p.id}`}
                     aria-label={`${p.label} API key`}
                     value={draft}
