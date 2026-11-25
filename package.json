@@ -19,7 +19,6 @@
     "@google/genai": "^2.24.0",
     "dexie": "^4.4.6",
     "express": "^5.2.1",
-    "firebase": "^13.4.0",
     "flexsearch": "^0.8.212",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.2.8",

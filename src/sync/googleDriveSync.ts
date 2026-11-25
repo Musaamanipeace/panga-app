@@ -14,6 +14,9 @@ import { invalidateDriveAccessToken } from "./googleAuth";
 import { DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME } from "../data/workspaceState";
 
 export const DRIVE_BACKUP_FILENAME = "panga-backup.json";
+/** Folder in the user's Drive that holds the backup. Created on first save. */
+export const DRIVE_FOLDER_NAME = "panga";
+const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
 
 const DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -443,9 +446,46 @@ async function driveFetch(url: string, token: string, init?: RequestInit): Promi
   return res;
 }
 
-export async function findDriveBackupFile(token: string): Promise<DriveFileMeta | null> {
+/** Finds the app's "panga" folder. With the drive.file scope only folders created by Panga are visible. */
+export async function findDriveFolder(token: string): Promise<string | null> {
   const params = new URLSearchParams({
-    q: `name = '${DRIVE_BACKUP_FILENAME}' and trashed = false`,
+    q: `name = '${DRIVE_FOLDER_NAME}' and mimeType = '${DRIVE_FOLDER_MIME}' and trashed = false`,
+    spaces: "drive",
+    orderBy: "createdTime",
+    pageSize: "1",
+    fields: "files(id,name)",
+  });
+  const res = await driveFetch(`${DRIVE_FILES_API}?${params.toString()}`, token);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Could not check Google Drive (${res.status}): ${text || res.statusText}`);
+  }
+  const json = (await res.json()) as { files?: Array<{ id: string }> };
+  return json.files?.[0]?.id ?? null;
+}
+
+/** Returns the "panga" folder id, creating the folder if it does not exist yet. */
+export async function ensureDriveFolder(token: string): Promise<string> {
+  const existing = await findDriveFolder(token);
+  if (existing) return existing;
+  const res = await driveFetch(`${DRIVE_FILES_API}?fields=id`, token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=UTF-8" },
+    body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: DRIVE_FOLDER_MIME }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Could not create the "${DRIVE_FOLDER_NAME}" folder in Google Drive (${res.status}): ${text || res.statusText}`);
+  }
+  const created = (await res.json()) as { id: string };
+  return created.id;
+}
+
+export async function findDriveBackupFile(token: string): Promise<DriveFileMeta | null> {
+  const folderId = await findDriveFolder(token);
+  if (!folderId) return null;
+  const params = new URLSearchParams({
+    q: `name = '${DRIVE_BACKUP_FILENAME}' and '${folderId}' in parents and trashed = false`,
     spaces: "drive",
     orderBy: "modifiedTime desc",
     pageSize: "5",
@@ -539,7 +579,7 @@ function buildMultipartBody(metadata: Record<string, unknown>, contentJson: stri
   ].join("\r\n");
 }
 
-/** Uploads a snapshot to Google Drive (creating or updating panga-backup.json). Call only after user confirmation. */
+/** Uploads a snapshot to Google Drive (creating or updating panga/panga-backup.json). Call only after user confirmation. */
 export async function pushSnapshotToDrive(
   token: string,
   options: { uid?: string | null; fileId?: string | null; snapshot?: Snapshot }
@@ -548,9 +588,11 @@ export async function pushSnapshotToDrive(
   const contentJson = JSON.stringify(snapshot, null, 2);
   const boundary = `panga_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const metadata = options.fileId
-    ? { name: DRIVE_BACKUP_FILENAME, mimeType: "application/json" }
-    : { name: DRIVE_BACKUP_FILENAME, mimeType: "application/json" };
+  // New files are created inside the "panga" folder; updates keep the file where it already lives.
+  const metadata: Record<string, unknown> = { name: DRIVE_BACKUP_FILENAME, mimeType: "application/json" };
+  if (!options.fileId) {
+    metadata.parents = [await ensureDriveFolder(token)];
+  }
 
   const url = options.fileId
     ? `${DRIVE_UPLOAD_API}/${encodeURIComponent(options.fileId)}?uploadType=multipart&fields=id,name,modifiedTime`
