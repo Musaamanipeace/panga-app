@@ -213,6 +213,9 @@ export default function AccountPanel() {
         {drive.error && (
           <p style={{ margin: 0, fontSize: 13, color: "var(--color-accent-issue)" }}>{drive.error}</p>
         )}
+        <a href="/privacy.html" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--color-text-muted)", textDecoration: "underline" }}>
+          Privacy Policy
+        </a>
       </div>
 
       <DriveSyncReviewModal

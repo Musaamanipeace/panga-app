@@ -308,6 +308,17 @@ export default function AppShell() {
                   </button>
                 </>
               )}
+              <a
+                className="header-menu-item clickable"
+                role="menuitem"
+                href="/privacy.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "block", textDecoration: "none", color: "inherit" }}
+                onClick={() => setMenuOpen(false)}
+              >
+                Privacy Policy
+              </a>
               <div className="header-menu-status" aria-live="polite">
                 {online ? "Online" : "Offline"}
               </div>

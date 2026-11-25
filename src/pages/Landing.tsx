@@ -183,6 +183,13 @@ export default function Landing() {
               </button>
             </div>
           )}
+          <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--color-text-muted)" }}>
+            See how Panga uses your Google data in the{" "}
+            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+              Privacy Policy
+            </a>
+            .
+          </p>
         </section>
 
         <section className="landing-panel">
