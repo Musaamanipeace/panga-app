@@ -204,6 +204,7 @@ export default function AssistantPanel() {
         aria-expanded={open}
         aria-controls="assistant-panel"
         data-tip="Open the AI Assistant agent"
+        data-tip-align="right"
       >
         ✨ AI
       </button>
@@ -226,6 +227,8 @@ export default function AssistantPanel() {
                   className="btn-secondary btn-small clickable"
                   onClick={startNew}
                   data-tip="Start a new conversation"
+                  data-tip-pos="bottom"
+                  data-tip-align="right"
                 >
                   New
                 </button>
@@ -234,6 +237,8 @@ export default function AssistantPanel() {
                   className="btn-secondary btn-small clickable"
                   onClick={() => setOpen(false)}
                   data-tip="Close the assistant"
+                  data-tip-pos="bottom"
+                  data-tip-align="right"
                 >
                   Close
                 </button>
@@ -329,7 +334,7 @@ export default function AssistantPanel() {
                             fontSize: 12,
                           }}
                         >
-                          <span style={{ color: "var(--color-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ flex: "1 1 auto", minWidth: 0, color: "var(--color-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {u.summary}
                           </span>
                           <button
@@ -372,7 +377,7 @@ export default function AssistantPanel() {
                   )}
 
                   <form className="assistant-composer" onSubmit={handleSubmit}>
-                    <div className="inline-form" style={{ flex: 1, marginBottom: 0 }}>
+                    <div className="inline-form" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
                       <input
                         type="text"
                         value={text}
@@ -392,7 +397,7 @@ export default function AssistantPanel() {
 
             {approvals.length > 0 && (
               <div className="approval-box" role="alertdialog" aria-label="Waiting for approval">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                   <h3 style={{ margin: 0 }}>Confirm Action ({approvals.length})</h3>
                   {safePendingCount > 1 && (
                     <button

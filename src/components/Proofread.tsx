@@ -184,8 +184,9 @@ export default function Proofread({ initialText = "", onApply, onClose }: Props)
           style={{
             padding: 12,
             borderRadius: "var(--radius-sm)",
-            border: "1px solid #f59e0b",
-            background: "#fffbeb",
+            border: "1px solid var(--color-accent-milestone, #f59e0b)",
+            background: "var(--color-tint)",
+            color: "var(--color-text)",
             display: "flex",
             flexDirection: "column",
             gap: 8,
@@ -323,7 +324,7 @@ export function ProofreadTrigger({
         onClick={() => setOpen(true)}
         data-tip="Check grammar, spelling, or formatting"
       >
-        Proofread
+        Grammar &amp; Spelling
       </button>
       {open &&
         createPortal(
@@ -331,13 +332,12 @@ export function ProofreadTrigger({
             className="modal-backdrop"
             role="dialog"
             aria-modal="true"
-            aria-label="Proofread"
+            aria-label="Grammar & Spelling"
             onClick={() => setOpen(false)}
-            style={{ zIndex: 9600 }}
           >
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <header className="modal-header">
-                <span>Proofread</span>
+                <span>Grammar &amp; Spelling</span>
                 <button
                   type="button"
                   className="btn-secondary btn-small clickable"

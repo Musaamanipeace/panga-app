@@ -319,7 +319,6 @@ export async function listAvailableShortcutTargets(): Promise<ShortcutTargetOpti
     { id: "tab:Notes", label: "Notes", route: "/home?tab=Notes" },
     { id: "tab:Reminders", label: "Reminders", route: "/home?tab=Reminders" },
     { id: "tab:Clipboard", label: "Clipboard", route: "/home?tab=Clipboard" },
-    { id: "tab:Proofread", label: "Proofread", route: "/home?tab=Proofread" },
     { id: "tab:Settings", label: "Settings", route: "/settings" },
   ];
 

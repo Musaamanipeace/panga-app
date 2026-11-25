@@ -9,6 +9,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   clearResolvedModelCache();
   await db.settings.clear();
+  localStorage.clear(); // BYOK keys are account-level and live outside the settings table
 });
 
 describe("chatCompletion with API key only", () => {

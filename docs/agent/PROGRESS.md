@@ -1,5 +1,11 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-24 — Quick links rename & viewport/stacking/layout fixes
+- **Quick links rename (`ShortcutsBar.tsx`)**: Renamed the home bar heading, `aria-label` attributes, picker labels, empty state copy, and toast messages from `Shortcuts` to `Quick links` (leaving keyboard `Shortcuts` button in `AppShell.tsx` distinct).
+- **Stacking & dropdown layers (`panga-ui.css`, `index.css`)**: Separated `--z-header` (`30`) above `--z-chrome` (`20`) and `--z-workspace-open` (`25`) so open header menus and header hover tooltips always paint cleanly over the Workspace bar; raised `.notes-folders` (`15`) above `.notes-list-pane`; moved `.voice-fab` and `.pg-copy-fab` to `--z-floating` (`70`) above overlays; fixed `.assistant-fab` selector mismatch, mobile bottom clearance above `nav.pg-chips`, and z-index hover exclusions.
+- **Viewport wrapping & responsive layouts**: Expanded header flex wrapping to `<= 820px` (resolving 641–820px horizontal overflow clipping), anchored mobile `.header-popover` safely inside gutters, fixed `HomeLinksTab.tsx` outer `split-pane` + `HomeRemindersTab.tsx` responsive stacking (plus guarded `typeof Notification === "undefined"` before reading `.permission`), added Notes folder outside-click/Escape dismissal and ellipsis truncation, capped `FolderTree.tsx` indent, added `min-width: 0` + `overflow-wrap: anywhere` + wrapping across controls/grids, added `data-tip-edge="left"` / `data-tip-align="right"` edge guards, exempted small corner/FAB buttons from coarse 44px blowout, clamped `VoiceProvider` mic coords below `.app-header`, and fixed dark-mode contrast in `Proofread.tsx` & `ui.tsx`.
+- **Tests**: Updated `ShortcutsBar.test.tsx` and `PangaHome.test.tsx`, added `src/components/__tests__/layoutRegression.test.tsx`; `npx tsc -b` and `npx vitest run` pass (23 files, 121 tests).
+
 ## 2026-11-23 — Force pull repo & API-key-only AI settings
 - **Force pull from upstream**: Connected git remote `https://github.com/Musaamanipeace/panga-app.git` and hard-reset `main` to `origin/main` (`7b07fae chore: remove remaining Supabase sync UI and schema leftovers`), discarding the previous unrequested CSS/z-index edits and removing stale `.github/workflows/supabase-keepalive.yml`.
 - **Remove model selector (`Settings.tsx`, `src/ai/providers.ts`, `src/ai/chat.ts`)**: Removed the `Model` dropdown, `"Free only"` checkbox, and Settings model-fetch state/effect so users only choose a provider and enter their API key. Added cached `resolveDefaultModel()` in `src/ai/providers.ts` and wired `chatCompletion()` in `src/ai/chat.ts` to resolve a model automatically when no model is explicitly selected.
@@ -90,3 +96,13 @@
 - [x] docs/agent: USER_RULES.md, DECISIONS.md, NEXT.md, PROGRESS.md
 - [x] .github: ISSUE_TEMPLATE/{bug,feature,task}.md, pull_request_template.md, workflows/require-linked-issue.yml
 - [x] CONTRIBUTING.md
+
+## 2026-11-25 — UI/UX refresh (workspaces, flat task lists, notes editor, themes)
+- [x] Dark + light themes (Menu > Theme), tokens in `src/styles/panga-ui.css`; hardcoded colours in `index.css` moved to tokens
+- [x] Per-component diagonal light sweep (hover, focus-visible, press, and on mount of panels/containers)
+- [x] Mobile spacing/stacking: 14px gutters, `min-width: 0` + wrapping, z-index layers 1/20/40/60, section chips become the bottom tab bar on phones
+- [x] Workspace selector (Create new / Manage / switch); one IndexedDB per workspace (default keeps the legacy DB name); BYOK keys and AI provider/model moved to an account-level store; JSON snapshot carries every workspace
+- [x] Flat task lists (Dexie v14 prefixes former folder names onto list titles)
+- [x] Proofread tab and Alt+P removed; Grammar & Spelling trigger now in Notes, Links, Thoughts, Clipboard, Reminders and the task input
+- [x] Notes: Folders control (Add/Delete), container switches to an editor with formatting toolbar + Grammar & Spelling; three panes on desktop
+- [x] Checks: `npx tsc -b`, `npx vitest run` (22 files, 116 tests), `npx vite build` pass

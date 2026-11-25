@@ -144,46 +144,43 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
   }
 
   const sx: Record<string, React.CSSProperties> = {
-    sidebar: { flex: "0 0 260px" as const, borderRight: "1px solid var(--color-border)" as const, display: "flex" as const, flexDirection: "column" as const },
-    sidebarHeader: { padding: 12, display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
-    sidebarTitle: { margin: 0, fontSize: 16 },
-    main: { flex: 1, minHeight: 0, display: "flex" as const, flexDirection: "column" as const },
+    sidebarHeader: { padding: "0 0 12px", display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const, gap: 8, flexWrap: "wrap" as const },
+    sidebarTitle: { margin: 0, fontSize: 16, minWidth: 0, overflowWrap: "anywhere" as const },
     emptyState: { padding: 32, textAlign: "center", flex: 1 },
-    header: { padding: "12px 16px", borderBottom: "1px solid var(--color-border)", display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const, flexShrink: 0 },
-    headerTitle: { margin: 0, fontSize: 18 },
-    addForm: { background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "16px", margin: "12px 16px", boxShadow: "0 4px 12px rgba(0,0,0,0.04)" },
+    header: { padding: "12px 16px", borderBottom: "1px solid var(--color-border)", display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const, flexWrap: "wrap" as const, gap: 8, flexShrink: 0, minWidth: 0 },
+    headerTitle: { margin: 0, fontSize: 18, minWidth: 0, overflowWrap: "anywhere" as const },
+    addForm: { background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "16px", margin: "12px 0", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" },
     addFormHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
     addFormH3: { margin: 0, fontSize: "16px", fontWeight: 600 },
     addFormField: { marginTop: "10px" },
     addFormLabel: { fontSize: "13px", fontWeight: 600, display: "block" as const, marginBottom: "6px" },
     addFormInput: { width: "100%", padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" },
-    addFormActions: { display: "flex" as const, gap: "8px", justifyContent: "flex-end" as const, marginTop: "8px" },
-    cancelBtn: {},
-    saveBtn: {},
+    addFormActions: { display: "flex" as const, gap: "8px", justifyContent: "flex-end" as const, flexWrap: "wrap" as const, marginTop: "8px" },
     emptyLinks: { textAlign: "center", padding: "32px 16px", flex: 1 },
     linkList: { flex: 1, overflowY: "auto", padding: 0, margin: 0, listStyle: "none" },
-    linkItem: { display: "flex" as const, flexDirection: "column" as const, background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", margin: "12px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" },
-    linkHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "flex-start" as const, gap: 8 },
-    linkTitleWrap: { display: "flex" as const, alignItems: "baseline" as const, gap: 8, flex: 1, minWidth: 0 },
-    linkActions: { display: "flex" as const, gap: "6px", alignItems: "center" },
-    linkUrl: { marginTop: "2px", marginBottom: "6px" },
-    linkNotes: { background: "var(--color-bg-subtle)", borderLeft: "3px solid var(--color-accent-primary)", padding: "8px 12px", borderRadius: "0 var(--radius-sm) var(--radius-sm) 0", fontSize: "13px", lineHeight: "1.5", color: "var(--color-text)", margin: "6px 0 8px 0", whiteSpace: "pre-wrap" },
+    linkItem: { display: "flex" as const, flexDirection: "column" as const, background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", margin: "12px 0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", minWidth: 0 },
+    linkHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "flex-start" as const, flexWrap: "wrap" as const, gap: 8, minWidth: 0 },
+    linkTitleWrap: { display: "flex" as const, alignItems: "baseline" as const, gap: 8, flex: "1 1 180px", minWidth: 0 },
+    linkActions: { display: "flex" as const, gap: "6px", alignItems: "center", flexWrap: "wrap" as const },
+    linkUrl: { marginTop: "2px", marginBottom: "6px", minWidth: 0 },
+    linkNotes: { background: "var(--color-bg-subtle)", borderLeft: "3px solid var(--color-accent-primary)", padding: "8px 12px", borderRadius: "0 var(--radius-sm) var(--radius-sm) 0", fontSize: "13px", lineHeight: "1.5", color: "var(--color-text)", margin: "6px 0 8px 0", whiteSpace: "pre-wrap", overflowWrap: "anywhere" as const },
     linkTags: { display: "flex" as const, gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" },
     tagChip: { margin: 0, background: "var(--color-bg-subtle)" },
     tagDate: { marginLeft: "auto", fontSize: "11px", color: "var(--color-text-muted)" },
-    linkAnchor: { fontWeight: 600, fontSize: "15px", color: "var(--color-accent-primary)", textDecoration: "none", wordBreak: "break-word" },
+    linkAnchor: { fontWeight: 600, fontSize: "15px", color: "var(--color-accent-primary)", textDecoration: "none", overflowWrap: "anywhere" as const },
     linkUrlAnchor: { fontSize: "12px", color: "var(--color-text-muted)", textDecoration: "none", wordBreak: "break-all" },
   };
 
   return (
-    <div className="home-links-tab" style={sx.sidebar}>
-      <aside className="link-folders-sidebar" style={sx.sidebar}>
+    <div className="home-links-tab split-pane">
+      <aside className="link-folders-sidebar split-sidebar">
         <div style={sx.sidebarHeader}>
           <h2 style={sx.sidebarTitle}>Link folders</h2>
-          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder">New</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-folder-input")?.focus()} data-tip="New link folder" data-tip-align="right">New</button>
         </div>
         <FolderTree
           foldersAsGrid
+          rootInputId="new-folder-input"
           folders={folders}
           items={links}
           folderId={(f) => f.id}
@@ -206,9 +203,9 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
         />
       </aside>
 
-      <main className="link-list-main" style={sx.main}>
+      <main className="link-list-main split-main">
         <header className="page-header" style={sx.header}>
-          <div>
+          <div style={{ minWidth: 0, flex: "1 1 auto" }}>
             <h1 style={sx.headerTitle}>{currentFolder?.title ?? currentLink?.title ?? "Links"}</h1>
           </div>
           <button
@@ -216,6 +213,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
             className="btn-primary clickable"
             onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setUrl(""); setNotes(""); setTags(""); setError(null); }}
             data-tip="Add a link"
+            data-tip-align="right"
           >
             Add link
           </button>
@@ -309,7 +307,7 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
                   <div style={sx.linkActions}>
                     <button type="button" className="btn-secondary btn-small clickable" onClick={() => copyToClipboard(link.url)} data-tip="Copy link URL">Copy</button>
                     <button type="button" className="btn-secondary btn-small clickable" onClick={() => startEdit(link)} data-tip="Edit link">Edit</button>
-                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" style={{ color: "var(--color-accent-issue)" }}>Delete</button>
+                    <button type="button" className="btn-secondary btn-small clickable" onClick={() => handleDeleteLink(link.id, link.title)} data-tip="Delete link" data-tip-align="right" style={{ color: "var(--color-accent-issue)" }}>Delete</button>
                   </div>
                 </div>
                 {link.url && (

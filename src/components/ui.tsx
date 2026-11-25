@@ -377,21 +377,11 @@ export function useToasts() {
 
 export function ToastContainer() {
   const toasts = useToasts();
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    container.style.cssText = `
-      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
-      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
-    `;
-  }, []);
 
   if (toasts.length === 0) return null;
 
   return (
-    <div ref={containerRef}>
+    <div className="toast-container">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -621,32 +611,16 @@ export function ConfirmDialogHost() {
       role="dialog"
       aria-modal="true"
       aria-label={req.title}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        zIndex: 99999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
+      className="confirm-backdrop"
       onClick={() => close(false)}
     >
       <div
-        style={{
-          background: "var(--color-bg-surface, #ffffff)",
-          borderRadius: 8,
-          padding: 24,
-          maxWidth: 420,
-          width: "100%",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
-        }}
+        className="confirm-dialog"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ margin: "0 0 12px 0", color: req.danger ? "#dc2626" : "inherit" }}>{req.title}</h3>
+        <h3 style={{ margin: "0 0 12px 0", color: req.danger ? "#f87171" : "inherit" }}>{req.title}</h3>
         <p style={{ margin: "0 0 20px 0", fontSize: 14, lineHeight: 1.5 }}>{req.message}</p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" className="btn-secondary btn-small clickable" onClick={() => close(false)}>
             {req.cancelLabel}
           </button>

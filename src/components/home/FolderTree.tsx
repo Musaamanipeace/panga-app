@@ -29,6 +29,7 @@ export interface FolderTreeProps<F, I> {
   renderItemTitle?: (i: I, selected: boolean) => ReactNode;
   renderItemActions?: (i: I, selected: boolean) => ReactNode;
   newFolderPlaceholder?: string;
+  rootInputId?: string;
   foldersAsGrid?: boolean;
   showItemsInGrid?: boolean;
 }
@@ -56,6 +57,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     renderItemTitle,
     renderItemActions,
     newFolderPlaceholder = "New folder…",
+    rootInputId,
     foldersAsGrid = false,
     showItemsInGrid = false,
   } = props;
@@ -143,8 +145,8 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     const itId = itemId(it);
     const itSelected = selectedId === itId;
     return (
-      <li key={itId} style={{ paddingLeft: 22, marginBottom: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <li key={itId} style={{ paddingLeft: 14, marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onSelectItem(itId); }}
@@ -156,13 +158,14 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
               fontSize: "13px",
               color: itSelected ? "var(--color-accent-primary)" : "inherit",
               cursor: "pointer",
-              flex: 1,
+              flex: "1 1 140px",
+              minWidth: 0,
               display: "flex",
               alignItems: "center",
               gap: 6,
             }}
           >
-            {renderItemTitle ? renderItemTitle(it, itSelected) : <span style={{ flex: 1, minWidth: 0 }}>{itemTitle(it)}</span>}
+            {renderItemTitle ? renderItemTitle(it, itSelected) : <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{itemTitle(it)}</span>}
           </button>
           {renderItemActions ? renderItemActions(it, itSelected) : null}
           {onItemAction && (
@@ -187,7 +190,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     return (
       <>
         <p style={{ padding: "0 12px", fontSize: "12px", color: "var(--color-text-muted)" }}>Unfiled</p>
-        <ul style={{ paddingLeft: 22, marginTop: 4, listStyle: "none", padding: 0 }}>
+        <ul style={{ marginTop: 4, listStyle: "none", padding: 0, paddingLeft: 14 }}>
           {unfiled.map((it) => renderItemRow(it))}
         </ul>
       </>
@@ -201,11 +204,12 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     const folderItems = itemsByFolder.get(id) ?? [];
     const selected = selectedId === id;
     const editing = editingId === id;
+    const cappedIndent = Math.min(depth, 4) * 14;
 
     const hasKids = kids.length > 0;
     return (
-      <li key={id} style={{ paddingLeft: depth * 18, marginBottom: 2 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <li key={id} style={{ paddingLeft: cappedIndent, marginBottom: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
           {hasKids && (
             <button
               type="button"
@@ -249,13 +253,13 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
             ) : (
               renderFolderTitle ? renderFolderTitle(f, selected) : (
                 <>
-                  <span style={{ flex: 1, minWidth: 0 }}>{folderTitle(f)}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{folderTitle(f)}</span>
                   {renderFolderMeta && renderFolderMeta(f, selected)}
                 </>
               )
             )}
           </button>
-          <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 4, flexWrap: "wrap" }}>
             {renderFolderActions ? renderFolderActions(f, selected) : null}
             <button
               type="button"
@@ -285,7 +289,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           </span>
         </div>
         {creatingUnder === id && (
-          <form onSubmit={(e) => handleCreateSubFolder(e, id)} style={{ marginLeft: depth * 18 + 24, marginTop: 4, display: "flex", gap: 4 }}>
+          <form onSubmit={(e) => handleCreateSubFolder(e, id)} style={{ marginLeft: Math.min(depth, 4) * 14 + 12, marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
             <input
               autoFocus
               value={subTitle}
@@ -300,12 +304,12 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           </form>
         )}
         {isOpen && hasKids && (
-          <ul style={{ paddingLeft: 22, marginTop: 4, listStyle: "none", padding: 0 }}>
+          <ul style={{ marginTop: 4, listStyle: "none", padding: 0, paddingLeft: 14 }}>
             {kids.map((child) => renderFolder(child, depth + 1))}
           </ul>
         )}
         {isOpen && folderItems.length > 0 && (
-          <ul style={{ paddingLeft: 22, marginTop: 6, listStyle: "none", padding: 0 }}>
+          <ul style={{ marginTop: 6, listStyle: "none", padding: 0, paddingLeft: 14 }}>
             {folderItems.map((it) => renderItemRow(it))}
           </ul>
         )}
@@ -321,12 +325,13 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
     const hasExpandable = kids.length > 0 || (showItemsInGrid && folderItems.length > 0);
     const selected = selectedId === id;
     const editing = editingId === id;
+    const gridIndent = Math.min(depth, 4) * 12;
 
     return (
       <div key={id} className="folder-grid-item" style={{ marginBottom: 8 }}>
         <div
           className={`folder-card${selected ? " folder-card-selected" : ""}`}
-          style={{ paddingLeft: depth * 18 }}
+          style={gridIndent > 0 ? { paddingLeft: 12 + gridIndent } : undefined}
           onClick={() => onSelectFolder(id)}
         >
           {editing ? (
@@ -387,7 +392,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           </span>
         </div>
         {creatingUnder === id && (
-          <form onSubmit={(e) => handleCreateSubFolder(e, id)} style={{ marginLeft: depth * 18 + 24, marginTop: 4, display: "flex", gap: 4 }}>
+          <form onSubmit={(e) => handleCreateSubFolder(e, id)} style={{ marginLeft: gridIndent + 12, marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
             <input
               autoFocus
               value={subTitle}
@@ -402,7 +407,7 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
           </form>
         )}
         {isOpen && showItemsInGrid && folderItems.length > 0 && (
-          <ul style={{ paddingLeft: 12, marginTop: 6, marginBottom: 4, listStyle: "none" }}>
+          <ul style={{ padding: 0, paddingLeft: 12, marginTop: 6, marginBottom: 4, listStyle: "none" }}>
             {folderItems.map((it) => renderItemRow(it))}
           </ul>
         )}
@@ -418,19 +423,20 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
   if (foldersAsGrid) {
     return (
       <>
-        <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 12px 8px" }}>
+        <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 0 8px", flexWrap: "wrap" }}>
           <input
+            id={rootInputId}
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder={newFolderPlaceholder}
-            style={{ flex: 1, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
+            style={{ flex: "1 1 140px", minWidth: 0, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
           />
           <button type="submit" className="btn-secondary btn-small clickable" disabled={!newTitle.trim()}>
             Add
           </button>
         </form>
         {rootFolders.length === 0 && (
-          <p style={{ padding: "0 12px", fontSize: "13px", color: "var(--color-text-muted)" }}>
+          <p style={{ padding: "0 4px", fontSize: "13px", color: "var(--color-text-muted)" }}>
             No folders yet. Add one above.
           </p>
         )}
@@ -442,19 +448,20 @@ export default function FolderTree<F, I>(props: FolderTreeProps<F, I>) {
 
   return (
     <ul className="item-list" style={{ padding: 0, margin: 0, listStyle: "none" }}>
-      <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 12px 8px" }}>
+      <form onSubmit={handleCreateRootFolder} style={{ display: "flex", gap: 6, padding: "0 0 8px", flexWrap: "wrap" }}>
         <input
+          id={rootInputId}
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           placeholder={newFolderPlaceholder}
-          style={{ flex: 1, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
+          style={{ flex: "1 1 140px", minWidth: 0, padding: "6px 8px", fontSize: "13px", borderRadius: "var(--radius-sm, 4px)", border: "1px solid var(--color-border)" }}
         />
         <button type="submit" className="btn-secondary btn-small clickable" disabled={!newTitle.trim()}>
           Add
         </button>
       </form>
       {rootFolders.length === 0 && (
-        <p style={{ padding: "0 12px", fontSize: "13px", color: "var(--color-text-muted)" }}>
+        <p style={{ padding: "0 4px", fontSize: "13px", color: "var(--color-text-muted)" }}>
           No folders yet. Add one above.
         </p>
       )}

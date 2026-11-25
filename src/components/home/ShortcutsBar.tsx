@@ -117,9 +117,9 @@ export default function ShortcutsBar() {
     setPasteValue("");
     setPasteError(null);
     if (res.duplicate) {
-      showToast(`Shortcut already pinned: ${res.shortcut.name}`, "info");
+      showToast(`Quick link already pinned: ${res.shortcut.name}`, "info");
     } else {
-      showToast(`Added shortcut: ${res.shortcut.name}`, "success");
+      showToast(`Added quick link: ${res.shortcut.name}`, "success");
     }
     return true;
   }
@@ -164,9 +164,9 @@ export default function ShortcutsBar() {
     setPickerOpen(false);
     setSearch("");
     if (res.duplicate) {
-      showToast(`Shortcut already pinned: ${res.shortcut.name}`, "info");
+      showToast(`Quick link already pinned: ${res.shortcut.name}`, "info");
     } else {
-      showToast(`Added shortcut: ${res.shortcut.name}`, "success");
+      showToast(`Added quick link: ${res.shortcut.name}`, "success");
     }
   }
 
@@ -198,15 +198,15 @@ export default function ShortcutsBar() {
   }, [targets, filter, search]);
 
   return (
-    <section className="pg-card shortcuts-card" aria-label="Shortcuts">
+    <section className="pg-card shortcuts-card" aria-label="Quick links">
       <div className="shortcuts-head">
-        <span className="shortcuts-title">Shortcuts</span>
+        <span className="shortcuts-title">Quick links</span>
         <div className="shortcuts-actions">
           <button
             type="button"
             className="btn-secondary btn-small clickable"
             onClick={() => void handlePasteLinkClick()}
-            title="Paste a link from clipboard as a shortcut"
+            title="Paste a link from clipboard as a quick link"
           >
             Paste link
           </button>
@@ -246,7 +246,7 @@ export default function ShortcutsBar() {
               }
             }}
             placeholder="Paste a link here (https://…)"
-            aria-label="Paste shortcut link"
+            aria-label="Paste quick link"
           />
           <button type="submit" className="btn-primary btn-small clickable" disabled={!pasteValue.trim()}>
             Add
@@ -267,19 +267,19 @@ export default function ShortcutsBar() {
       {pasteError && <p className="pg-error" style={{ margin: "0 0 8px" }}>{pasteError}</p>}
 
       {pickerOpen && (
-        <div className="shortcuts-picker" role="region" aria-label="Add shortcut picker">
+        <div className="shortcuts-picker" role="region" aria-label="Add quick link picker">
           <div className="shortcuts-picker-controls">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter task lists, note folders, links…"
-              aria-label="Filter shortcut targets"
+              aria-label="Filter quick link targets"
             />
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              aria-label="Filter shortcut category"
+              aria-label="Filter quick link category"
             >
               {KIND_FILTERS.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -317,10 +317,10 @@ export default function ShortcutsBar() {
 
       {shortcuts.length === 0 ? (
         <p className="pg-muted shortcuts-empty">
-          No shortcuts yet — paste a link or add a task list, note folder, or link.
+          No quick links yet — paste a link or add a task list, note folder, or link.
         </p>
       ) : (
-        <div className="shortcuts-grid" role="list" aria-label="Pinned shortcuts">
+        <div className="shortcuts-grid" role="list" aria-label="Pinned quick links">
           {shortcuts.map((s) => (
             <div key={s.id} className="shortcuts-tile" role="listitem">
               {s.url ? (
@@ -355,7 +355,7 @@ export default function ShortcutsBar() {
                 type="button"
                 className="shortcuts-tile-remove"
                 aria-label={`Remove ${s.name}`}
-                title="Remove shortcut"
+                title="Remove quick link"
                 onClick={() => void handleRemove(s.id)}
               >
                 ×

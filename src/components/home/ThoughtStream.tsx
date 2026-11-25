@@ -101,11 +101,11 @@ export default function ThoughtStream() {
                 ) : th.noteId ? (
                   <span className="chip-small">In notes</span>
                 ) : promotingThis ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
                     <select
                       value={promoteAs ?? ""}
                       onChange={(e) => setPromoteAs(e.target.value as "task" | "note")}
-                      style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
+                      style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)", maxWidth: "100%", minWidth: 0 }}
                     >
                       <option value="task">Task</option>
                       <option value="note">Note</option>
@@ -115,7 +115,7 @@ export default function ThoughtStream() {
                         <select
                           value={promoteListId ?? ""}
                           onChange={(e) => setPromoteListId(e.target.value || null)}
-                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
+                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)", maxWidth: "100%", minWidth: 0 }}
                         >
                           <option value="">Inbox</option>
                           {lists.map((l) => (
@@ -131,7 +131,7 @@ export default function ThoughtStream() {
                         <select
                           value={promoteFolderId ?? ""}
                           onChange={(e) => setPromoteFolderId(e.target.value || null)}
-                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)" } as any}
+                          style={{ fontSize: "12px", padding: "2px 6px", borderRadius: "var(--radius-sm)", maxWidth: "100%", minWidth: 0 }}
                         >
                           <option value="">Inbox</option>
                           {folders.map((f) => (

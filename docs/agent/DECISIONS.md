@@ -43,3 +43,20 @@ Decisions made + why (short): what, why, alternatives rejected.
 ## 2026-11-22 — Five ordered units of work
 - Step 1 remove Google/Drive (issue #4), step 2 auth + isolation + JSON identity, step 3 empty key fields + Supabase messaging, step 4 voice transcription speed, step 5 Read Aloud coverage.
 - Why: matches the user's recommended implementation order and CONTRIBUTING.md's "one focused change per PR". Never reorder or merge steps.
+
+## 2026-11-25 — Workspaces are one IndexedDB each; BYOK is account-level
+- Each workspace has its own DB (`panga-db-<user>` for the default one so existing data stays put, `panga-db-<user>__ws_<id>` for others). Switching closes and reopens the DB via `switchUserAccount()`.
+- `aiApiKey_*`, `geminiApiKey`, `aiProvider`, `aiModel_*` are stored per account in localStorage and mirrored into the open DB so JSON snapshots still carry them.
+- Why: keeps every existing data module untouched and gives clean isolation; BYOK must not change when switching workspaces.
+- Rejected: a `workspaceId` column on every table (touches every query and migration).
+
+## 2026-11-25 — Notes formatting stays plain text
+- Toolbar inserts markdown-style markers (bold, italic, heading, bullets, numbered, checklist, quote); no HTML storage, so search, copy, read-aloud and PDF are unchanged. Underline and alignment are not offered for that reason.
+
+## 2026-11-25 — Task lists are flat
+- Folders are gone from the Task lists UI; the v14 migration prefixes a list's old folder path onto its title (the default "Inbox" folder adds no prefix). The `taskListFolders` table is left in place, unused.
+
+## 2026-11-24 — Quick links vs header Shortcuts & layered z-index scale
+- Renamed the pinned home card (`ShortcutsBar.tsx`) to `Quick links` while keeping the header keyboard-shortcut dialog (`AppShell.tsx`) as `Shortcuts` to eliminate duplicate/ambiguous terminology (`ui-no-redundancy`).
+- Separated sticky chrome layers (`--z-chrome: 20` for bottom tab bar / workspace bar / AI FAB, `--z-workspace-open: 25` for open workspace menu, `--z-header: 30` for sticky top bar) and kept floating editor helpers (`.voice-fab`, `.pg-copy-fab`) at `--z-floating: 70` above drawers/modals (`--z-overlay: 60`) and below toasts/confirmations (`--z-toast: 80`).
+

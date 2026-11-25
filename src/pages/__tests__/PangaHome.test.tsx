@@ -70,10 +70,12 @@ describe("Panga home (smoke)", () => {
     await settle(1000);
     await click(byText("Add note"));
     await settle(50);
-    const body = host.querySelector('textarea[placeholder="Write your note…"]') as HTMLTextAreaElement;
+    const body = host.querySelector('textarea[placeholder="Write your note"]') as HTMLTextAreaElement;
     await type(body, "remember the meeting agenda");
     await click(byText("Save note"));
     await settle(100);
+    // After saving, going back shows the note in the list.
+    await click(byText("Back"));
     expect(host.textContent).toContain("remember the meeting agenda");
   });
 
@@ -89,45 +91,44 @@ describe("Panga home (smoke)", () => {
     expect(host.textContent).toContain("copied snippet 123");
   });
 
-  it("displays task lists nested inside a folder and shows their tasks", async () => {
-    const { createTaskListFolder } = await import("../../data/taskListFolders");
+  it("shows flat task lists (no folders) and opens a list's tasks", async () => {
     const { createTaskList } = await import("../../data/taskLists");
     const { createTask } = await import("../../data/tasks");
 
-    const folder = await createTaskListFolder({ title: "clean" });
-    const list = await createTaskList({ title: "compound", folderId: folder.id });
+    const list = await createTaskList({ title: "compound" });
     await createTask({ listId: list.id, title: "sweep" });
     await createTask({ listId: list.id, title: "mop" });
     await createTask({ listId: list.id, title: "dig" });
 
     await mount("/home?tab=Task%20lists");
     await settle(120);
-    expect(host.textContent).toContain("clean");
-
-    const folderCard = [...host.querySelectorAll(".folder-card")].find((el) => el.textContent?.includes("clean"));
-    await click(folderCard);
-    await settle(80);
     expect(host.textContent).toContain("compound");
+    expect(host.querySelector(".folder-card")).toBeNull();
+    expect(byText("Add folder")).toBeUndefined();
 
-    const showBtn = folderCard ? [...folderCard.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Show") : null;
-    await click(showBtn);
-    await settle(60);
-    expect(folderCard?.parentElement?.textContent).toContain("compound");
-
-    const listBtn = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "compound");
-    await click(listBtn);
+    const row = [...host.querySelectorAll(".tl-row")].find((b) => b.textContent?.includes("compound"));
+    await click(row);
     await settle(80);
     expect(host.textContent).toContain("sweep");
     expect(host.textContent).toContain("mop");
     expect(host.textContent).toContain("dig");
   });
 
-  it("renders the Shortcuts card immediately below the AI CommandBox section", async () => {
+  it("no longer has a Proofread tab; Grammar & Spelling is offered inside Notes", async () => {
+    await mount("/home?tab=Notes");
+    await settle(300);
+    expect(byText("Proofread", ".chip")).toBeUndefined();
+    await click(byText("Add note"));
+    expect(byText("Grammar & Spelling")).toBeDefined();
+  });
+
+  it("renders the Quick links card immediately below the AI CommandBox section", async () => {
     await mount("/home");
     const cards = [...host.querySelectorAll(".pg-home > section.pg-card")];
     const aiIdx = cards.findIndex((c) => c.querySelector('textarea[placeholder*="Tell Panga what to do"]'));
-    const shortcutsIdx = cards.findIndex((c) => c.getAttribute("aria-label") === "Shortcuts");
+    const quickLinksIdx = cards.findIndex((c) => c.getAttribute("aria-label") === "Quick links");
     expect(aiIdx).toBeGreaterThanOrEqual(0);
-    expect(shortcutsIdx).toBe(aiIdx + 1);
+    expect(quickLinksIdx).toBe(aiIdx + 1);
+    expect(cards[quickLinksIdx].querySelector(".shortcuts-title")?.textContent).toBe("Quick links");
   });
 });

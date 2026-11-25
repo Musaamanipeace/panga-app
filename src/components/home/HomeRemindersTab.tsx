@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ProofreadTrigger } from "../Proofread";
 import {
   bucketReminders,
   createReminder,
@@ -85,6 +86,7 @@ function ReminderForm({
             required
             style={{ padding: "8px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", flex: 1, minWidth: 0 }}
           />
+          {message.trim() && <ProofreadTrigger value={message} onApply={setMessage} />}
           <input
             type="datetime-local"
             value={when}
@@ -194,7 +196,9 @@ export default function HomeRemindersTab({
 
   useEffect(() => {
     void startReminderScheduler();
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    if (typeof Notification === "undefined") {
+      setPermGranted(false);
+    } else if (Notification.permission === "default") {
       setPermGranted(null);
     } else {
       setPermGranted(Notification.permission === "granted");
@@ -250,14 +254,15 @@ export default function HomeRemindersTab({
   if (loading) return <Loading label="Loading reminders..." />;
 
   return (
-    <div className="stack" style={{ display: "flex", flex: 1, minHeight: 0 }}>
-      <aside style={{ flex: "0 0 240px", borderRight: "1px solid var(--color-border)", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div className="split-pane">
+      <aside className="split-sidebar">
+        <div style={{ padding: "0 0 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Reminder folders</h2>
-          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-reminder-folder-input")?.focus()} data-tip="New reminder folder">New</button>
+          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-reminder-folder-input")?.focus()} data-tip="New reminder folder" data-tip-align="right">New</button>
         </div>
         <FolderTree
           foldersAsGrid
+          rootInputId="new-reminder-folder-input"
           folders={folders}
           items={allReminders}
           folderId={(f) => f.id}
@@ -274,7 +279,7 @@ export default function HomeRemindersTab({
           onDeleteFolder={handleDeleteFolder}
           newFolderPlaceholder={selType === "folder" ? `New folder under "${currentFolder?.title}"…` : "New folder…"}
           renderItemTitle={(r) => (
-            <span style={{ flex: 1, minWidth: 0 }}>{r.message}</span>
+            <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{r.message}</span>
           )}
           renderFolderMeta={(f) => {
             const n = allReminders.filter((r) => r.folderId === f.id).length;
@@ -283,7 +288,7 @@ export default function HomeRemindersTab({
         />
       </aside>
 
-      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <main className="split-main">
         <ReminderForm
           message={message}
           setMessage={setMessage}
@@ -313,7 +318,7 @@ export default function HomeRemindersTab({
               }}
               label="Edit reminder text"
             />
-            <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input
                 type="datetime-local"
                 className="reminder-time-input"

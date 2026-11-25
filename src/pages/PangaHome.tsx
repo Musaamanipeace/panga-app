@@ -9,7 +9,6 @@ import HomeLinksTab from "../components/home/HomeLinksTab";
 import NotesPanel from "../components/home/NotesPanel";
 import HomeRemindersTab from "../components/home/HomeRemindersTab";
 import ClipboardPanel from "../components/home/ClipboardPanel";
-import Proofread from "../components/Proofread";
 import { HOME_TABS, type HomeTabId } from "../shortcuts";
 import {
   dismissReadAloudNotice,
@@ -121,13 +120,12 @@ export default function PangaHome() {
         ))}
       </nav>
 
-      <section className="pg-card">
+      <section className="pg-card sweep-on-mount" key={tab}>
         {tab === "Task lists" && <TaskListsHome initialFolderId={folderId} initialListId={listId} />}
         {tab === "Links" && <HomeLinksTab initialFolderId={folderId} />}
         {tab === "Notes" && <NotesPanel initialFolderId={folderId} initialNoteId={noteId} />}
         {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} initialReminderId={reminderId} />}
         {tab === "Clipboard" && <ClipboardPanel />}
-        {tab === "Proofread" && <Proofread />}
       </section>
     </div>
   );

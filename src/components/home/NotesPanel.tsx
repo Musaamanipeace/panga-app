@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createNote,
   deleteNote,
@@ -10,13 +10,45 @@ import {
   createNoteFolder,
   deleteNoteFolder,
   listNoteFolders,
-  updateNoteFolder,
   type NoteFolder,
 } from "../../data/noteFolders";
-import { confirmDelete, copyToClipboard } from "../ui";
+import { confirmAction, confirmDelete, copyToClipboard } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
 import { ProofreadTrigger } from "../Proofread";
-import FolderTree from "./FolderTree";
+import {
+  stripMarkdown,
+  toggleLinePrefix,
+  wrapSelection,
+  type EditResult,
+  type LineFormat,
+} from "./noteFormat";
+
+const ALL = "__all__";
+const UNFILED = "__unfiled__";
+
+interface Draft {
+  /** null while the note has not been saved yet. */
+  id: string | null;
+  title: string;
+  body: string;
+  folderId: string | null;
+  baseTitle: string;
+  baseBody: string;
+}
+
+function clipTitle(t: string): string {
+  return stripMarkdown(t).trim().split("\n")[0].slice(0, 60) || "Untitled note";
+}
+
+function folderDepth(folders: NoteFolder[], f: NoteFolder): number {
+  let depth = 0;
+  let cur: NoteFolder | undefined = f;
+  while (cur?.parentFolderId && depth < 10) {
+    cur = folders.find((x) => x.id === cur!.parentFolderId);
+    depth++;
+  }
+  return depth;
+}
 
 export default function NotesPanel({
   initialFolderId,
@@ -27,30 +59,23 @@ export default function NotesPanel({
 }) {
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [selType, setSelType] = useState<"folder" | "note" | null>(null);
-  const [selId, setSelId] = useState<string | null>(null);
-
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [targetFolderId, setTargetFolderId] = useState<string | null>(null);
-
+  const [view, setView] = useState<string>(ALL);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [folderMenuOpen, setFolderMenuOpen] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const [folderName, setFolderName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const foldersRef = useRef<HTMLElement>(null);
+  const pendingSelection = useRef<{ start: number; end: number } | null>(null);
 
   const reload = useCallback(async () => {
     const [allFolders, allNotes] = await Promise.all([listNoteFolders(), listAllNotes()]);
     setFolders(allFolders);
     setNotes(allNotes);
-    setSelId((prev) => {
-      if (prev && (allFolders.some((f) => f.id === prev) || allNotes.some((n) => n.id === prev))) {
-        return prev;
-      }
-      return allFolders[0]?.id ?? null;
-    });
+    setView((prev) => (prev === ALL || prev === UNFILED || allFolders.some((f) => f.id === prev) ? prev : ALL));
   }, []);
 
   useEffect(() => {
@@ -63,280 +88,331 @@ export default function NotesPanel({
   // A search result or shortcut for a folder/note selects it directly.
   useEffect(() => {
     if (initialNoteId) {
-      const targetNote = notes.find((n) => n.id === initialNoteId);
-      if (targetNote) {
-        setSelType("note");
-        setSelId(targetNote.id);
+      const n = notes.find((x) => x.id === initialNoteId);
+      if (n) {
+        openNote(n);
         return;
       }
     }
-    if (!initialFolderId) return;
-    const target = folders.find((f) => f.id === initialFolderId);
-    if (target) {
-      setSelType("folder");
-      setSelId(target.id);
-    }
+    if (initialFolderId && folders.some((f) => f.id === initialFolderId)) setView(initialFolderId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFolderId, initialNoteId, folders, notes]);
 
-  const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
-  const currentNote = useMemo(() => notes.find((n) => n.id === selId) ?? null, [notes, selId]);
-  const currentNotes = useMemo(() => notes.filter((n) => n.folderId === (currentFolder?.id ?? null)), [notes, currentFolder]);
+  useEffect(() => {
+    if (!folderMenuOpen) return;
+    function onPointerDown(e: MouseEvent | TouchEvent) {
+      const target = e.target as Node | null;
+      if (foldersRef.current && target && !foldersRef.current.contains(target)) {
+        setFolderMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setFolderMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [folderMenuOpen]);
+
+  // Restore the caret after a toolbar edit.
+  useEffect(() => {
+    if (pendingSelection.current && bodyRef.current) {
+      const { start, end } = pendingSelection.current;
+      bodyRef.current.focus();
+      bodyRef.current.setSelectionRange(start, end);
+      pendingSelection.current = null;
+    }
+  }, [draft?.body]);
+
+  const dirty = !!draft && (draft.title !== draft.baseTitle || draft.body !== draft.baseBody);
+  const currentFolder = folders.find((f) => f.id === view) ?? null;
+  const viewLabel = view === ALL ? "All notes" : view === UNFILED ? "Unfiled" : currentFolder?.title ?? "All notes";
 
   const shown = useMemo(() => {
+    const inView = notes.filter((n) => {
+      if (view === ALL) return true;
+      if (view === UNFILED) return !n.folderId;
+      return n.folderId === view;
+    });
     const q = searchQuery.trim().toLowerCase();
-    const list = currentNotes;
-    if (!q) return list.slice().sort((a, b) => b.updatedAt - a.updatedAt);
-    return list.filter(
-      (n) =>
-        n.title.toLowerCase().includes(q) ||
-        n.body.toLowerCase().includes(q) ||
-        n.tags.some((tag) => tag.toLowerCase().includes(q))
-    );
-  }, [currentNotes, searchQuery]);
+    const list = q
+      ? inView.filter(
+          (n) =>
+            n.title.toLowerCase().includes(q) ||
+            n.body.toLowerCase().includes(q) ||
+            n.tags.some((tag) => tag.toLowerCase().includes(q))
+        )
+      : inView;
+    return list.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [notes, view, searchQuery]);
 
-  async function handleCreateFolder(parentId: string | null, title: string) {
-    await createNoteFolder({ title: title.trim(), parentFolderId: parentId });
-    await reload();
+  function openNote(n: Note) {
+    setError(null);
+    setDraft({ id: n.id, title: n.title, body: n.body ?? "", folderId: n.folderId ?? null, baseTitle: n.title, baseBody: n.body ?? "" });
   }
 
-  async function handleRenameFolder(id: string, title: string) {
-    await updateNoteFolder(id, { title: title.trim() });
-    await reload();
+  function startNew() {
+    setError(null);
+    setDraft({
+      id: null,
+      title: "",
+      body: "",
+      folderId: view === ALL || view === UNFILED ? null : view,
+      baseTitle: "",
+      baseBody: "",
+    });
   }
 
-  async function handleDeleteFolder(id: string) {
-    const folder = folders.find((f) => f.id === id);
-    if (!(await confirmDelete({ kind: "note folder", name: folder?.title }))) return;
-    await deleteNoteFolder(id);
-    if (selId === id) setSelId(null);
-    await reload();
+  async function closeEditor() {
+    if (dirty) {
+      const discard = await confirmAction({
+        title: "Discard changes?",
+        message: "This note has unsaved changes.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        danger: true,
+      });
+      if (!discard) return;
+    }
+    setDraft(null);
+    setError(null);
   }
 
-  async function handleSaveNote() {
-    const b = body.trim();
-    if (!b && !title.trim()) return;
+  async function saveNote() {
+    if (!draft) return;
+    const body = draft.body.trim();
+    if (!body && !draft.title.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      if (editingId) {
-        await updateNote(editingId, { title: title.trim() || clipTitle(b), body: b, folderId: targetFolderId ?? null });
+      const title = draft.title.trim() || clipTitle(body);
+      if (draft.id) {
+        await updateNote(draft.id, { title, body, folderId: draft.folderId });
+        setDraft({ ...draft, title, body, baseTitle: title, baseBody: body });
       } else {
-        await createNote({ folderId: targetFolderId ?? (selType === "folder" ? selId : null), title: title.trim() || clipTitle(b), body: b });
+        const created = await createNote({ folderId: draft.folderId, title, body });
+        setDraft({ ...draft, id: created.id, title, body, baseTitle: title, baseBody: body });
       }
-      setShowAddForm(false);
-      setEditingId(null);
-      setTitle("");
-      setBody("");
-      setTargetFolderId(currentFolder?.id ?? null);
       await reload();
-    } catch (err: any) {
-      setError(err?.message || "Could not save the note.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not save the note.");
     } finally {
       setSaving(false);
     }
   }
 
-  function startEdit(note: Note) {
-    setEditingId(note.id);
-    setTargetFolderId(note.folderId ?? null);
-    setTitle(note.title);
-    setBody(note.body);
-    setShowAddForm(true);
-  }
-
-  async function handleDelete(id: string, title: string) {
-    if (!(await confirmDelete({ kind: "note", name: title }))) return;
-    await deleteNote(id);
+  async function removeNote() {
+    if (!draft?.id) {
+      setDraft(null);
+      return;
+    }
+    if (!(await confirmDelete({ kind: "note", name: draft.title }))) return;
+    await deleteNote(draft.id);
+    setDraft(null);
     await reload();
   }
 
-  const sx: Record<string, React.CSSProperties> = {
-    home: { display: "flex" as const, flex: 1, minHeight: 0 },
-    sidebar: { flex: "0 0 260px" as const, borderRight: "1px solid var(--color-border)" as const, display: "flex" as const, flexDirection: "column" as const },
-    sidebarHeader: { padding: 12, display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
-    sidebarTitle: { margin: 0, fontSize: 16 },
-    main: { flex: 1, minHeight: 0, display: "flex" as const, flexDirection: "column" as const },
-    emptyState: { padding: 32, textAlign: "center", flex: 1 },
-    header: { padding: "12px 16px", borderBottom: "1px solid var(--color-border)", display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const, flexShrink: 0 },
-    headerTitle: { margin: 0, fontSize: 18 },
-    mainContent: { padding: "0 16px", flex: 1, overflowY: "auto", display: "flex" as const, flexDirection: "column" as const },
-    addForm: { background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "16px", marginBottom: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.04)" },
-    addFormHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "center" as const },
-    addFormH3: { margin: 0, fontSize: "16px", fontWeight: 600 },
-    addFormField: { marginTop: "8px" },
-    addFormInput: { width: "100%", padding: "8px 10px", fontSize: "14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" },
-    addFormTextarea: { width: "100%", padding: "8px 10px", fontSize: "14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", resize: "vertical" },
-    addFormActions: { display: "flex" as const, gap: "8px", justifyContent: "flex-end" as const, marginTop: "8px" },
-    searchRow: { marginTop: 8, display: "flex" as const, gap: 8, alignItems: "center" as const, marginBottom: 8 },
-    searchInput: { padding: "6px 10px", fontSize: "13px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", flex: 1 },
-    noteList: { flex: 1, overflowY: "auto", padding: 0, margin: 0, listStyle: "none" },
-    noteFormItem: { padding: "12px 16px", background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", margin: "12px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" },
-    noteItem: { background: "white", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "14px", margin: "12px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" },
-    noteHeader: { display: "flex" as const, justifyContent: "space-between" as const, alignItems: "flex-start" as const, gap: 8, marginBottom: 6 },
-    noteTitle: {},
-    noteBody: { whiteSpace: "pre-wrap", lineHeight: 1.5, color: "var(--color-text)", margin: 0 },
-    noteActions: { marginTop: 10, display: "flex" as const, gap: 8 },
-    noteTitleInput: { width: "100%", padding: "6px 8px", fontSize: "14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", marginBottom: 6 },
-    noteBodyTextarea: { width: "100%", padding: "6px 8px", fontSize: "14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", marginBottom: 8, resize: "vertical" },
-    readAloudBtn: { padding: "2px 8px", fontSize: "12px" },
-  };
+  function applyEdit(fn: (value: string, start: number, end: number) => EditResult) {
+    if (!draft) return;
+    const el = bodyRef.current;
+    const start = el?.selectionStart ?? draft.body.length;
+    const end = el?.selectionEnd ?? draft.body.length;
+    const res = fn(draft.body, start, end);
+    pendingSelection.current = { start: res.selStart, end: res.selEnd };
+    setDraft({ ...draft, body: res.value });
+  }
+
+  const wrap = (marker: string) => applyEdit((v, s, e) => wrapSelection(v, s, e, marker));
+  const line = (kind: LineFormat) => applyEdit((v, s, e) => toggleLinePrefix(v, s, e, kind));
+
+  async function handleAddFolder(e: React.FormEvent) {
+    e.preventDefault();
+    const title = folderName.trim();
+    if (!title) return;
+    const parent = currentFolder?.id ?? null;
+    const created = await createNoteFolder({ title, parentFolderId: parent });
+    setFolderName("");
+    setAddingFolder(false);
+    await reload();
+    if (created?.id) setView(created.id);
+  }
+
+  async function handleDeleteFolder() {
+    if (!currentFolder) return;
+    if (!(await confirmDelete({ kind: "note folder", name: currentFolder.title, detail: "Its notes move up one level. This cannot be undone." }))) return;
+    await deleteNoteFolder(currentFolder.id);
+    setView(ALL);
+    await reload();
+  }
+
+  function pickView(next: string) {
+    setView(next);
+    setFolderMenuOpen(false);
+    setAddingFolder(false);
+  }
+
+  const toolbarBtn = "notes-tool clickable";
 
   return (
-    <div className="pg-notes-home" style={sx.home}>
-      <aside className="note-folders-sidebar" style={sx.sidebar}>
-        <div style={sx.sidebarHeader}>
-          <h2 style={sx.sidebarTitle}>Note folders</h2>
-          <button type="button" className="btn-secondary btn-small clickable" onClick={() => document.getElementById("new-note-folder-input")?.focus()} data-tip="New note folder">New</button>
+    <div className="notes-shell" data-mode={draft ? "edit" : "browse"}>
+      <aside className="notes-folders" ref={foldersRef} aria-label="Folders">
+        <button
+          type="button"
+          className="notes-folders-trigger clickable"
+          aria-expanded={folderMenuOpen}
+          aria-haspopup="menu"
+          onClick={() => setFolderMenuOpen((o) => !o)}
+        >
+          <span className="notes-folders-label">Folders: <strong>{viewLabel}</strong></span>
+          <span className={`workspace-caret${folderMenuOpen ? " workspace-caret-open" : ""}`} aria-hidden="true" />
+        </button>
+        <div className="notes-folders-panel dropdown-anim sweep-on-mount" data-open={folderMenuOpen} role="menu">
+          <ul className="notes-folder-list">
+            <li>
+              <button type="button" role="menuitemradio" aria-checked={view === ALL} className={`notes-folder-item clickable${view === ALL ? " notes-folder-active" : ""}`} onClick={() => pickView(ALL)}>
+                All notes <span className="item-meta">{notes.length}</span>
+              </button>
+            </li>
+            {folders.map((f) => (
+              <li key={f.id} style={{ paddingLeft: Math.min(folderDepth(folders, f), 4) * 12 }}>
+                <button type="button" role="menuitemradio" aria-checked={view === f.id} className={`notes-folder-item clickable${view === f.id ? " notes-folder-active" : ""}`} onClick={() => pickView(f.id)}>
+                  {f.title} <span className="item-meta">{notes.filter((n) => n.folderId === f.id).length}</span>
+                </button>
+              </li>
+            ))}
+            {notes.some((n) => !n.folderId) && folders.length > 0 && (
+              <li>
+                <button type="button" role="menuitemradio" aria-checked={view === UNFILED} className={`notes-folder-item clickable${view === UNFILED ? " notes-folder-active" : ""}`} onClick={() => pickView(UNFILED)}>
+                  Unfiled <span className="item-meta">{notes.filter((n) => !n.folderId).length}</span>
+                </button>
+              </li>
+            )}
+          </ul>
+          {addingFolder ? (
+            <form className="notes-folder-add" onSubmit={handleAddFolder}>
+              <input
+                autoFocus
+                value={folderName}
+                onChange={(e) => setFolderName(e.target.value)}
+                placeholder={currentFolder ? `New folder in ${currentFolder.title}` : "New folder name"}
+                aria-label="New folder name"
+              />
+              <button type="submit" className="btn-primary btn-small clickable" disabled={!folderName.trim()}>Add</button>
+            </form>
+          ) : (
+            <div className="notes-folder-actions">
+              <button type="button" className="btn-secondary btn-small clickable" onClick={() => setAddingFolder(true)}>Add</button>
+              <button type="button" className="btn-secondary btn-small clickable tl-danger" disabled={!currentFolder} onClick={() => void handleDeleteFolder()}>Delete</button>
+            </div>
+          )}
         </div>
-        <FolderTree
-          foldersAsGrid
-          folders={folders}
-          items={notes}
-          folderId={(f) => f.id}
-          folderParentId={(f) => f.parentFolderId}
-          folderTitle={(f) => f.title}
-          itemId={(n) => n.id}
-          itemFolderId={(n) => n.folderId}
-          itemTitle={(n) => n.title}
-          selectedId={selId}
-          onSelectFolder={(id) => { setSelType("folder"); setSelId(id); }}
-          onSelectItem={(id) => { const n = notes.find((x) => x.id === id); if (n) startEdit(n); setSelType("note"); setSelId(id); }}
-          onCreateFolder={handleCreateFolder}
-          onRenameFolder={handleRenameFolder}
-          onDeleteFolder={handleDeleteFolder}
-          newFolderPlaceholder={selType === "folder" ? `New folder under "${currentFolder?.title}"…` : "New folder…"}
-          renderFolderMeta={(f) => {
-            const n = notes.filter((x) => x.folderId === f.id).length;
-            return n > 0 ? <span className="item-meta">{n}</span> : null;
-          }}
-        />
       </aside>
 
-      <main className="notes-main" style={sx.main}>
-        <header className="page-header" style={sx.header}>
-          <div>
-            <h1 style={sx.headerTitle}>{currentFolder?.title ?? currentNote?.title ?? "Notes"}</h1>
-          </div>
-          <button
-            type="button"
-            className="btn-primary clickable"
-            onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setBody(""); setError(null); }}
-            data-tip="Add a note"
-          >
-            Add note
-          </button>
+      <section className="notes-list-pane" aria-label="Notes">
+        <header className="tl-pane-head">
+          <h2>{viewLabel}</h2>
+          <button type="button" className="btn-primary btn-small clickable" onClick={startNew}>Add note</button>
         </header>
-
-        <div style={sx.mainContent}>
-          {showAddForm && (
-            <form onSubmit={(e) => { e.preventDefault(); void handleSaveNote(); }} className="stack" style={sx.addForm}>
-              <div style={sx.addFormHeader}>
-                <h3 style={sx.addFormH3}>{editingId ? "Edit note" : "Add a note"}</h3>
-              </div>
-              <div style={sx.addFormField}>
-                <input
-                  autoFocus
-                  placeholder="Title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  style={sx.addFormInput}
-                />
-              </div>
-              <div style={sx.addFormField}>
-                <textarea
-                  placeholder="Write your note…"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  rows={5}
-                  spellCheck
-                  lang="en"
-                  style={sx.addFormTextarea}
-                />
-              </div>
-              {error && <p className="form-error">{error}</p>}
-              <div style={sx.addFormActions}>
-                <ProofreadTrigger value={body} onApply={setBody} />
-                <button type="button" className="btn-secondary clickable" onClick={() => { setShowAddForm(false); setEditingId(null); setTitle(""); setBody(""); setError(null); }} disabled={saving}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary clickable" disabled={saving}>
-                  {saving ? "Saving…" : editingId ? "Save changes" : "Save note"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div style={sx.searchRow}>
-            <input
-              type="search"
-              placeholder="Search notes…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={sx.searchInput}
-              spellCheck
-            />
+        <input
+          type="search"
+          className="notes-search"
+          placeholder="Search notes"
+          aria-label="Search notes"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          spellCheck
+        />
+        {shown.length === 0 ? (
+          <div className="tl-empty">
+            <p>{searchQuery.trim() ? "No notes match your search." : `No notes in ${viewLabel}.`}</p>
+            {!searchQuery.trim() && (
+              <button type="button" className="btn-primary btn-small clickable" onClick={startNew}>Add your first note</button>
+            )}
           </div>
+        ) : (
+          <ul className="notes-cards">
+            {shown.map((n) => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  className={`notes-card clickable${draft?.id === n.id ? " notes-card-active" : ""}`}
+                  onClick={() => openNote(n)}
+                >
+                  <strong className="notes-card-title">{n.title}</strong>
+                  {n.body && <span className="notes-card-preview">{stripMarkdown(n.body).slice(0, 160)}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-          {shown.length === 0 && !showAddForm ? (
-            <div className="empty-state" style={sx.emptyState}>
-              <p>No notes in {currentFolder?.title ? `“${currentFolder.title}”` : "this folder"}.</p>
-              <button type="button" className="btn-primary btn-small clickable" onClick={() => { setShowAddForm(true); setEditingId(null); setTargetFolderId(selType === "folder" ? selId : null); setTitle(""); setBody(""); setError(null); }}>
-                Add your first note
+      <section className="notes-editor-pane sweep-on-mount" key={draft ? `edit-${draft.id ?? "new"}` : "idle"} aria-label="Note editor">
+        {!draft ? (
+          <p className="tl-empty tl-empty-pane">Select a note, or add a new one, to start writing.</p>
+        ) : (
+          <form
+            className="notes-editor"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveNote();
+            }}
+          >
+            <header className="tl-pane-head">
+              <button type="button" className="btn-secondary btn-small clickable tl-back" onClick={() => void closeEditor()}>Back</button>
+              <input
+                className="notes-title-input"
+                placeholder="Title"
+                aria-label="Note title"
+                value={draft.title}
+                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                spellCheck
+              />
+            </header>
+
+            <div className="notes-toolbar" role="toolbar" aria-label="Text formatting">
+              <button type="button" className={toolbarBtn} onClick={() => wrap("**")} aria-label="Bold"><b>B</b></button>
+              <button type="button" className={toolbarBtn} onClick={() => wrap("*")} aria-label="Italic"><i>I</i></button>
+              <button type="button" className={toolbarBtn} onClick={() => line("heading")}>Heading</button>
+              <button type="button" className={toolbarBtn} onClick={() => line("bullet")}>Bullets</button>
+              <button type="button" className={toolbarBtn} onClick={() => line("numbered")}>Numbered</button>
+              <button type="button" className={toolbarBtn} onClick={() => line("checklist")}>Checklist</button>
+              <button type="button" className={toolbarBtn} onClick={() => line("quote")}>Quote</button>
+              <ProofreadTrigger value={draft.body} onApply={(next) => setDraft((d) => (d ? { ...d, body: next } : d))} />
+            </div>
+
+            <textarea
+              ref={bodyRef}
+              autoFocus={!draft.id}
+              className="notes-body-input"
+              placeholder="Write your note"
+              aria-label="Note text"
+              value={draft.body}
+              onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+              spellCheck
+              lang="en"
+            />
+
+            {error && <p className="form-error">{error}</p>}
+
+            <div className="notes-editor-actions">
+              <button type="button" className="btn-secondary btn-small clickable" onClick={() => void copyToClipboard(draft.body || draft.title)}>Copy</button>
+              <ReadAloudButton text={() => `${draft.title}. ${stripMarkdown(draft.body)}`} label="Read" />
+              <button type="button" className="btn-secondary btn-small clickable tl-danger" onClick={() => void removeNote()}>
+                {draft.id ? "Delete" : "Discard"}
+              </button>
+              <button type="submit" className="btn-primary clickable notes-save" disabled={saving || (!dirty && !!draft.id)}>
+                {saving ? "Saving…" : !draft.id ? "Save note" : dirty ? "Save changes" : "Saved"}
               </button>
             </div>
-          ) : (
-            <ul className="pg-list" style={sx.noteList}>
-              {shown.map((n) => (
-                editingId === n.id ? (
-                  <li key={n.id} className="pg-note-form" style={sx.noteFormItem}>
-                    <input
-                      autoFocus
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      spellCheck
-                      style={sx.noteTitleInput}
-                    />
-                    <textarea
-                      value={body}
-                      onChange={(e) => setBody(e.target.value)}
-                      rows={5}
-                      spellCheck
-                      lang="en"
-                      style={sx.noteBodyTextarea}
-                    />
-                    <div className="pg-actions" style={sx.noteActions}>
-                      <ProofreadTrigger value={body} onApply={setBody} />
-                      <button type="button" className="btn-primary btn-small" onClick={() => void handleSaveNote()}>
-                        Save
-                      </button>
-                      <button type="button" className="btn-secondary btn-small" onClick={() => setEditingId(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </li>
-                ) : (
-                  <li key={n.id} className="pg-note" style={sx.noteItem}>
-                    <div style={sx.noteHeader}>
-                      <strong style={sx.noteTitle}>{n.title}</strong>
-                    </div>
-                    {n.body && <p className="pg-body" style={sx.noteBody}>{n.body}</p>}
-                    <div className="pg-actions" style={sx.noteActions}>
-                      <button type="button" className="btn-secondary btn-small" onClick={() => copyToClipboard(n.body ?? n.title)}>Copy</button>
-                      <ReadAloudButton text={() => `${n.title}. ${n.body ?? ""}`} label="Read" />
-                      <button type="button" className="btn-secondary btn-small" onClick={() => startEdit(n)}>Edit</button>
-                      <button type="button" className="btn-secondary btn-small" onClick={() => handleDelete(n.id, n.title)} style={{ color: "var(--color-accent-issue)" }}>Delete</button>
-                    </div>
-                  </li>
-                )
-              ))}
-            </ul>
-          )}
-        </div>
-      </main>
+          </form>
+        )}
+      </section>
     </div>
   );
-
-  function clipTitle(t: string): string {
-    return t.trim().slice(0, 60) || "Untitled note";
-  }
 }

@@ -2,6 +2,8 @@ import './pwa/install'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './styles/panga-ui.css'
+import { applyTheme } from './theme/theme'
 import App from './App.tsx'
 
 window.addEventListener('load', () => {
@@ -26,6 +28,8 @@ window.addEventListener('load', () => {
     }).catch(err => console.warn('PWA register import error:', err))
   }
 })
+
+applyTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

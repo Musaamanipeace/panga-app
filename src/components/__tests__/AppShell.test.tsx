@@ -112,7 +112,7 @@ describe("AppShell header, menus and shortcuts", () => {
     expect(dialog!.textContent).toContain("Alt+N");
     expect(dialog!.textContent).toContain("Alt+R");
     expect(dialog!.textContent).toContain("Alt+C");
-    expect(dialog!.textContent).toContain("Alt+P");
+    expect(dialog!.textContent).not.toContain("Alt+P");
     expect(dialog!.textContent).toContain("Ctrl/Cmd+K");
     expect(dialog!.textContent).toContain("Alt+S");
     expect(dialog!.textContent).toContain("Alt+Shift+M");
@@ -265,9 +265,9 @@ describe("AppShell header, menus and shortcuts", () => {
     await mount("/home");
 
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { altKey: true, code: "KeyP", key: "π", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { altKey: true, code: "KeyC", key: "ç", bubbles: true }));
     });
-    expect(latestLocation).toBe("/home?tab=Proofread");
+    expect(latestLocation).toBe("/home?tab=Clipboard");
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { altKey: true, code: "KeyN", key: "n", bubbles: true }));

@@ -99,8 +99,8 @@ export default function ThoughtTrain({ open, onClose }: Props) {
           )}
           {thoughts.map((th) => (
             <li key={th.id}>
-              <span>{th.text}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere" }}>{th.text}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <time dateTime={new Date(th.createdAt).toISOString()}>
                   {new Date(th.createdAt).toLocaleString(undefined, {
                     month: "short",

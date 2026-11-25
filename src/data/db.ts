@@ -4,6 +4,8 @@
 // from this /data folder — never imports Dexie itself.
 
 import Dexie, { type Table } from "dexie";
+import { workspaceDbSuffix } from "./workspaceState";
+import { clearAccountSettings } from "./accountSettings";
 import { getSessionUserId } from "../auth/sessionUserId";
 import { newId } from "./utils";
 
@@ -350,8 +352,9 @@ export const SETTINGS_KEYS = {
 // This ensures each user gets their own isolated IndexedDB database.
 export function getUserDbName(): string {
   const userId = getSessionUserId();
-  if (!userId) return "panga-db-guest";
-  return `panga-db-${userId}`;
+  const base = userId ? `panga-db-${userId}` : "panga-db-guest";
+  // The default workspace keeps the legacy name so existing data stays in place.
+  return `${base}${workspaceDbSuffix()}`;
 }
 
 export interface Draft {
@@ -861,6 +864,36 @@ class PangaDB extends Dexie {
         console.warn("v13 migration error:", e);
       }
     });
+
+    // v14: task lists are flat. Lists that lived in folders keep their folder
+    // name as a title prefix so nothing is lost once folders disappear from the UI.
+    this.version(14).stores({
+      taskLists: "id, folderId, order, updatedAt, syncStatus",
+    }).upgrade(async (tx) => {
+      try {
+        const folders = (await tx.table("taskListFolders").toArray()) as any[];
+        const byId = new Map<string, any>(folders.map((f) => [f.id, f]));
+        const pathOf = (id: string): string[] => {
+          const names: string[] = [];
+          let cur = byId.get(id);
+          let guard = 0;
+          while (cur && guard++ < 20) {
+            names.unshift(String(cur.title ?? ""));
+            cur = cur.parentFolderId ? byId.get(cur.parentFolderId) : undefined;
+          }
+          return names;
+        };
+        const lists = (await tx.table("taskLists").toArray()) as any[];
+        for (const l of lists) {
+          if (!l.folderId) continue;
+          const names = pathOf(l.folderId).filter((n) => n.trim() && n.trim().toLowerCase() !== "inbox");
+          const title = names.length ? `${names.join(" / ")} / ${l.title}` : l.title;
+          await tx.table("taskLists").where("id").equals(l.id).modify({ title, folderId: null });
+        }
+      } catch (e) {
+        console.warn("v14 migration error:", e);
+      }
+    });
   }
 }
 
@@ -1210,6 +1243,7 @@ export async function clearAllLocalData(): Promise<void> {
     "trainOfThought",
   ];
 
+  clearAccountSettings();
   suppressChangeHooks = true;
   try {
     await db.transaction("rw", tables, async () => {

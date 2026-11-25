@@ -3,7 +3,15 @@
 // to an unencrypted, versioned JSON file for backup and restore, carrying the
 // JSON account username and workspace identity.
 
-import { db, exportDbState, importDbState, hasLocalData } from "../data/db";
+import { db, exportDbState, importDbState, hasLocalData, switchUserAccount } from "../data/db";
+import { getAllAccountSettings, isAccountSettingKey, setAccountSetting } from "../data/accountSettings";
+import {
+  getActiveWorkspaceId,
+  listWorkspaces,
+  replaceWorkspaceEntries,
+  setActiveWorkspaceId,
+  DEFAULT_WORKSPACE_ID,
+} from "../data/workspaceState";
 import { getSetting, setSetting } from "../data/settings";
 import {
   getSessionEmail,
@@ -33,10 +41,27 @@ export interface SnapshotIdentity {
   loggedIn: boolean;
 }
 
+export interface SnapshotWorkspaces {
+  activeId: string;
+  items: Array<{ id: string; name: string; data: Record<string, any[]> }>;
+}
+
 export interface Snapshot {
   metadata: SnapshotMetadata;
   identity?: SnapshotIdentity;
+  /** Data of the workspace that was active when the snapshot was taken. */
   data: Record<string, any[]>;
+  /** Present when the account has more than one workspace; carries all of them. */
+  workspaces?: SnapshotWorkspaces;
+}
+
+/** BYOK keys and provider/model choices are account-level; make sure the export carries the current ones. */
+function withAccountSettings(data: Record<string, any[]>): Record<string, any[]> {
+  const rows: any[] = Array.isArray(data.settings) ? data.settings.filter((r: any) => !isAccountSettingKey(r?.key)) : [];
+  for (const [key, value] of Object.entries(getAllAccountSettings())) {
+    rows.push({ key, value });
+  }
+  return { ...data, settings: rows };
 }
 
 /** Validate that a parsed object looks like a Panga snapshot. */
@@ -75,7 +100,28 @@ export async function setJsonAccountUsername(username: string): Promise<string> 
  * No encryption or password is applied.
  */
 export async function exportSnapshot(): Promise<Snapshot> {
-  const data = await exportDbState({ includeSecrets: true });
+  const activeId = getActiveWorkspaceId();
+  const workspaceList = listWorkspaces();
+  const data = withAccountSettings(await exportDbState({ includeSecrets: true }));
+  let workspaces: SnapshotWorkspaces | undefined;
+  if (workspaceList.length > 1) {
+    const items: SnapshotWorkspaces["items"] = [];
+    try {
+      for (const w of workspaceList) {
+        if (w.id === activeId) {
+          items.push({ id: w.id, name: w.name, data });
+          continue;
+        }
+        setActiveWorkspaceId(w.id);
+        await switchUserAccount();
+        items.push({ id: w.id, name: w.name, data: withAccountSettings(await exportDbState({ includeSecrets: true })) });
+      }
+    } finally {
+      setActiveWorkspaceId(activeId);
+      await switchUserAccount();
+    }
+    workspaces = { activeId, items };
+  }
   const userId = getSessionUserId();
   const email = getSessionEmail() ?? "guest@local";
   const guest = isGuest();
@@ -95,6 +141,7 @@ export async function exportSnapshot(): Promise<Snapshot> {
       loggedIn: !guest && !!userId,
     },
     data,
+    ...(workspaces ? { workspaces } : {}),
   };
 }
 
@@ -112,7 +159,22 @@ export async function importSnapshot(snapshot: Snapshot): Promise<void> {
     await setGuestMode();
   }
 
-  await importDbState(snapshot.data, { includeSecrets: true });
+  const restoredWorkspaces = snapshot.workspaces?.items?.filter((w) => w && typeof w.id === "string" && w.data);
+  if (restoredWorkspaces && restoredWorkspaces.length > 0) {
+    replaceWorkspaceEntries(restoredWorkspaces.map((w) => ({ id: w.id, name: w.name || "Workspace" })));
+    for (const w of restoredWorkspaces) {
+      setActiveWorkspaceId(w.id);
+      await switchUserAccount();
+      await importDbState(w.data, { includeSecrets: true });
+      restoreAccountSettings(w.data);
+    }
+    const wanted = snapshot.workspaces?.activeId;
+    setActiveWorkspaceId(restoredWorkspaces.some((w) => w.id === wanted) ? (wanted as string) : DEFAULT_WORKSPACE_ID);
+    await switchUserAccount();
+  } else {
+    await importDbState(snapshot.data, { includeSecrets: true });
+    restoreAccountSettings(snapshot.data);
+  }
 
   // Restore JSON account username from identity or settings row
   const fromIdentity = identity?.username && identity.username !== "guest" ? identity.username.trim() : "";
@@ -121,6 +183,15 @@ export async function importSnapshot(snapshot: Snapshot): Promise<void> {
   const restoredUsername = (typeof fromSettings === "string" && fromSettings.trim()) || fromIdentity;
   if (restoredUsername) {
     await setJsonAccountUsername(restoredUsername);
+  }
+}
+
+function restoreAccountSettings(data: Record<string, any[]>): void {
+  const rows = Array.isArray(data.settings) ? data.settings : [];
+  for (const row of rows) {
+    if (row && typeof row.key === "string" && isAccountSettingKey(row.key) && row.value !== undefined && row.value !== null) {
+      setAccountSetting(row.key, row.value);
+    }
   }
 }
 

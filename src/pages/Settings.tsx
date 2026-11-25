@@ -118,7 +118,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="settings-page" style={{ maxWidth: 720, margin: "0 auto", padding: "24px 16px", display: "flex", flexDirection: "column", gap: 28 }}>
+    <div className="settings-page" style={{ maxWidth: 720, margin: "0 auto", padding: "24px 16px 96px", display: "flex", flexDirection: "column", gap: 28 }}>
       <h1 style={{ margin: 0, fontSize: 24 }}>Settings</h1>
 
       <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>

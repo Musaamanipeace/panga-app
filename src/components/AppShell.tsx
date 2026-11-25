@@ -5,6 +5,9 @@ import AssistantPanel from "./AssistantPanel";
 import ThoughtTrain from "./ThoughtTrain";
 import InstallButton from "./InstallButton";
 import SelectionCopy from "./SelectionCopy";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
+import { captureAccountSettings } from "../data/workspaces";
+import { getTheme, toggleTheme, type ThemeId } from "../theme/theme";
 import { pasteWithFeedback } from "./quickPaste";
 import { migrateStash } from "../data/clips";
 import { clearAllLocalData } from "../data/db";
@@ -21,6 +24,7 @@ export default function AppShell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
+  const [theme, setThemeState] = useState<ThemeId>(() => getTheme());
   const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const shortcutsRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -30,7 +34,14 @@ export default function AppShell() {
 
   useEffect(() => {
     void migrateStash();
+    void captureAccountSettings();
   }, []);
+
+  function handleWorkspaceChanged() {
+    notifyWorkspaceUpdated();
+    setWorkspaceEpoch((n) => n + 1);
+    void migrateStash();
+  }
 
   // Reading belongs to the page it started on; never let it follow navigation.
   useEffect(() => {
@@ -125,7 +136,7 @@ export default function AppShell() {
     setMenuOpen(false);
     const confirmed = await confirmAction({
       title: "Start afresh?",
-      message: "This will wipe all existing local tasks, notes, links, reminders, and settings on this device.",
+      message: "This will wipe all existing local tasks, notes, links, reminders, and settings on this device, in every workspace.",
       confirmLabel: "Start afresh",
       cancelLabel: "Cancel",
       danger: true,
@@ -228,6 +239,14 @@ export default function AppShell() {
                 type="button"
                 className="header-menu-item clickable"
                 role="menuitem"
+                onClick={() => setThemeState(toggleTheme())}
+              >
+                Theme: {theme === "dark" ? "Dark" : "Light"}
+              </button>
+              <button
+                type="button"
+                className="header-menu-item clickable"
+                role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
                   jsonInputRef.current?.click();
@@ -273,6 +292,7 @@ export default function AppShell() {
           e.target.value = "";
         }}
       />
+      <WorkspaceSwitcher onChanged={handleWorkspaceChanged} />
       <main className="app-main">
         <Outlet key={workspaceEpoch} />
       </main>

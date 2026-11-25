@@ -22,7 +22,6 @@ describe("shortcuts registry", () => {
       KeyN: "˜",
       KeyR: "®",
       KeyC: "ç",
-      KeyP: "π",
     };
 
     for (const tab of HOME_TABS) {
@@ -30,7 +29,7 @@ describe("shortcuts registry", () => {
       expect(m).toEqual({ type: "tab", tabId: tab.id });
     }
     expect(homeTabRoute("Task lists")).toBe("/home");
-    expect(homeTabRoute("Proofread")).toBe("/home?tab=Proofread");
+    expect(homeTabRoute("Notes")).toBe("/home?tab=Notes");
   });
 
   it("matches Ctrl/Cmd+K and Alt+S for search", () => {
@@ -50,7 +49,7 @@ describe("shortcuts registry", () => {
   it("includes Voice dictation and all tabs in SHORTCUT_ENTRIES", () => {
     const keys = SHORTCUT_ENTRIES.map((s) => s.keys);
     expect(keys).toContain("Alt+T");
-    expect(keys).toContain("Alt+P");
+    expect(keys).not.toContain("Alt+P");
     expect(keys).toContain("Alt+S");
     expect(keys).toContain("Ctrl/Cmd+K");
     expect(keys).toContain("Alt+Shift+M");

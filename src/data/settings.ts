@@ -1,13 +1,20 @@
 // src/data/settings.ts
 import { db, SETTINGS_KEYS } from "./db";
+import { getAccountSetting, isAccountSettingKey, setAccountSetting } from "./accountSettings";
 
 export { SETTINGS_KEYS };
 
 export async function getSetting<T = any>(key: keyof typeof SETTINGS_KEYS | string): Promise<T | undefined> {
   if (!db.isOpen()) await db.open();
   const dbKey = (SETTINGS_KEYS as any)[key] || key;
+  // BYOK keys and the AI provider/model are account-level, shared by every workspace.
+  if (isAccountSettingKey(dbKey)) {
+    const shared = getAccountSetting<T>(dbKey);
+    if (shared !== undefined) return shared;
+  }
   const row = await db.settings.get(dbKey);
   if (row?.value !== undefined && row?.value !== null) {
+    if (isAccountSettingKey(dbKey)) setAccountSetting(dbKey, row.value);
     return row.value as T;
   }
   return undefined;
@@ -16,6 +23,7 @@ export async function getSetting<T = any>(key: keyof typeof SETTINGS_KEYS | stri
 export async function setSetting(key: keyof typeof SETTINGS_KEYS | string, value: any): Promise<void> {
   if (!db.isOpen()) await db.open();
   const dbKey = (SETTINGS_KEYS as any)[key] || key;
+  if (isAccountSettingKey(dbKey)) setAccountSetting(dbKey, value);
   await db.settings.put({ key: dbKey, value });
 }
 

@@ -211,9 +211,13 @@ export default function VoiceProvider({ children, testEngine }: Props) {
 
   let overlay: ReactNode = null;
   if (engineId && target && rect && rect.bottom >= 0 && rect.top <= window.innerHeight) {
-    const below = rect.top < 44;
-    const top = below ? rect.bottom + 6 : rect.top - 38;
-    const right = Math.max(4, window.innerWidth - rect.right);
+    const inOverlay = !!target.closest(".modal, .drawer-panel, .thought-panel");
+    const headerRect = !inOverlay ? document.querySelector(".app-header")?.getBoundingClientRect() : null;
+    const minTop = headerRect && headerRect.bottom > 0 ? Math.max(8, headerRect.bottom + 6) : 8;
+    const below = rect.top - 38 < minTop;
+    const rawTop = below ? rect.bottom + 6 : rect.top - 38;
+    const top = Math.min(Math.max(minTop, rawTop), Math.max(minTop, window.innerHeight - 40));
+    const right = Math.min(Math.max(8, window.innerWidth - rect.right), Math.max(8, window.innerWidth - 44));
     const prevent = (e: { preventDefault(): void }) => e.preventDefault(); // keep focus (and caret) in the field
     overlay = createPortal(
       <div data-voice-ui className="voice-fab" style={{ top, right }} role="group" aria-label="Voice dictation">

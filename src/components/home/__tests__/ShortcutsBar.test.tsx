@@ -120,7 +120,7 @@ describe("ShortcutsBar & shortcuts data", () => {
     await mount();
     await click(buttonByText("Paste link"));
 
-    const input = host.querySelector('input[aria-label="Paste shortcut link"]') as HTMLInputElement;
+    const input = host.querySelector('input[aria-label="Paste quick link"]') as HTMLInputElement;
     expect(input).not.toBeNull();
 
     await act(async () => {
@@ -144,7 +144,7 @@ describe("ShortcutsBar & shortcuts data", () => {
     await mount();
     await click(buttonByText("+ Add"));
 
-    const picker = host.querySelector('[role="region"][aria-label="Add shortcut picker"]');
+    const picker = host.querySelector('[role="region"][aria-label="Add quick link picker"]');
     expect(picker).not.toBeNull();
     expect(picker!.textContent).toContain("Compound Chores");
     expect(picker!.textContent).toContain("Field Notes");
