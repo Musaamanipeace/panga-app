@@ -16,17 +16,30 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
   const [managing, setManaging] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
   const [, bump] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const workspaces = listWorkspaces();
   const active = getActiveWorkspace();
 
+  // Type-to-find: names starting with the query come first, then names containing it.
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? workspaces
+        .filter((w) => w.name.toLowerCase().includes(q))
+        .sort((a, b) => Number(b.name.toLowerCase().startsWith(q)) - Number(a.name.toLowerCase().startsWith(q)))
+    : workspaces;
+  const activeHighlight = Math.min(highlight, Math.max(filtered.length - 1, 0));
+
   function close() {
     setOpen(false);
     setManaging(false);
     setCreating(false);
     setNewName("");
+    setQuery("");
+    setHighlight(0);
   }
 
   useEffect(() => {
@@ -62,7 +75,11 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const name = newName.trim();
+    await createByName(newName);
+  }
+
+  async function createByName(raw: string) {
+    const name = raw.trim();
     if (!name) return;
     try {
       await createWorkspace(name);
@@ -79,6 +96,22 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
     await deleteWorkspace(id);
     if (wasActive) onChanged();
     bump((n) => n + 1);
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (filtered.length) setHighlight((activeHighlight + 1) % filtered.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (filtered.length) setHighlight((activeHighlight - 1 + filtered.length) % filtered.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (managing) return;
+      const target = filtered[activeHighlight];
+      if (target) void handleSwitch(target.id);
+      else void createByName(query);
+    }
   }
 
   function handleRename(id: string, name: string) {
@@ -104,6 +137,21 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
 
       {open && (
         <div className="workspace-menu dropdown-anim sweep-on-mount" role="menu" aria-label="Workspaces">
+          <input
+            autoFocus
+            type="text"
+            className="workspace-search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setHighlight(0);
+            }}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Type a workspace name…"
+            aria-label="Find a workspace by name"
+            autoComplete="off"
+            spellCheck={false}
+          />
           <div className="workspace-actions">
             {creating ? (
               <form className="workspace-create" onSubmit={handleCreate}>
@@ -135,7 +183,19 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
             </button>
           </div>
           <ul className="workspace-list">
-            {workspaces.map((w) => (
+            {filtered.length === 0 && (
+              <li className="workspace-row workspace-empty">
+                <button
+                  type="button"
+                  className="workspace-item clickable"
+                  role="menuitem"
+                  onClick={() => void createByName(query)}
+                >
+                  No match. Create “{query.trim()}”
+                </button>
+              </li>
+            )}
+            {filtered.map((w, i) => (
               <li key={w.id} className="workspace-row">
                 {managing ? (
                   <>
@@ -166,7 +226,7 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
                 ) : (
                   <button
                     type="button"
-                    className={`workspace-item clickable${w.id === active.id ? " workspace-item-active" : ""}`}
+                    className={`workspace-item clickable${w.id === active.id ? " workspace-item-active" : ""}${q && i === activeHighlight ? " workspace-item-hl" : ""}`}
                     role="menuitemradio"
                     aria-checked={w.id === active.id}
                     onClick={() => void handleSwitch(w.id)}
