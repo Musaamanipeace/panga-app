@@ -64,7 +64,7 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "index.html",
         // Never serve the SPA shell for the vanilla Puter edition or API routes.
-        navigateFallbackDenylist: [/^\/api\//, /^\/health/, /^\/ort\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/health/, /^\/ort\//, /^\/privacy\.html/],
         // makes the SW fetch() the request itself, and that fetch is governed by the
         // With no matching route, the browser loads cross-origin requests natively.
         //
