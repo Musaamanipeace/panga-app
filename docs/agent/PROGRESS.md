@@ -1,5 +1,10 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-25 — Google Drive OAuth sync, conflict guardrails & API key eye peek
+- **Google Drive auth & sync (`googleAuth.ts`, `googleDriveSync.ts`, `useGoogleDriveSync.ts`)**: Added client-side Firebase Google Auth (`https://www.googleapis.com/auth/drive.file`, in-memory access token only), read-only Drive preflight (`inspectDriveSync`), digest-based classification (`no_remote`, `in_sync`, `local_ahead`, `remote_ahead`, `conflict`), record-level snapshot merge (`mergeSnapshots`), and explicit confirmation/conflict modal (`DriveSyncReviewModal.tsx`) across Landing (`Landing.tsx`), Settings (`AccountPanel.tsx`), and Menu (`AppShell.tsx`). Updated CSP in `server.ts` & `vercel.json`.
+- **Settings AI key inputs (`Settings.tsx`)**: Prevented browser password autofill from pre-populating all 6 inputs (`autoComplete="new-password"`, `readOnly` until focus, ignore hints) and replaced `Show`/`Hide` text with a 1-click Eye icon that auto-hides after 4 seconds without requiring a second click; masked dots and `Saved` status only show for human-entered/saved keys.
+- **Tests**: Added `src/sync/__tests__/googleDriveSync.test.tsx` (7 tests) and expanded `src/pages/__tests__/Settings.test.tsx`.
+
 ## 2026-11-24 — Quick links rename & viewport/stacking/layout fixes
 - **Quick links rename (`ShortcutsBar.tsx`)**: Renamed the home bar heading, `aria-label` attributes, picker labels, empty state copy, and toast messages from `Shortcuts` to `Quick links` (leaving keyboard `Shortcuts` button in `AppShell.tsx` distinct).
 - **Stacking & dropdown layers (`panga-ui.css`, `index.css`)**: Separated `--z-header` (`30`) above `--z-chrome` (`20`) and `--z-workspace-open` (`25`) so open header menus and header hover tooltips always paint cleanly over the Workspace bar; raised `.notes-folders` (`15`) above `.notes-list-pane`; moved `.voice-fab` and `.pg-copy-fab` to `--z-floating` (`70`) above overlays; fixed `.assistant-fab` selector mismatch, mobile bottom clearance above `nav.pg-chips`, and z-index hover exclusions.

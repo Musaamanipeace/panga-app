@@ -207,6 +207,7 @@ describe("AppShell header, menus and shortcuts", () => {
       (b) => b.textContent?.trim() === "Start afresh"
     );
     await click(confirmBtn);
+    await settle(120);
 
     expect(latestLocation).toBe("/home");
     expect(await db.notes.get("old-note")).toBeUndefined();

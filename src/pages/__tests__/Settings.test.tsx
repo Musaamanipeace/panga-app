@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Settings from "../Settings";
 import { db } from "../../data/db";
 import { AI_PROVIDER_IDS, getAIApiKey, getAIProvider } from "../../data/settings";
@@ -37,9 +37,14 @@ async function unmountSettings() {
   host = null;
 }
 
+beforeEach(() => {
+  localStorage.clear();
+});
+
 afterEach(async () => {
   await unmountSettings();
   await db.settings.clear();
+  localStorage.clear();
 });
 
 describe("Settings AI configuration", () => {
@@ -117,4 +122,52 @@ describe("Settings AI configuration", () => {
     expect(reloadedSection.querySelector('[data-testid="ai-status-openai"]')?.textContent).toBe("Not saved");
     expect(reloadedSection.querySelector('[data-testid="ai-status-gemini"]')?.textContent).toBe("Saved");
   });
+
+  it("starts inputs empty without autofill and reveals saved keys via 1-click eye toggle that auto-hides", async () => {
+    await mountSettings();
+
+    const aiSection = host!.querySelector("section.settings-section")!;
+    for (const id of AI_PROVIDER_IDS) {
+      const form = aiSection.querySelector(`form[data-provider="${id}"]`)!;
+      const input = form.querySelector("input[type='password']") as HTMLInputElement;
+      expect(input.value).toBe("");
+      expect(input.getAttribute("autocomplete")).toBe("new-password");
+      expect(input.readOnly).toBe(true);
+      expect(form.querySelector(`button[aria-label^="View "]`)).toBeNull();
+    }
+
+    const geminiForm = aiSection.querySelector('form[data-provider="gemini"]')!;
+    const geminiInput = geminiForm.querySelector("input[type='password']") as HTMLInputElement;
+
+    await act(async () => {
+      geminiInput.focus();
+    });
+    expect(geminiInput.readOnly).toBe(false);
+
+    const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      inputSetter.call(geminiInput, "AIza-human-key");
+      geminiInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      geminiForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+
+    expect(aiSection.querySelector('[data-testid="ai-status-gemini"]')?.textContent).toBe("Saved");
+    const viewBtn = geminiForm.querySelector('button[aria-label="View Google Gemini API key"]') as HTMLButtonElement;
+    expect(viewBtn).not.toBeNull();
+
+    await act(async () => {
+      viewBtn.click();
+    });
+    expect(geminiInput.type).toBe("text");
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 4150));
+    });
+    expect(geminiInput.type).toBe("password");
+  }, 10000);
 });

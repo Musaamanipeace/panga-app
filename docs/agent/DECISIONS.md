@@ -60,3 +60,7 @@ Decisions made + why (short): what, why, alternatives rejected.
 - Renamed the pinned home card (`ShortcutsBar.tsx`) to `Quick links` while keeping the header keyboard-shortcut dialog (`AppShell.tsx`) as `Shortcuts` to eliminate duplicate/ambiguous terminology (`ui-no-redundancy`).
 - Separated sticky chrome layers (`--z-chrome: 20` for bottom tab bar / workspace bar / AI FAB, `--z-workspace-open: 25` for open workspace menu, `--z-header: 30` for sticky top bar) and kept floating editor helpers (`.voice-fab`, `.pg-copy-fab`) at `--z-floating: 70` above drawers/modals (`--z-overlay: 60`) and below toasts/confirmations (`--z-toast: 80`).
 
+## 2026-11-25 — Client-side Google Drive sync with digest conflict guardrails
+- Uses client-side Firebase Auth (`GoogleAuthProvider`, `https://www.googleapis.com/auth/drive.file`) with strictly in-memory access token caching and Drive REST API (`panga-backup.json`).
+- Never silently mutates Drive or local DB: read-only preflight compares deterministic snapshot digests against the last synced baseline (`no_remote`, `in_sync`, `local_ahead`, `remote_ahead`, `conflict`), then presents `DriveSyncReviewModal` with record-level `Merge both & sync`, `Overwrite Drive with local`, `Restore Drive to device`, or `Cancel`.
+- API key boxes in `Settings.tsx` start `readOnly` until user focus with `autoComplete="new-password"` so browser password managers cannot preload/auto-save dots across providers.

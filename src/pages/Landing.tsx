@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import InstallButton from "../components/InstallButton";
+import GoogleSignInButton from "../components/GoogleSignInButton";
+import DriveSyncReviewModal from "../components/DriveSyncReviewModal";
 import { useNavigate } from "react-router-dom";
 import { canUseApp, resetGuestSession, resumeLocalSession } from "../auth/session";
 import { clearAllLocalData } from "../data/db";
 import { importSnapshot, readSnapshotFile } from "../sync/snapshot";
-import { confirmAction } from "../components/ui";
+import { useGoogleDriveSync } from "../sync/useGoogleDriveSync";
+import { confirmAction, showToast } from "../components/ui";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -12,12 +15,33 @@ export default function Landing() {
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const drive = useGoogleDriveSync();
 
   useEffect(() => {
     if (canUseApp()) {
       void navigate("/home");
     }
   }, [navigate]);
+
+  const enterAppAfterDrive = useCallback(async () => {
+    if (!canUseApp()) {
+      await resumeLocalSession();
+    }
+    navigate("/home");
+  }, [navigate]);
+
+  async function handleGoogleDriveAuth() {
+    setError(null);
+    setSuccessNotice(null);
+    const rep = await drive.refreshInspection({ interactive: true, openReview: false });
+    if (!rep) return;
+    if (rep.status === "in_sync") {
+      showToast("Google Drive backup matches your local workspace.", "success");
+      await enterAppAfterDrive();
+      return;
+    }
+    drive.setModalOpen(true);
+  }
 
   const handleJsonImport = useCallback(
     async (file: File) => {
@@ -84,6 +108,8 @@ export default function Landing() {
     }
   }
 
+  const isBusy = loading || drive.auth.signingIn || drive.checking || drive.busy;
+
   return (
     <div className="page landing">
       <div className="landing-mark" data-tip="Panga">P</div>
@@ -104,12 +130,59 @@ export default function Landing() {
           <button
             type="button"
             className="btn-primary btn-large clickable"
-            disabled={loading}
+            disabled={isBusy}
             onClick={() => void handleContinueLocal()}
             style={{ width: "100%" }}
           >
             {loading ? "Opening..." : "Continue local"}
           </button>
+        </section>
+
+        <section className="landing-panel">
+          <h2 style={{ margin: "0 0 6px", fontSize: 17, fontWeight: 700 }}>Google Drive</h2>
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--color-text-muted)" }}>
+            {drive.auth.user
+              ? `Signed in as ${drive.auth.user.email || drive.auth.user.displayName || "Google account"}. Check for remote backups or resolve changes with local data.`
+              : "Sign in with Google to restore or sync your JSON backup across devices."}
+          </p>
+          {!drive.auth.user ? (
+            <GoogleSignInButton
+              fullWidth
+              loading={drive.auth.signingIn || drive.checking}
+              disabled={isBusy}
+              onClick={() => void handleGoogleDriveAuth()}
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {drive.auth.needsAuth ? (
+                <GoogleSignInButton
+                  fullWidth
+                  label="Reconnect Google Drive"
+                  loading={drive.auth.signingIn || drive.checking}
+                  disabled={isBusy}
+                  onClick={() => void handleGoogleDriveAuth()}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="btn-primary btn-large clickable"
+                  disabled={isBusy}
+                  onClick={() => void handleGoogleDriveAuth()}
+                  style={{ width: "100%" }}
+                >
+                  {drive.checking ? "Checking Google Drive..." : "Sync & open with Google Drive"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                disabled={isBusy}
+                onClick={() => void drive.handleSignOut()}
+              >
+                Sign out of Google
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="landing-panel">
@@ -120,7 +193,7 @@ export default function Landing() {
           <button
             type="button"
             className="btn-secondary btn-large clickable"
-            disabled={loading}
+            disabled={isBusy}
             onClick={() => void handleStartAfresh()}
             style={{ width: "100%" }}
           >
@@ -170,9 +243,32 @@ export default function Landing() {
           </div>
         </section>
 
-        {error && <p className="otp-error" style={{ margin: 0 }}>{error}</p>}
+        {(error || drive.error) && <p className="otp-error" style={{ margin: 0 }}>{error || drive.error}</p>}
         {successNotice && <p className="otp-success" style={{ margin: 0 }}>{successNotice}</p>}
       </div>
+
+      <DriveSyncReviewModal
+        open={drive.modalOpen}
+        report={drive.report}
+        busy={drive.busy}
+        accountEmail={drive.auth.user?.email}
+        onMerge={() => {
+          void drive.handleMerge().then((ok) => {
+            if (ok) void enterAppAfterDrive();
+          });
+        }}
+        onPushLocal={() => {
+          void drive.handlePushLocal().then((ok) => {
+            if (ok) void enterAppAfterDrive();
+          });
+        }}
+        onPullRemote={() => {
+          void drive.handlePullRemote().then((ok) => {
+            if (ok) void enterAppAfterDrive();
+          });
+        }}
+        onClose={() => drive.setModalOpen(false)}
+      />
     </div>
   );
 }

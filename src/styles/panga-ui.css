@@ -645,3 +645,104 @@ body { background: var(--color-page); color: var(--color-text); }
   }
   .notes-body-input { min-height: 52vh; }
 }
+
+/* ---- 11. Google Sign-In & Drive conflict review ---------------------- */
+.header-menu-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  appearance: none;
+  background-color: #ffffff;
+  border: 1px solid #747775;
+  border-radius: 20px;
+  box-sizing: border-box;
+  color: #1f1f1f;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Roboto", "Inter", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  height: 40px;
+  letter-spacing: 0.2px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 16px;
+  position: relative;
+  text-align: center;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  white-space: nowrap;
+}
+.gsi-material-button-full {
+  width: 100%;
+}
+.gsi-material-button:hover:not(:disabled) {
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3), 0 4px 8px rgba(60, 64, 67, 0.15);
+  background-color: #f8f9fa;
+}
+.gsi-material-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.gsi-material-button-content-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+.gsi-material-button-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.gsi-material-button-contents {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:root[data-theme="dark"] .gsi-material-button {
+  background-color: #131314;
+  border-color: #8e918f;
+  color: #e3e3e3;
+}
+:root[data-theme="dark"] .gsi-material-button:hover:not(:disabled) {
+  background-color: #1e1f22;
+}
+
+.drive-review-dialog {
+  max-width: 540px;
+}
+
+.drive-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: 10px;
+}
+
+.drive-compare-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  padding: 10px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.drive-sync-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+

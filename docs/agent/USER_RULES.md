@@ -25,3 +25,8 @@ Every rule the user has given me, verbatim where possible, dated. Rules persist 
 - "API key fields in Settings must start empty (no pre-filled characters). Use placeholders only."
 - Header Sync UI decision: "Keep a status indicator" — a simple storage-mode badge, no export/import actions.
 - "Improve voice-to-speech transcription speed with concrete technical changes." (steps 4 and 5 of the plan)
+
+## 2026-11-25 — Google Drive auth/sync & API key input behavior
+
+- Google Drive sign-in and JSON backup sync is implemented client-side across the landing page, Settings, and Menu (showing signed-in / signed-out status in the Menu), with explicit confirmation & conflict guardrails between local and online work.
+- AI provider API key inputs in Settings must never come preloaded with starred/autofilled values; masked stars and `Saved` status appear only when a human keyed in and saved a key, and an eye icon provides a 1-click peek that hides automatically without a second click.

@@ -17,6 +17,8 @@ import { notifyWorkspaceUpdated } from "../ai/agent";
 import { confirmAction, showToast } from "./ui";
 import { stopSpeaking } from "../speech/tts";
 import { SHORTCUT_ENTRIES, homeTabRoute, matchShortcut } from "../shortcuts";
+import DriveSyncReviewModal from "./DriveSyncReviewModal";
+import { useGoogleDriveSync } from "../sync/useGoogleDriveSync";
 
 export default function AppShell() {
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
@@ -31,6 +33,7 @@ export default function AppShell() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const drive = useGoogleDriveSync();
 
   useEffect(() => {
     void migrateStash();
@@ -262,6 +265,49 @@ export default function AppShell() {
               >
                 Start afresh
               </button>
+              <div className="header-menu-status" title={drive.auth.user?.email ?? undefined} aria-live="polite">
+                {drive.auth.user
+                  ? `Google Drive: ${drive.auth.user.email || drive.auth.user.displayName || "Signed in"}${drive.auth.needsAuth ? " (reconnect)" : ""}`
+                  : "Google Drive: Signed out"}
+              </div>
+              {!drive.auth.user ? (
+                <button
+                  type="button"
+                  className="header-menu-item clickable"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void drive.openSyncReview();
+                  }}
+                >
+                  Sign in with Google
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="header-menu-item clickable"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void drive.openSyncReview();
+                    }}
+                  >
+                    {drive.auth.needsAuth ? "Reconnect Google Drive" : "Sync Google Drive"}
+                  </button>
+                  <button
+                    type="button"
+                    className="header-menu-item clickable"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void drive.handleSignOut();
+                    }}
+                  >
+                    Sign out of Google
+                  </button>
+                </>
+              )}
               <div className="header-menu-status" aria-live="polite">
                 {online ? "Online" : "Offline"}
               </div>
@@ -299,6 +345,30 @@ export default function AppShell() {
       <AssistantPanel />
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
       <SelectionCopy />
+      <DriveSyncReviewModal
+        open={drive.modalOpen}
+        report={drive.report}
+        busy={drive.busy}
+        accountEmail={drive.auth.user?.email}
+        onMerge={() => {
+          void drive.handleMerge().then((ok) => {
+            if (ok) {
+              notifyWorkspaceUpdated();
+              setWorkspaceEpoch((n) => n + 1);
+            }
+          });
+        }}
+        onPushLocal={() => void drive.handlePushLocal()}
+        onPullRemote={() => {
+          void drive.handlePullRemote().then((ok) => {
+            if (ok) {
+              notifyWorkspaceUpdated();
+              setWorkspaceEpoch((n) => n + 1);
+            }
+          });
+        }}
+        onClose={() => drive.setModalOpen(false)}
+      />
     </div>
   );
 }

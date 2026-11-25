@@ -35,7 +35,9 @@ export default function Settings() {
   const [draftKeys, setDraftKeys] = useState<Record<AIProviderId, string>>(EMPTY_KEYS);
   const [savingMap, setSavingMap] = useState<Partial<Record<AIProviderId, boolean>>>({});
   const [revealed, setRevealed] = useState<Partial<Record<AIProviderId, boolean>>>({});
+  const [unlocked, setUnlocked] = useState<Partial<Record<AIProviderId, boolean>>>({});
   const timersRef = useRef<Partial<Record<AIProviderId, number>>>({});
+  const revealTimersRef = useRef<Partial<Record<AIProviderId, number>>>({});
   const savedKeysRef = useRef(savedKeys);
   const activeProviderRef = useRef(activeProvider);
 
@@ -63,6 +65,10 @@ export default function Settings() {
       for (const id of Object.keys(timersRef.current) as AIProviderId[]) {
         const t = timersRef.current[id];
         if (t !== undefined) window.clearTimeout(t);
+      }
+      for (const id of Object.keys(revealTimersRef.current) as AIProviderId[]) {
+        const rt = revealTimersRef.current[id];
+        if (rt !== undefined) window.clearTimeout(rt);
       }
     };
   }, [loadSettings]);
@@ -107,6 +113,25 @@ export default function Settings() {
     }
   }
 
+  function handlePeekKey(id: AIProviderId) {
+    const existing = revealTimersRef.current[id];
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+      delete revealTimersRef.current[id];
+    }
+
+    if (revealed[id]) {
+      setRevealed((prev) => ({ ...prev, [id]: false }));
+      return;
+    }
+
+    setRevealed((prev) => ({ ...prev, [id]: true }));
+    revealTimersRef.current[id] = window.setTimeout(() => {
+      delete revealTimersRef.current[id];
+      setRevealed((prev) => ({ ...prev, [id]: false }));
+    }, 4000);
+  }
+
   async function handleSelectActive(id: AIProviderId) {
     activeProviderRef.current = id;
     setActiveProvider(id);
@@ -114,6 +139,12 @@ export default function Settings() {
   }
 
   async function handleClearKey(id: AIProviderId) {
+    const rt = revealTimersRef.current[id];
+    if (rt !== undefined) {
+      window.clearTimeout(rt);
+      delete revealTimersRef.current[id];
+    }
+    setRevealed((prev) => ({ ...prev, [id]: false }));
     await persistProviderKey(id, "");
   }
 
@@ -136,6 +167,7 @@ export default function Settings() {
             const hasSaved = Boolean(saved);
             const isDirty = draft.trim() !== saved;
             const isRevealed = Boolean(revealed[p.id]);
+            const isUnlocked = Boolean(unlocked[p.id]);
 
             const statusLabel = isSaving
               ? "Saving…"
@@ -157,6 +189,7 @@ export default function Settings() {
               <form
                 key={p.id}
                 data-provider={p.id}
+                autoComplete="off"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void persistProviderKey(p.id, draft);
@@ -199,8 +232,16 @@ export default function Settings() {
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <input
                     type={isRevealed ? "text" : "password"}
+                    name={`panga_ai_token_${p.id}`}
                     aria-label={`${p.label} API key`}
                     value={draft}
+                    readOnly={!isUnlocked}
+                    onPointerDown={() => {
+                      if (!isUnlocked) setUnlocked((prev) => ({ ...prev, [p.id]: true }));
+                    }}
+                    onFocus={() => {
+                      if (!isUnlocked) setUnlocked((prev) => ({ ...prev, [p.id]: true }));
+                    }}
                     onChange={(e) => handleDraftChange(p.id, e.target.value)}
                     onBlur={() => {
                       if (draft.trim() && draft.trim() !== saved) {
@@ -208,16 +249,39 @@ export default function Settings() {
                       }
                     }}
                     placeholder={`${p.label} API key`}
-                    autoComplete="off"
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
+                    spellCheck={false}
                     style={{ flex: "1 1 240px", padding: "8px 10px" }}
                   />
-                  <button
-                    type="button"
-                    className="btn-secondary btn-small clickable"
-                    onClick={() => setRevealed((prev) => ({ ...prev, [p.id]: !isRevealed }))}
-                  >
-                    {isRevealed ? "Hide" : "Show"}
-                  </button>
+                  {draft.trim() && (
+                    <button
+                      type="button"
+                      className="btn-secondary btn-small clickable"
+                      aria-label={isRevealed ? `Hide ${p.label} API key` : `View ${p.label} API key`}
+                      aria-pressed={isRevealed}
+                      data-tip={isRevealed ? "Visible briefly (auto-hides)" : "View key (auto-hides)"}
+                      onClick={() => handlePeekKey(p.id)}
+                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 38, padding: "6px 10px" }}
+                    >
+                      {isRevealed ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                          <path d="m1 1 22 22" />
+                          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                        </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                   <button
                     type="submit"
                     className="btn-primary btn-small clickable"
