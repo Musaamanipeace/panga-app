@@ -1,12 +1,12 @@
 # NEXT.md — next phase
 
-## Reminders upgrade & Google Calendar (.ics) import plan (6 sequential stages, brief v2)
+## Reminders upgrade & Google Calendar (.ics) import plan (completed)
 - [x] Stage 1: Account-level cross-workspace reminders store (`src/data/accountDb.ts`, data layer, migration, snapshots, tests)
-- [x] Stage 2: Views, plain/timed reminders, tick-to-delete/advance and repeats (`src/data/recurrence.ts`, `accountDb.ts` v2, `reminders.ts`, `HomeRemindersTab.tsx`, tests)
-- [ ] Stage 3: In-app alerts & notification setup prompt (`src/data/notifications.ts`, `NotificationSetup`, `sw-notifications.js`, timer scheduler with atomic claim & no catch-up alerts, `AppShell` startup) — waiting for owner `"go"`
-- [ ] Stage 4: Pure `.ics` parser (`src/data/ics.ts` + Section 7.3 fixture & DST/error tests, no VALARM offsets)
-- [ ] Stage 5: `.ics` / `.zip` import flow (`src/data/readCalendarFiles.ts` with `fflate`, `src/data/importEvents.ts`, collapsible import card + preview + done prompt)
-- [ ] Stage 6: Final docs & cleanup (`CHANGES.md`, agent docs)
+- [x] Stage 2: Reminder fields, Dexie v15 / AccountDB v2, & fixed-schedule recurrence engine (`src/data/recurrence.ts`, plain vs timed, Undo tick-off)
+- [x] Stage 3: App-open notifications, Android Chrome SW fallback, & `ReminderAlertBanner` (`src/data/reminders.ts`, `ReminderAlertBanner.tsx`, `AppShell.tsx`)
+- [x] Stage 4: Pure RFC 5545 `.ics` parser (`src/data/ics.ts` + fixture tests)
+- [x] Stage 5: `.ics` / `.zip` import flow via `fflate` (`src/data/importEvents.ts`, `ImportEventsCard.tsx`, `HomeRemindersTab.tsx`)
+- [x] Stage 6: Tests, search/shortcuts integration, and agent docs (`PROGRESS.md`, `DECISIONS.md`, `NEXT.md`)
 
 ## Latest completed work (2026-11-23)
 - [x] Force-pulled `origin/main` (`7b07fae`) from `Musaamanipeace/panga-app`.

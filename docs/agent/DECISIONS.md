@@ -70,9 +70,14 @@ Decisions made + why (short): what, why, alternatives rejected.
 - Used stated brief defaults (`DECISION PENDING` owner confirmation): `D1` imported events go to Reminders; `D3` app-open notifications; `D4` option A account-level reminders; `D2` (`fflate` zip import), `D5` (skip past events), `D6` (10 min lead), and `D7` (09:00 local all-day) pending before Stages 3 & 5.
 - `.ics` calendar import remains strictly file-based with zero Google Calendar API scripts or OAuth, while preserving the existing Google Drive JSON backup feature.
 
-## 2026-11-26 — Reminders dated checklist, plain/timed split & recurrence (Stage 2, brief v2 D1–D11)
-- Revised plan to v2 per owner vision: dropped server, Web Push, background scheduling, snooze, advance-notice offsets, and catch-up missed-alerts lists (`D3` settled). Approved `fflate` for Stage 5 `.zip` import (`D2` settled) and tick-to-delete/advance with brief Undo (`D5` settled).
-- Defaulted Stage 2 semantics (`D6–D11`): one open item per missed repeating series in Overdue (`D6`); fixed-anchor schedule via `nextAfterComplete` strictly after completed occurrence and on/after today's local midnight (`D7`); reminder folders preserved in "More options" and list `Folder` filter (`D10`); legacy `status: "dismissed"` kept in DB and hidden everywhere while `pending`/`fired` show as open and legacy `timed === undefined` behaves as timed (`D11`).
-- Account DB upgraded to v2 adding `externalUid` index on `reminders` (`src/data/accountDb.ts`) and `importedDone` account-settings tracking (`src/data/accountSettings.ts`) ready for Stage 5.
+## 2026-11-26 — Reminders v2 settled decisions (D1–D11)
+- **D1**: Imported `.ics`/`.zip` events land in Reminders (`accountDb.reminders`).
+- **D2**: Added `fflate` for direct `.zip` Google Calendar export reading alongside `.ics` files.
+- **D3**: App-open alerts only (no server, no Web Push, no snooze, no advance-notice lead times, no catch-up list); added `ServiceWorkerRegistration.showNotification` fallback for Android Chrome and in-app `ReminderAlertBanner`.
+- **D4**: Account-level cross-workspace Reminders store (`accountDb`).
+- **D5**: Plain (date-only, default `timed: false`) vs timed reminders (`Add a time` checked); ticking off one-time reminders deletes immediately with 6-second Undo toast, and repeating reminders advance to the next scheduled occurrence with Undo.
+- **D6–D11**: Fixed-schedule recurrence (`day`, `week` with weekdays, `month`, `year`); past `.ics` events skipped by default in preview (`Include past events` toggle); unknown `TZID` falls back to device time zone with preview badge; untimed all-day events stay plain; `"dismissed"` records remain in DB for backward compatibility and are hidden from open views (`pending` and `fired` remain open until ticked off).
 
-
+## 2026-11-26 — PWA auto-reload on deploy updates & strict HTML/SW no-cache headers
+- Kept `registerType: "autoUpdate"` and added `setupAutoUpdateReload()` (`src/pwa/autoReload.ts`) to reload when a replacing Service Worker claims an already-controlled page, deferring if the user is actively typing and enforcing a 10s `sessionStorage` loop guard.
+- Set `cleanupOutdatedCaches: true` in Workbox and `Cache-Control: no-cache, no-store, must-revalidate` on `index.html`, SPA fallback responses, `sw.js`, `registerSW.js`, `workbox-*`, and `manifest.webmanifest` in both `server.ts` and `vercel.json`.

@@ -10,7 +10,8 @@ import { listTaskLists } from "../data/taskLists";
 import { listAllNotes } from "../data/notes";
 import { listAllLinks } from "../data/links";
 import { listAllTasks } from "../data/tasks";
-import { formatReminderSummaryWhen, listReminders } from "../data/reminders";
+import { listOpenReminders } from "../data/reminders";
+import { formatPreviewDateTime, isTimedReminder } from "../data/recurrence";
 import { listClips } from "../data/clips";
 
 export type SearchResultType = "folder" | "file" | "taskList";
@@ -56,7 +57,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
     listAllNotes(),
     listAllLinks(),
     listAllTasks(),
-    listReminders(),
+    listOpenReminders(),
     listClips(),
   ]);
 
@@ -156,12 +157,12 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   }
 
   for (const r of reminders) {
-    if (matches(q, r.message)) {
+    if (matches(q, r.message, r.location, r.notes)) {
       results.push({
         type: "file",
         key: `reminder-${r.id}`,
         title: r.message,
-        subtitle: `Reminder (${formatReminderSummaryWhen(r)})`,
+        subtitle: `Reminder (${formatPreviewDateTime(r.triggerAt, !isTimedReminder(r))})`,
         route: r.folderId ? `/home?tab=Reminders&folder=${r.folderId}` : "/home?tab=Reminders",
       });
     }

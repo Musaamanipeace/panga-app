@@ -19,6 +19,8 @@ import { stopSpeaking } from "../speech/tts";
 import { SHORTCUT_ENTRIES, homeTabRoute, matchShortcut } from "../shortcuts";
 import DriveSyncReviewModal from "./DriveSyncReviewModal";
 import { useGoogleDriveSync } from "../sync/useGoogleDriveSync";
+import ReminderAlertBanner from "./ReminderAlertBanner";
+import { startReminderScheduler } from "../data/reminders";
 
 export default function AppShell() {
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
@@ -37,6 +39,7 @@ export default function AppShell() {
   useEffect(() => {
     void migrateStash();
     void captureAccountSettings();
+    startReminderScheduler();
   }, []);
 
   function handleWorkspaceChanged() {
@@ -343,6 +346,7 @@ export default function AppShell() {
         }}
       />
       <WorkspaceSwitcher onChanged={handleWorkspaceChanged} />
+      <ReminderAlertBanner />
       <main className="app-main">
         <Outlet key={workspaceEpoch} />
       </main>

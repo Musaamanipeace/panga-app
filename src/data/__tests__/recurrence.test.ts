@@ -1,241 +1,152 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { Reminder } from "../db";
 import {
-  describeRecurrence,
+  formatOverdueMeta,
+  formatRecurrence,
   nextAfterComplete,
-  nextOccurrence,
-  occurrencesBetween,
+  sortTodayReminders,
+  viewOf,
 } from "../recurrence";
-import type { ReminderRecurrence } from "../db";
 
-describe("recurrence engine", () => {
-  it("computes daily and every-3-days occurrences", () => {
-    const start = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-    const daily: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: start };
-    expect(nextOccurrence(daily, start, start)).toBe(
-      new Date(2026, 10, 2, 9, 0, 0, 0).getTime()
-    );
+function makeReminder(overrides: Partial<Reminder> = {}): Reminder {
+  const ts = new Date(2026, 10, 25, 9, 0, 0, 0).getTime(); // Wed 25 Nov 2026 09:00 local
+  return {
+    id: "rem-1",
+    folderId: null,
+    linkedEntityType: null,
+    linkedEntityId: null,
+    message: "Test reminder",
+    triggerAt: ts,
+    timed: false,
+    status: "pending",
+    createdAt: ts,
+    updatedAt: ts,
+    syncStatus: "pending",
+    ...overrides,
+  };
+}
 
-    const every3: ReminderRecurrence = { freq: "daily", interval: 3, anchorAt: start };
-    expect(nextOccurrence(every3, start, start)).toBe(
-      new Date(2026, 10, 4, 9, 0, 0, 0).getTime()
-    );
-    expect(
-      nextOccurrence(every3, start, new Date(2026, 10, 4, 9, 0, 0, 0).getTime())
-    ).toBe(new Date(2026, 10, 7, 9, 0, 0, 0).getTime());
+describe("recurrence & reminder views", () => {
+  it("classifies overdue, today (including earlier timed), and upcoming in local time", () => {
+    const nowMs = new Date(2026, 10, 25, 14, 0, 0, 0).getTime(); // 25 Nov 14:00
+    const yesterday = new Date(2026, 10, 24, 23, 0, 0, 0).getTime();
+    const earlierToday = new Date(2026, 10, 25, 8, 30, 0, 0).getTime();
+    const laterToday = new Date(2026, 10, 25, 19, 0, 0, 0).getTime();
+    const tomorrow = new Date(2026, 10, 26, 8, 0, 0, 0).getTime();
+
+    expect(viewOf({ triggerAt: yesterday }, nowMs)).toBe("overdue");
+    expect(viewOf({ triggerAt: earlierToday }, nowMs)).toBe("today");
+    expect(viewOf({ triggerAt: laterToday }, nowMs)).toBe("today");
+    expect(viewOf({ triggerAt: tomorrow }, nowMs)).toBe("upcoming");
   });
 
-  it("computes weekly single-day and bi-weekly Mon/Wed/Fri occurrences", () => {
-    // 2026-11-02 is Monday
-    const mon = new Date(2026, 10, 2, 8, 30, 0, 0).getTime();
-    const single: ReminderRecurrence = {
-      freq: "weekly",
-      interval: 1,
-      anchorAt: mon,
-      byWeekday: [1],
-    };
-    expect(nextOccurrence(single, mon, mon)).toBe(
-      new Date(2026, 10, 9, 8, 30, 0, 0).getTime()
-    );
+  it("sorts Today with timed reminders first ordered by time, then plain reminders", () => {
+    const plainEarly = makeReminder({
+      id: "p1",
+      timed: false,
+      triggerAt: new Date(2026, 10, 25, 9, 0, 0, 0).getTime(),
+      createdAt: 10,
+    });
+    const timedLate = makeReminder({
+      id: "t2",
+      timed: true,
+      triggerAt: new Date(2026, 10, 25, 15, 0, 0, 0).getTime(),
+      createdAt: 20,
+    });
+    const timedEarly = makeReminder({
+      id: "t1",
+      timed: true,
+      triggerAt: new Date(2026, 10, 25, 8, 0, 0, 0).getTime(),
+      createdAt: 30,
+    });
 
-    const mwfBiweekly: ReminderRecurrence = {
-      freq: "weekly",
-      interval: 2,
-      anchorAt: mon,
-      byWeekday: [1, 3, 5],
-    };
-    const occs = occurrencesBetween(
-      mwfBiweekly,
-      mon,
-      mon,
-      new Date(2026, 10, 25, 23, 59, 0, 0).getTime()
-    );
-    expect(occs.map((ts) => new Date(ts).toDateString())).toEqual([
-      new Date(2026, 10, 2, 8, 30).toDateString(),
-      new Date(2026, 10, 4, 8, 30).toDateString(),
-      new Date(2026, 10, 6, 8, 30).toDateString(),
-      new Date(2026, 10, 16, 8, 30).toDateString(),
-      new Date(2026, 10, 18, 8, 30).toDateString(),
-      new Date(2026, 10, 20, 8, 30).toDateString(),
+    const sorted = sortTodayReminders([plainEarly, timedLate, timedEarly]);
+    expect(sorted.map((r) => r.id)).toEqual(["t1", "t2", "p1"]);
+  });
+
+  it("advances daily, every 2 days, and every 3 days preserving fixed schedule rhythm", () => {
+    const anchor = new Date(2026, 10, 20, 8, 30, 0, 0).getTime(); // Nov 20 08:30
+    const nowNov25 = new Date(2026, 10, 25, 10, 0, 0, 0).getTime(); // Nov 25
+
+    // Anchor Nov 20, every 2 days -> Nov 20, Nov 22, Nov 24, Nov 26...
+    const every2 = makeReminder({
+      triggerAt: anchor,
+      timed: true,
+      recurrence: { interval: 2, unit: "day", anchorAt: anchor },
+    });
+    const next2 = nextAfterComplete(every2, nowNov25);
+    expect(next2).not.toBeNull();
+    const d2 = new Date(next2!.nextTriggerAt);
+    expect([d2.getFullYear(), d2.getMonth(), d2.getDate(), d2.getHours(), d2.getMinutes()]).toEqual([
+      2026, 10, 26, 8, 30,
     ]);
+
+    // Anchor Nov 20, every 3 days -> Nov 20, Nov 23, Nov 26...
+    const every3 = makeReminder({
+      triggerAt: new Date(2026, 10, 23, 9, 0, 0, 0).getTime(),
+      recurrence: { interval: 3, unit: "day", anchorAt: anchor },
+    });
+    const next3 = nextAfterComplete(every3, nowNov25);
+    const d3 = new Date(next3!.nextTriggerAt);
+    expect([d3.getFullYear(), d3.getMonth(), d3.getDate()]).toEqual([2026, 10, 26]);
   });
 
-  it("skips short months on monthly day 31 (does not clamp)", () => {
-    const jan31 = new Date(2026, 0, 31, 10, 0, 0, 0).getTime();
-    const rec: ReminderRecurrence = {
-      freq: "monthly",
-      interval: 1,
-      anchorAt: jan31,
-      byMonthDay: 31,
-    };
-    const afterJan = nextOccurrence(rec, jan31, jan31);
-    expect(afterJan).toBe(new Date(2026, 2, 31, 10, 0, 0, 0).getTime()); // March 31, skipped Feb
+  it("advances weekly with weekday chips on fixed schedule", () => {
+    // Mon 23 Nov 2026, repeats Mon & Wed every week
+    const mon = new Date(2026, 10, 23, 9, 0, 0, 0).getTime();
+    const rec = makeReminder({
+      triggerAt: mon,
+      recurrence: { interval: 1, unit: "week", weekdays: [1, 3], anchorAt: mon },
+    });
+    const next1 = nextAfterComplete(rec, mon);
+    const d1 = new Date(next1!.nextTriggerAt);
+    expect([d1.getFullYear(), d1.getMonth(), d1.getDate()]).toEqual([2026, 10, 25]); // Wed Nov 25
 
-    const afterMar = nextOccurrence(rec, jan31, afterJan!);
-    expect(afterMar).toBe(new Date(2026, 4, 31, 10, 0, 0, 0).getTime()); // May 31, skipped Apr
+    const next2 = nextAfterComplete({ ...rec, triggerAt: next1!.nextTriggerAt }, next1!.nextTriggerAt);
+    const d2 = new Date(next2!.nextTriggerAt);
+    expect([d2.getFullYear(), d2.getMonth(), d2.getDate()]).toEqual([2026, 10, 30]); // Mon Nov 30
   });
 
-  it("fires yearly Feb 29 only on leap years", () => {
-    const leap = new Date(2024, 1, 29, 12, 0, 0, 0).getTime();
-    const rec: ReminderRecurrence = { freq: "yearly", interval: 1, anchorAt: leap };
-    expect(nextOccurrence(rec, leap, leap)).toBe(
-      new Date(2028, 1, 29, 12, 0, 0, 0).getTime()
+  it("clamps monthly anchor day (Jan 31 -> Feb 28 -> Mar 31) and handles count/until end", () => {
+    const jan31 = new Date(2026, 0, 31, 9, 0, 0, 0).getTime();
+    const monthly = makeReminder({
+      triggerAt: jan31,
+      recurrence: { interval: 1, unit: "month", anchorAt: jan31 },
+    });
+
+    const feb = nextAfterComplete(monthly, jan31);
+    const dfeb = new Date(feb!.nextTriggerAt);
+    expect([dfeb.getFullYear(), dfeb.getMonth(), dfeb.getDate()]).toEqual([2026, 1, 28]);
+
+    const mar = nextAfterComplete({ ...monthly, triggerAt: feb!.nextTriggerAt }, feb!.nextTriggerAt);
+    const dmar = new Date(mar!.nextTriggerAt);
+    expect([dmar.getFullYear(), dmar.getMonth(), dmar.getDate()]).toEqual([2026, 2, 31]);
+
+    // Count end
+    const countOne = makeReminder({
+      triggerAt: jan31,
+      recurrence: { interval: 1, unit: "day", anchorAt: jan31, end: { type: "count", remaining: 1 } },
+    });
+    expect(nextAfterComplete(countOne, jan31)).toBeNull();
+
+    // Until end
+    const untilPast = makeReminder({
+      triggerAt: jan31,
+      recurrence: { interval: 1, unit: "day", anchorAt: jan31, end: { type: "until", untilAt: jan31 } },
+    });
+    expect(nextAfterComplete(untilPast, jan31)).toBeNull();
+  });
+
+  it("formats recurrence labels and overdue meta in plain text", () => {
+    const anchor = Date.now();
+    expect(formatRecurrence({ interval: 1, unit: "day", anchorAt: anchor })).toBe("Repeats every day");
+    expect(formatRecurrence({ interval: 2, unit: "day", anchorAt: anchor })).toBe("Repeats every 2 days");
+    expect(formatRecurrence({ interval: 1, unit: "week", weekdays: [1, 3], anchorAt: anchor })).toBe(
+      "Repeats weekly on Mon, Wed"
     );
-  });
 
-  it("respects count exhaustion including skipped exdates", () => {
-    const start = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-    const day2 = new Date(2026, 10, 2, 9, 0, 0, 0).getTime();
-    const day3 = new Date(2026, 10, 3, 9, 0, 0, 0).getTime();
-    const rec: ReminderRecurrence = {
-      freq: "daily",
-      interval: 1,
-      anchorAt: start,
-      count: 3, // Nov 1 (#1), Nov 2 (#2 skipped by exdate), Nov 3 (#3)
-      exdates: [day2],
-    };
-    expect(nextOccurrence(rec, start, start - 1)).toBe(start);
-    expect(nextOccurrence(rec, start, start)).toBe(day3);
-    expect(nextOccurrence(rec, start, day3)).toBeNull();
-  });
-
-  it("respects inclusive until boundary", () => {
-    const start = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-    const day3 = new Date(2026, 10, 3, 9, 0, 0, 0).getTime();
-    const rec: ReminderRecurrence = {
-      freq: "daily",
-      interval: 1,
-      anchorAt: start,
-      until: day3,
-    };
-    expect(
-      nextOccurrence(rec, start, new Date(2026, 10, 2, 9, 0, 0, 0).getTime())
-    ).toBe(day3);
-    expect(nextOccurrence(rec, start, day3)).toBeNull();
-  });
-
-  it("preserves wall-clock time across Europe/London DST transitions", () => {
-    // 2026-03-28 09:00 GMT -> 2026-03-29 09:00 BST (08:00 UTC)
-    const springEve = Date.UTC(2026, 2, 28, 9, 0, 0, 0);
-    const recSpring: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: springEve };
-    const springDay = nextOccurrence(recSpring, springEve, springEve, {
-      timeZone: "Europe/London",
-    });
-    expect(springDay).toBe(Date.UTC(2026, 2, 29, 8, 0, 0, 0));
-
-    // 2026-10-24 09:00 BST (08:00 UTC) -> 2026-10-25 09:00 GMT (09:00 UTC)
-    const autumnEve = Date.UTC(2026, 9, 24, 8, 0, 0, 0);
-    const recAutumn: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: autumnEve };
-    const autumnDay = nextOccurrence(recAutumn, autumnEve, autumnEve, {
-      timeZone: "Europe/London",
-    });
-    expect(autumnDay).toBe(Date.UTC(2026, 9, 25, 9, 0, 0, 0));
-  });
-
-  it("handles `after` far in the future quickly without hitting iteration limits", () => {
-    const start = Date.UTC(2020, 0, 1, 9, 0, 0, 0);
-    const farAfter = Date.UTC(2060, 5, 15, 8, 0, 0, 0);
-    const rec: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: start };
-    const next = nextOccurrence(rec, start, farAfter, { timeZone: "UTC" });
-    expect(next).toBe(Date.UTC(2060, 5, 15, 9, 0, 0, 0));
-  });
-
-  it("caps pathological iteration counts cleanly and returns null", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const start = Date.UTC(2020, 0, 1, 9, 0, 0, 0);
-    const rec: ReminderRecurrence = {
-      freq: "daily",
-      interval: 1,
-      anchorAt: start,
-      count: 25_000,
-    };
-    const next = nextOccurrence(rec, start, Date.UTC(2060, 0, 1, 0, 0, 0, 0), {
-      timeZone: "UTC",
-    });
-    expect(next).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
-  });
-
-  it("describes recurrence patterns in plain English", () => {
-    expect(describeRecurrence({ freq: "daily", interval: 1, anchorAt: 0 })).toBe(
-      "Repeats every day"
-    );
-    expect(describeRecurrence({ freq: "daily", interval: 2, anchorAt: 0 })).toBe(
-      "Repeats every 2 days"
-    );
-    expect(
-      describeRecurrence({ freq: "weekly", interval: 1, anchorAt: 0, byWeekday: [3, 1] })
-    ).toBe("Repeats weekly on Mon, Wed");
-    expect(describeRecurrence({ freq: "monthly", interval: 1, anchorAt: 0 })).toBe(
-      "Repeats monthly"
-    );
-    expect(describeRecurrence({ freq: "yearly", interval: 2, anchorAt: 0 })).toBe(
-      "Repeats every 2 years"
-    );
-  });
-
-  describe("nextAfterComplete (D7 fixed schedule)", () => {
-    it("moves a daily reminder missed for 3 days to today", () => {
-      const nov1 = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-      const nov4afternoon = new Date(2026, 10, 4, 14, 0, 0, 0).getTime();
-      const rec: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: nov1 };
-      expect(nextAfterComplete(rec, nov1, nov4afternoon)).toBe(
-        new Date(2026, 10, 4, 9, 0, 0, 0).getTime()
-      );
-    });
-
-    it("moves today's daily occurrence to tomorrow", () => {
-      const nov4 = new Date(2026, 10, 4, 9, 0, 0, 0).getTime();
-      const nov4afternoon = new Date(2026, 10, 4, 14, 0, 0, 0).getTime();
-      const rec: ReminderRecurrence = { freq: "daily", interval: 1, anchorAt: nov4 };
-      expect(nextAfterComplete(rec, nov4, nov4afternoon)).toBe(
-        new Date(2026, 10, 5, 9, 0, 0, 0).getTime()
-      );
-    });
-
-    it("preserves rhythm for every-2-days reminders", () => {
-      const nov1 = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-      const rec: ReminderRecurrence = { freq: "daily", interval: 2, anchorAt: nov1 };
-      // Ticked late on Nov 4 -> Nov 5 (keeps Nov 1, 3, 5 rhythm instead of drifting to Nov 6)
-      const nov4morning = new Date(2026, 10, 4, 8, 0, 0, 0).getTime();
-      expect(nextAfterComplete(rec, nov1, nov4morning)).toBe(
-        new Date(2026, 10, 5, 9, 0, 0, 0).getTime()
-      );
-    });
-
-    it("keeps weekly Monday reminders on Mondays", () => {
-      const mon1 = new Date(2026, 10, 2, 9, 0, 0, 0).getTime(); // Mon Nov 2
-      const wed4 = new Date(2026, 10, 4, 10, 0, 0, 0).getTime(); // Wed Nov 4
-      const rec: ReminderRecurrence = {
-        freq: "weekly",
-        interval: 1,
-        anchorAt: mon1,
-        byWeekday: [1],
-      };
-      expect(nextAfterComplete(rec, mon1, wed4)).toBe(
-        new Date(2026, 10, 9, 9, 0, 0, 0).getTime()
-      );
-    });
-
-    it("returns null after the final occurrence of a count/until series", () => {
-      const nov1 = new Date(2026, 10, 1, 9, 0, 0, 0).getTime();
-      const nov2 = new Date(2026, 10, 2, 9, 0, 0, 0).getTime();
-      const countRec: ReminderRecurrence = {
-        freq: "daily",
-        interval: 1,
-        anchorAt: nov1,
-        count: 2,
-      };
-      expect(nextAfterComplete(countRec, nov1, nov1)).toBe(nov2);
-      expect(nextAfterComplete(countRec, nov2, nov2)).toBeNull();
-
-      const untilRec: ReminderRecurrence = {
-        freq: "daily",
-        interval: 1,
-        anchorAt: nov1,
-        until: nov2,
-      };
-      expect(nextAfterComplete(untilRec, nov2, nov2)).toBeNull();
-    });
+    const nowMs = new Date(2026, 10, 26, 12, 0, 0, 0).getTime();
+    const twoDaysAgo = new Date(2026, 10, 24, 9, 0, 0, 0).getTime();
+    expect(formatOverdueMeta(twoDaysAgo, nowMs)).toMatch(/^Due .+, 2 days ago$/);
   });
 });

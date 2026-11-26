@@ -57,36 +57,3 @@ export function clearAccountSettings(): void {
 export function getAllAccountSettings(): Record<string, unknown> {
   return readAll();
 }
-
-const IMPORTED_DONE_KEY = "importedDone";
-
-export function importedDoneKey(externalUid: string, externalInstance?: string | null): string {
-  return `${externalUid}|${externalInstance ?? ""}`;
-}
-
-export function listImportedDone(): string[] {
-  const raw = getAccountSetting<unknown>(IMPORTED_DONE_KEY);
-  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : [];
-}
-
-export function hasImportedDone(externalUid: string, externalInstance?: string | null): boolean {
-  const key = importedDoneKey(externalUid, externalInstance);
-  return listImportedDone().includes(key);
-}
-
-export function recordImportedDone(externalUid: string, externalInstance?: string | null): void {
-  const key = importedDoneKey(externalUid, externalInstance);
-  const current = listImportedDone();
-  if (!current.includes(key)) {
-    setAccountSetting(IMPORTED_DONE_KEY, [...current, key]);
-  }
-}
-
-export function removeImportedDone(externalUid: string, externalInstance?: string | null): void {
-  const key = importedDoneKey(externalUid, externalInstance);
-  const current = listImportedDone();
-  const next = current.filter((k) => k !== key);
-  if (next.length !== current.length) {
-    setAccountSetting(IMPORTED_DONE_KEY, next);
-  }
-}

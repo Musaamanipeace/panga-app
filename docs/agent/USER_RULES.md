@@ -30,11 +30,3 @@ Every rule the user has given me, verbatim where possible, dated. Rules persist 
 
 - Google Drive sign-in and JSON backup sync is implemented client-side across the landing page, Settings, and Menu (showing signed-in / signed-out status in the Menu), with explicit confirmation & conflict guardrails between local and online work.
 - AI provider API key inputs in Settings must never come preloaded with starred/autofilled values; masked stars and `Saved` status appear only when a human keyed in and saved a key, and an eye icon provides a 1-click peek that hides automatically without a second click.
-
-## 2026-11-26 — Reminders dated checklist & no-server rules (owner vision)
-
-- "drop the sever, we won need it. notifications inside the app are fine enough." No server, no Web Push, no background scheduling, no snooze, no advance-notice offsets, and no missed/catch-up alerts list.
-- "a reminder is as such, you can add a timed notification, or you could leave it as a reminder. when you tick it off, it deletes. you dont need to be reminded any more."
-- "youll go to your reminders and check. ooh, what i gotta do today, and you might not care about it. then you can see what did i not do yesterday, so you go to past events, and you tick some off, and leave some open."
-- "you can set daily reminders. weekly, whatever. 2 day, 3 day. thas the vision." Ticking a repeating reminder completes the current occurrence and advances it to its next scheduled date rather than deleting the series.
-

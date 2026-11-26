@@ -1,24 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ProofreadTrigger } from "../Proofread";
 import {
-  completeReminder,
   createReminder,
   deleteReminder,
-  filterRemindersForView,
-  isReminderTimed,
-  listReminders,
-  startOfLocalDay,
+  getNotificationPermissionState,
+  listOpenReminders,
+  requestNotificationPermission,
   startReminderScheduler,
   TONE_PRESETS,
   updateReminder,
-  viewOf,
+  type NotificationPermissionState,
   type Reminder,
-  type ReminderDayBucket,
-  type ReminderRecurrence,
-  type ReminderView,
 } from "../../data/reminders";
-import type { ReminderRepeatFreq } from "../../data/db";
-import { describeRecurrence } from "../../data/recurrence";
 import {
   createReminderFolder,
   deleteReminderFolder,
@@ -26,194 +19,185 @@ import {
   updateReminderFolder,
   type ReminderFolder,
 } from "../../data/reminderFolders";
+import type { RecurrenceUnit, ReminderRecurrence, ReminderRecurrenceEnd } from "../../data/db";
+import {
+  combineLocalDateTime,
+  formatDayHeading,
+  formatLocalTime,
+  formatOverdueMeta,
+  formatRecurrence,
+  isTimedReminder,
+  localDateInputValue,
+  localTimeInputValue,
+  sortOverdueReminders,
+  sortTodayReminders,
+  sortUpcomingReminders,
+  viewOf,
+  type ReminderView,
+} from "../../data/recurrence";
+import { hasCompletedIcsImport } from "../../data/importEvents";
 import { listWorkspaces } from "../../data/workspaces";
 import {
   confirmAction,
   confirmDelete,
   ErrorNote,
   Loading,
-  showToast,
   useAsync,
 } from "../../components/ui";
+import { tickReminderWithUndo } from "../reminderToast";
 import FolderTree from "./FolderTree";
+import ImportEventsCard from "./ImportEventsCard";
 
-const DAY_MS = 86_400_000;
-
-const VIEW_TABS: { id: ReminderView; label: string }[] = [
-  { id: "today", label: "Today" },
-  { id: "overdue", label: "Overdue" },
-  { id: "upcoming", label: "Upcoming" },
-  { id: "all", label: "All" },
-];
-
-const WEEKDAY_CHIPS: { day: number; label: string }[] = [
-  { day: 1, label: "Mon" },
-  { day: 2, label: "Tue" },
-  { day: 3, label: "Wed" },
-  { day: 4, label: "Thu" },
-  { day: 5, label: "Fri" },
-  { day: 6, label: "Sat" },
-  { day: 0, label: "Sun" },
-];
-
+type ActiveTabView = ReminderView | "all";
 type RepeatPreset =
   | "none"
-  | "daily_1"
-  | "daily_2"
-  | "daily_3"
-  | "weekly_1"
-  | "monthly_1"
-  | "yearly_1"
+  | "daily"
+  | "every2days"
+  | "every3days"
+  | "weekly"
+  | "monthly"
+  | "yearly"
   | "custom";
+type RepeatEndMode = "never" | "until" | "count";
 
-type EndMode = "never" | "until" | "count";
+const WEEKDAY_CHIPS: Array<{ dow: number; label: string }> = [
+  { dow: 1, label: "Mon" },
+  { dow: 2, label: "Tue" },
+  { dow: 3, label: "Wed" },
+  { dow: 4, label: "Thu" },
+  { dow: 5, label: "Fri" },
+  { dow: 6, label: "Sat" },
+  { dow: 0, label: "Sun" },
+];
 
-function toLocalDateInput(epochMs: number): string {
-  const d = new Date(epochMs);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+const UNFILED_FILTER = "__unfiled__";
 
-function toLocalTimeInput(epochMs: number): string {
-  const d = new Date(epochMs);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** datetime-local helper preserved for callers/tests that import it. */
+/** datetime-local inputs need a local-time string, not an ISO UTC one. */
 export function toLocalInput(ts: number): string {
-  return `${toLocalDateInput(ts)}T${toLocalTimeInput(ts)}`;
+  return `${localDateInputValue(ts)}T${localTimeInputValue(ts)}`;
 }
 
-function parseLocalDate(dateStr: string): { year: number; month: number; day: number } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  const probe = new Date(year, month - 1, day);
-  if (
-    probe.getFullYear() !== year ||
-    probe.getMonth() !== month - 1 ||
-    probe.getDate() !== day
-  ) {
-    return null;
-  }
-  return { year, month, day };
+function dateWeekday(dateStr: string): number {
+  const ts = combineLocalDateTime(dateStr, null);
+  return new Date(ts).getDay();
 }
 
-function parseLocalDateTime(dateStr: string, timeStr: string | null): number | null {
-  const parsedDate = parseLocalDate(dateStr);
-  if (!parsedDate) return null;
-  if (!timeStr) {
-    return new Date(parsedDate.year, parsedDate.month - 1, parsedDate.day, 0, 0, 0, 0).getTime();
-  }
-  const tm = /^(\d{2}):(\d{2})$/.exec(timeStr.trim());
-  if (!tm) return null;
-  const hour = Number(tm[1]);
-  const minute = Number(tm[2]);
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return new Date(parsedDate.year, parsedDate.month - 1, parsedDate.day, hour, minute, 0, 0).getTime();
-}
-
-function formatDayHeading(epochMs: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(epochMs);
-}
-
-function formatTimeOnly(epochMs: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(epochMs);
-}
-
-function formatDueOverdue(triggerAt: number, nowMs: number): string {
-  const diffDays = Math.max(
-    1,
-    Math.round((startOfLocalDay(nowMs) - startOfLocalDay(triggerAt)) / DAY_MS)
-  );
-  return `Due ${formatDayHeading(triggerAt)}, ${diffDays} ${diffDays === 1 ? "day" : "days"} ago`;
-}
-
-function formatNextDate(epochMs: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(epochMs);
-}
-
-function presetFromRecurrence(rec: ReminderRecurrence | null | undefined): {
+function presetFromRecurrence(rec?: ReminderRecurrence): {
   preset: RepeatPreset;
-  freq: ReminderRepeatFreq;
-  interval: string;
+  intervalStr: string;
+  unit: RecurrenceUnit;
   weekdays: number[];
-  endMode: EndMode;
-  endDate: string;
-  endCount: string;
+  endMode: RepeatEndMode;
+  untilDate: string;
+  countStr: string;
 } {
+  const todayStr = localDateInputValue(Date.now());
   if (!rec) {
     return {
       preset: "none",
-      freq: "daily",
-      interval: "2",
-      weekdays: [],
+      intervalStr: "1",
+      unit: "day",
+      weekdays: [new Date().getDay()],
       endMode: "never",
-      endDate: "",
-      endCount: "5",
+      untilDate: todayStr,
+      countStr: "5",
     };
   }
 
   let preset: RepeatPreset = "custom";
-  if (rec.freq === "daily" && rec.interval === 1) preset = "daily_1";
-  else if (rec.freq === "daily" && rec.interval === 2) preset = "daily_2";
-  else if (rec.freq === "daily" && rec.interval === 3) preset = "daily_3";
-  else if (rec.freq === "weekly" && rec.interval === 1) {
-    const anchorDay = new Date(rec.anchorAt).getDay();
-    const wds = rec.byWeekday ?? [];
-    if (wds.length === 0 || (wds.length === 1 && wds[0] === anchorDay)) {
-      preset = "weekly_1";
-    }
-  } else if (rec.freq === "monthly" && rec.interval === 1) preset = "monthly_1";
-  else if (rec.freq === "yearly" && rec.interval === 1) preset = "yearly_1";
+  if (rec.unit === "day" && rec.interval === 1) preset = "daily";
+  else if (rec.unit === "day" && rec.interval === 2) preset = "every2days";
+  else if (rec.unit === "day" && rec.interval === 3) preset = "every3days";
+  else if (rec.unit === "week" && rec.interval === 1 && (!rec.weekdays || rec.weekdays.length <= 1)) {
+    preset = "weekly";
+  } else if (rec.unit === "month" && rec.interval === 1) preset = "monthly";
+  else if (rec.unit === "year" && rec.interval === 1) preset = "yearly";
 
-  let endMode: EndMode = "never";
-  let endDate = "";
-  let endCount = "5";
-  if (typeof rec.until === "number") {
-    endMode = "until";
-    endDate = toLocalDateInput(rec.until);
-  } else if (typeof rec.count === "number") {
-    endMode = "count";
-    endCount = String(rec.count);
-  }
+  const endMode: RepeatEndMode =
+    rec.end?.type === "until" ? "until" : rec.end?.type === "count" ? "count" : "never";
 
   return {
     preset,
-    freq: rec.freq,
-    interval: String(rec.interval || 1),
-    weekdays: rec.byWeekday?.length ? [...rec.byWeekday] : [new Date(rec.anchorAt).getDay()],
+    intervalStr: String(rec.interval),
+    unit: rec.unit,
+    weekdays: rec.weekdays?.length ? rec.weekdays : [new Date(rec.anchorAt).getDay()],
     endMode,
-    endDate,
-    endCount,
+    untilDate: rec.end?.type === "until" ? localDateInputValue(rec.end.untilAt) : todayStr,
+    countStr: rec.end?.type === "count" ? String(rec.end.remaining) : "5",
   };
 }
 
-function emptyStateText(view: ReminderView): string {
-  switch (view) {
-    case "today":
-      return "Nothing on for today.";
-    case "overdue":
-      return "Nothing left over from earlier days.";
-    case "upcoming":
-      return "Nothing coming up.";
-    case "all":
-      return "Nothing scheduled.";
-  }
+interface ReminderRowProps {
+  reminder: Reminder;
+  isOverdue: boolean;
+  workspaceName?: string;
+  onTick: (r: Reminder) => void;
+  onEdit: (r: Reminder) => void;
+  onDelete: (r: Reminder) => void;
+}
+
+function ReminderRow({
+  reminder,
+  isOverdue,
+  workspaceName,
+  onTick,
+  onEdit,
+  onDelete,
+}: ReminderRowProps) {
+  const timed = isTimedReminder(reminder);
+  const repeatText = formatRecurrence(reminder.recurrence);
+
+  return (
+    <li className="item item-row-wrap rem-row">
+      <div className="rem-row-left">
+        <input
+          type="checkbox"
+          className="rem-tick clickable"
+          checked={false}
+          aria-label={`Tick off ${reminder.message}`}
+          onChange={() => onTick(reminder)}
+        />
+        <div className="rem-row-content">
+          <div className="rem-row-title-line">
+            <span className="item-title">{reminder.message}</span>
+            {timed && <span className="rem-time-chip">{formatLocalTime(reminder.triggerAt)}</span>}
+          </div>
+          {(isOverdue || repeatText || reminder.location || reminder.source === "ics" || workspaceName || reminder.notes) && (
+            <div className="rem-row-meta">
+              {isOverdue && (
+                <span className="rem-overdue-text">{formatOverdueMeta(reminder.triggerAt)}</span>
+              )}
+              {repeatText && <span className="rem-muted-meta">{repeatText}</span>}
+              {reminder.location && <span className="rem-muted-meta">{reminder.location}</span>}
+              {reminder.source === "ics" && <span className="chip-small">Imported</span>}
+              {workspaceName && <span className="chip-small">Created in {workspaceName}</span>}
+              {reminder.notes && (
+                <span className="rem-notes-preview">
+                  {reminder.notes.length > 140 ? `${reminder.notes.slice(0, 140)}…` : reminder.notes}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="item-actions">
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable"
+          onClick={() => onEdit(reminder)}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable tl-danger"
+          onClick={() => onDelete(reminder)}
+        >
+          Delete
+        </button>
+      </div>
+    </li>
+  );
 }
 
 export default function HomeRemindersTab({
@@ -224,405 +208,309 @@ export default function HomeRemindersTab({
   initialReminderId?: string | null;
 }) {
   const { data, error, loading, reload } = useAsync(async () => {
-    const [reminders, folders] = await Promise.all([listReminders(), listReminderFolders()]);
+    const [reminders, folders] = await Promise.all([listOpenReminders(), listReminderFolders()]);
     return { reminders, folders };
   }, []);
 
   useEffect(() => {
-    void startReminderScheduler();
     const onUpdate = () => void reload();
     window.addEventListener("panga-data-updated", onUpdate);
     return () => window.removeEventListener("panga-data-updated", onUpdate);
   }, [reload]);
 
-  const [view, setView] = useState<ReminderView>("today");
-  const [folderFilter, setFolderFilter] = useState<string>("__all__");
-  const [selFolderId, setSelFolderId] = useState<string | null>(null);
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [permState, setPermState] = useState<NotificationPermissionState>(() =>
+    getNotificationPermissionState()
+  );
+  const [requestingPerm, setRequestingPerm] = useState(false);
 
-  // Add / Edit form state
+  const [activeView, setActiveView] = useState<ActiveTabView>("today");
+  const [folderFilter, setFolderFilter] = useState<string>(""); // "" = all folders
+  const [importCardOpen, setImportCardOpen] = useState<boolean>(() => !hasCompletedIcsImport());
+
+  // Add / edit form state
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [message, setMessage] = useState("");
-  const [dateStr, setDateStr] = useState(() => toLocalDateInput(Date.now()));
-  const [timed, setTimed] = useState(false);
+  const [dateStr, setDateStr] = useState(() => localDateInputValue(Date.now()));
+  const [addTime, setAddTime] = useState(false);
   const [timeStr, setTimeStr] = useState("09:00");
   const [toneId, setToneId] = useState("default");
   const [repeatPreset, setRepeatPreset] = useState<RepeatPreset>("none");
-  const [customFreq, setCustomFreq] = useState<ReminderRepeatFreq>("daily");
-  const [customInterval, setCustomInterval] = useState("2");
+  const [customInterval, setCustomInterval] = useState("1");
+  const [customUnit, setCustomUnit] = useState<RecurrenceUnit>("day");
   const [customWeekdays, setCustomWeekdays] = useState<number[]>(() => [new Date().getDay()]);
-  const [endMode, setEndMode] = useState<EndMode>("never");
-  const [endDateStr, setEndDateStr] = useState("");
-  const [endCountStr, setEndCountStr] = useState("5");
-  const [formFolderId, setFormFolderId] = useState<string | null>(null);
+  const [endMode, setEndMode] = useState<RepeatEndMode>("never");
+  const [untilDate, setUntilDate] = useState(() => localDateInputValue(Date.now()));
+  const [countStr, setCountStr] = useState("5");
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  const folders: ReminderFolder[] = useMemo(() => data?.folders ?? [], [data]);
-  const openReminders: Reminder[] = useMemo(() => data?.reminders ?? [], [data]);
+  const [selFolderId, setSelFolderId] = useState<string | null>(null);
 
-  const workspaces = listWorkspaces();
-  const workspaceNames = {
-    count: workspaces.length,
-    map: new Map(workspaces.map((w) => [w.id, w.name])),
-  };
+  const folders: ReminderFolder[] = data?.folders ?? [];
+  const allOpen: Reminder[] = data?.reminders ?? [];
 
-  // Deep link from header Search or Quick links
+  const workspaceMap = useMemo(() => {
+    const workspaces = listWorkspaces();
+    return workspaces.length > 1 ? new Map(workspaces.map((w) => [w.id, w.name])) : null;
+  }, [allOpen]);
+
+  const handledInitialReminderIdRef = useRef<string | null>(null);
+
+  // Sync URL query parameters (search / quick links)
   useEffect(() => {
-    if (initialReminderId) {
-      const target = openReminders.find((r) => r.id === initialReminderId);
+    if (initialReminderId && handledInitialReminderIdRef.current !== initialReminderId) {
+      const target = allOpen.find((r) => r.id === initialReminderId);
       if (target) {
-        setView(viewOf(target));
-        setFolderFilter("__all__");
-        setSelFolderId(target.folderId);
-        setHighlightedId(target.id);
+        handledInitialReminderIdRef.current = initialReminderId;
+        setActiveView(viewOf(target));
+        beginEdit(target);
         return;
       }
     }
-    if (initialFolderId) {
-      const targetFolder = folders.find((f) => f.id === initialFolderId);
-      if (targetFolder) {
-        setFolderFilter(targetFolder.id);
-        setSelFolderId(targetFolder.id);
-        setView("all");
-      }
+    if (initialFolderId && folders.some((f) => f.id === initialFolderId)) {
+      setFolderFilter(initialFolderId);
+      setSelFolderId(initialFolderId);
     }
-  }, [initialFolderId, initialReminderId, folders, openReminders]);
+  }, [initialFolderId, initialReminderId, folders, allOpen]);
 
-  const resolvedFolderArg =
-    folderFilter === "__all__"
-      ? "__all__"
-      : folderFilter === "__unfiled__"
-        ? null
-        : folderFilter;
+  useEffect(() => {
+    void startReminderScheduler();
+    setPermState(getNotificationPermissionState());
+  }, []);
 
-  const counts = useMemo(() => {
-    const t = Date.now();
-    const today = filterRemindersForView(openReminders, "today", resolvedFolderArg, t);
-    const overdue = filterRemindersForView(openReminders, "overdue", resolvedFolderArg, t);
-    const upcoming = filterRemindersForView(openReminders, "upcoming", resolvedFolderArg, t);
+  const scopedReminders = useMemo(() => {
+    if (!folderFilter) return allOpen;
+    if (folderFilter === UNFILED_FILTER) return allOpen.filter((r) => !r.folderId);
+    return allOpen.filter((r) => r.folderId === folderFilter);
+  }, [allOpen, folderFilter]);
+
+  const viewBuckets = useMemo(() => {
+    const overdueRaw: Reminder[] = [];
+    const todayRaw: Reminder[] = [];
+    const upcomingRaw: Reminder[] = [];
+
+    for (const r of scopedReminders) {
+      const v = viewOf(r);
+      if (v === "overdue") overdueRaw.push(r);
+      else if (v === "today") todayRaw.push(r);
+      else upcomingRaw.push(r);
+    }
+
     return {
-      today: today.length,
-      overdue: overdue.length,
-      upcoming: upcoming.length,
-      all: today.length + overdue.length + upcoming.length,
+      overdue: sortOverdueReminders(overdueRaw),
+      today: sortTodayReminders(todayRaw),
+      upcoming: sortUpcomingReminders(upcomingRaw),
     };
-  }, [openReminders, resolvedFolderArg]);
-
-  const visibleItems = useMemo(
-    () => filterRemindersForView(openReminders, view, resolvedFolderArg, Date.now()),
-    [openReminders, view, resolvedFolderArg]
-  );
+  }, [scopedReminders]);
 
   const upcomingGroups = useMemo(() => {
-    if (view !== "upcoming" && view !== "all") return [];
-    const t = Date.now();
-    const list =
-      view === "upcoming"
-        ? visibleItems
-        : visibleItems.filter((r) => viewOf(r, t) === "upcoming");
-    const groups: { dayKey: number; heading: string; items: Reminder[] }[] = [];
-    for (const r of list) {
-      const dayKey = startOfLocalDay(r.triggerAt);
+    const groups: Array<{ dayKey: string; heading: string; items: Reminder[] }> = [];
+    for (const r of viewBuckets.upcoming) {
+      const key = localDateInputValue(r.triggerAt);
       const last = groups[groups.length - 1];
-      if (!last || last.dayKey !== dayKey) {
-        groups.push({ dayKey, heading: formatDayHeading(r.triggerAt), items: [r] });
-      } else {
+      if (last && last.dayKey === key) {
         last.items.push(r);
+      } else {
+        groups.push({
+          dayKey: key,
+          heading: formatDayHeading(r.triggerAt),
+          items: [r],
+        });
       }
     }
     return groups;
-  }, [view, visibleItems]);
+  }, [viewBuckets.upcoming]);
 
-  const selectedFolderObj = useMemo(
-    () => folders.find((f) => f.id === selFolderId) ?? null,
-    [folders, selFolderId]
-  );
-
-  const nowMs = Date.now();
-
-  function resetForm(collapse = true) {
+  function resetForm() {
+    const today = localDateInputValue(Date.now());
     setEditingId(null);
+    setExpanded(false);
     setMessage("");
-    setDateStr(toLocalDateInput(Date.now()));
-    setTimed(false);
+    setDateStr(today);
+    setAddTime(false);
     setTimeStr("09:00");
     setToneId("default");
     setRepeatPreset("none");
-    setCustomFreq("daily");
-    setCustomInterval("2");
+    setCustomInterval("1");
+    setCustomUnit("day");
     setCustomWeekdays([new Date().getDay()]);
     setEndMode("never");
-    setEndDateStr("");
-    setEndCountStr("5");
-    setFormFolderId(
-      folderFilter !== "__all__" && folderFilter !== "__unfiled__" ? folderFilter : null
-    );
+    setUntilDate(today);
+    setCountStr("5");
+    setFolderId(folderFilter && folderFilter !== UNFILED_FILTER ? folderFilter : null);
     setLocation("");
     setNotes("");
     setFormError(null);
-    if (collapse) setShowMore(false);
   }
 
-  function startEdit(r: Reminder) {
-    const rTimed = isReminderTimed(r);
-    const parsed = presetFromRecurrence(r.recurrence);
+  function beginEdit(r: Reminder) {
+    const timed = isTimedReminder(r);
+    const recFields = presetFromRecurrence(r.recurrence);
     setEditingId(r.id);
-    setShowMore(true);
+    setExpanded(true);
     setMessage(r.message);
-    setDateStr(toLocalDateInput(r.triggerAt));
-    setTimed(rTimed);
-    setTimeStr(rTimed ? toLocalTimeInput(r.triggerAt) : "09:00");
+    setDateStr(localDateInputValue(r.triggerAt));
+    setAddTime(timed);
+    setTimeStr(timed ? localTimeInputValue(r.triggerAt) : "09:00");
     setToneId(r.toneId ?? "default");
-    setRepeatPreset(parsed.preset);
-    setCustomFreq(parsed.freq);
-    setCustomInterval(parsed.interval);
-    setCustomWeekdays(parsed.weekdays);
-    setEndMode(parsed.endMode);
-    setEndDateStr(parsed.endDate);
-    setEndCountStr(parsed.endCount);
-    setFormFolderId(r.folderId ?? null);
+    setRepeatPreset(recFields.preset);
+    setCustomInterval(recFields.intervalStr);
+    setCustomUnit(recFields.unit);
+    setCustomWeekdays(recFields.weekdays);
+    setEndMode(recFields.endMode);
+    setUntilDate(recFields.untilDate);
+    setCountStr(recFields.countStr);
+    setFolderId(r.folderId ?? null);
     setLocation(r.location ?? "");
     setNotes(r.notes ?? "");
     setFormError(null);
-    inputRef.current?.focus();
   }
 
-  function handlePresetChange(nextPreset: RepeatPreset) {
-    setRepeatPreset(nextPreset);
-    setFormError(null);
-    if (nextPreset === "custom") {
-      const parsedDate = parseLocalDate(dateStr);
-      const fallbackDay = parsedDate
-        ? new Date(parsedDate.year, parsedDate.month - 1, parsedDate.day).getDay()
-        : new Date().getDay();
-      if (customWeekdays.length === 0) {
-        setCustomWeekdays([fallbackDay]);
-      }
-    }
-    if (nextPreset === "none") {
-      setEndMode("never");
-    }
+  async function ensurePermission() {
+    if (requestingPerm) return;
+    setRequestingPerm(true);
+    await requestNotificationPermission();
+    setPermState(getNotificationPermissionState());
+    setRequestingPerm(false);
   }
 
-  function handleCustomFreqChange(nextFreq: ReminderRepeatFreq) {
-    setCustomFreq(nextFreq);
-    setFormError(null);
-    if (nextFreq === "weekly" && customWeekdays.length === 0) {
-      const parsedDate = parseLocalDate(dateStr);
-      const fallbackDay = parsedDate
-        ? new Date(parsedDate.year, parsedDate.month - 1, parsedDate.day).getDay()
-        : new Date().getDay();
-      setCustomWeekdays([fallbackDay]);
-    }
-  }
+  function buildRecurrenceFromForm(triggerAt: number, existingAnchorAt?: number, dateChanged?: boolean): { recurrence?: ReminderRecurrence; error?: string } {
+    if (repeatPreset === "none") return {};
 
-  function toggleWeekday(day: number) {
-    setFormError(null);
-    setCustomWeekdays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
-  }
-
-  function buildRecurrence(anchorAt: number, existing?: ReminderRecurrence | null): ReminderRecurrence | null | "error" {
-    if (repeatPreset === "none") return null;
-
-    let freq: ReminderRepeatFreq = "daily";
     let interval = 1;
-    let byWeekday: number[] | undefined;
+    let unit: RecurrenceUnit = "day";
+    let weekdays: number[] | undefined;
 
     switch (repeatPreset) {
-      case "daily_1":
-        freq = "daily";
+      case "daily":
         interval = 1;
+        unit = "day";
         break;
-      case "daily_2":
-        freq = "daily";
+      case "every2days":
         interval = 2;
+        unit = "day";
         break;
-      case "daily_3":
-        freq = "daily";
+      case "every3days":
         interval = 3;
+        unit = "day";
         break;
-      case "weekly_1":
-        freq = "weekly";
+      case "weekly":
         interval = 1;
-        byWeekday = [new Date(anchorAt).getDay()];
+        unit = "week";
+        weekdays = [dateWeekday(dateStr)];
         break;
-      case "monthly_1":
-        freq = "monthly";
+      case "monthly":
         interval = 1;
+        unit = "month";
         break;
-      case "yearly_1":
-        freq = "yearly";
+      case "yearly":
         interval = 1;
+        unit = "year";
         break;
       case "custom": {
-        freq = customFreq;
-        const parsedInt = Number(customInterval);
-        if (!Number.isInteger(parsedInt) || parsedInt < 1) {
-          setFormError("Enter a number of 1 or more.");
-          return "error";
+        const parsed = Number(customInterval);
+        if (!Number.isInteger(parsed) || parsed < 1) {
+          return { error: "Enter a number of 1 or more." };
         }
-        interval = parsedInt;
-        if (freq === "weekly") {
+        interval = parsed;
+        unit = customUnit;
+        if (unit === "week") {
           if (customWeekdays.length === 0) {
-            setFormError("Choose at least one weekday.");
-            return "error";
+            return { error: "Choose at least one weekday." };
           }
-          byWeekday = [...customWeekdays];
+          weekdays = customWeekdays.slice();
         }
         break;
       }
     }
 
-    let until: number | undefined;
-    let count: number | undefined;
+    let end: ReminderRecurrenceEnd = { type: "never" };
     if (endMode === "until") {
-      const parsedEnd = parseLocalDate(endDateStr);
-      if (!parsedEnd) {
-        setFormError("Choose an end date.");
-        return "error";
-      }
-      until = new Date(parsedEnd.year, parsedEnd.month - 1, parsedEnd.day, 23, 59, 59, 999).getTime();
+      end = { type: "until", untilAt: combineLocalDateTime(untilDate, null) };
     } else if (endMode === "count") {
-      const parsedCount = Number(endCountStr);
+      const parsedCount = Number(countStr);
       if (!Number.isInteger(parsedCount) || parsedCount < 1) {
-        setFormError("Enter a number of 1 or more.");
-        return "error";
+        return { error: "Enter a number of 1 or more." };
       }
-      count = parsedCount;
+      end = { type: "count", remaining: parsedCount };
     }
 
+    const anchorAt =
+      existingAnchorAt !== undefined && !dateChanged ? existingAnchorAt : triggerAt;
+
     return {
-      freq,
-      interval,
-      anchorAt,
-      ...(byWeekday ? { byWeekday } : {}),
-      ...(freq === "monthly" ? { byMonthDay: new Date(anchorAt).getDate() } : {}),
-      ...(until !== undefined ? { until } : {}),
-      ...(count !== undefined ? { count } : {}),
-      ...(existing?.exdates?.length ? { exdates: existing.exdates } : {}),
+      recurrence: {
+        interval,
+        unit,
+        ...(weekdays ? { weekdays } : {}),
+        end,
+        anchorAt,
+      },
     };
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = message.trim();
-    if (!trimmed) {
-      setFormError("Enter a reminder.");
+    if (!trimmed) return;
+    setFormError(null);
+
+    const triggerAt = combineLocalDateTime(dateStr, addTime ? timeStr : null);
+    const existing = editingId ? allOpen.find((r) => r.id === editingId) : undefined;
+    const dateChanged = existing
+      ? localDateInputValue(existing.triggerAt) !== dateStr
+      : true;
+
+    const { recurrence, error: recError } = buildRecurrenceFromForm(
+      triggerAt,
+      existing?.recurrence?.anchorAt,
+      dateChanged
+    );
+    if (recError) {
+      setFormError(recError);
       return;
     }
 
-    // Collapsed quick-add creates a plain reminder for today with no repeat.
-    if (!showMore && !editingId) {
-      const todayTrigger = startOfLocalDay(Date.now());
-      const defaultFolder =
-        folderFilter !== "__all__" && folderFilter !== "__unfiled__" ? folderFilter : null;
-      await createReminder({
-        message: trimmed,
-        triggerAt: todayTrigger,
-        timed: false,
-        linkedEntityType: null,
-        linkedEntityId: null,
-        folderId: defaultFolder,
-      });
-      resetForm(false);
-      await reload();
-      return;
-    }
-
-    const parsedTrigger = parseLocalDateTime(dateStr, timed ? timeStr : null);
-    if (parsedTrigger === null) {
-      setFormError(timed ? "Choose a valid date and time." : "Choose a valid date.");
-      return;
-    }
+    const trimmedLocation = location.trim();
+    const trimmedNotes = notes.trim().slice(0, 2000);
 
     if (editingId) {
-      const existing = openReminders.find((r) => r.id === editingId);
-      if (!existing) {
-        resetForm(true);
-        return;
-      }
-      const dateOrTimeChanged =
-        parsedTrigger !== existing.triggerAt || timed !== isReminderTimed(existing);
-      const baseAnchor =
-        dateOrTimeChanged || !existing.recurrence
-          ? parsedTrigger
-          : existing.recurrence.anchorAt || parsedTrigger;
-      const rec = buildRecurrence(baseAnchor, existing.recurrence);
-      if (rec === "error") return;
-
-      const recurrenceChanged =
-        JSON.stringify(rec ?? null) !== JSON.stringify(existing.recurrence ?? null);
-      const finalRec =
-        rec && (dateOrTimeChanged || recurrenceChanged)
-          ? { ...rec, anchorAt: parsedTrigger }
-          : rec;
-
       await updateReminder(editingId, {
         message: trimmed,
-        triggerAt: parsedTrigger,
-        timed,
-        toneId: timed ? toneId : undefined,
-        folderId: formFolderId ?? null,
-        location,
-        notes,
-        recurrence: finalRec,
-        ...(dateOrTimeChanged ? { lastAlertedAt: null } : {}),
+        triggerAt,
+        timed: addTime,
+        allDay: !addTime,
+        toneId: addTime ? toneId : undefined,
+        folderId: folderId ?? null,
+        location: trimmedLocation || undefined,
+        notes: trimmedNotes || undefined,
+        recurrence,
+        status: "pending",
       });
-      resetForm(true);
+      resetForm();
       await reload();
       return;
     }
-
-    const rec = buildRecurrence(parsedTrigger);
-    if (rec === "error") return;
 
     await createReminder({
       message: trimmed,
-      triggerAt: parsedTrigger,
-      timed,
-      toneId: timed ? toneId : undefined,
-      folderId: formFolderId ?? null,
-      location,
-      notes,
-      recurrence: rec,
+      triggerAt,
+      timed: addTime,
+      allDay: !addTime,
+      toneId: addTime ? toneId : undefined,
+      folderId: folderId ?? null,
+      location: trimmedLocation || undefined,
+      notes: trimmedNotes || undefined,
+      source: "manual",
+      recurrence,
       linkedEntityType: null,
       linkedEntityId: null,
     });
-    resetForm(true);
-    await reload();
-  }
 
-  async function handleTick(r: Reminder) {
-    const { undo, nextAt } = await completeReminder(r.id);
-    if (nextAt !== null) {
-      showToast(
-        `Done: ${r.message}. Next: ${formatNextDate(nextAt)}`,
-        "success",
-        6000,
-        {
-          label: "Undo",
-          onClick: () => {
-            void undo();
-          },
-        }
-      );
-    } else {
-      showToast(`Done: ${r.message}`, "success", 6000, {
-        label: "Undo",
-        onClick: () => {
-          void undo();
-        },
-      });
-    }
-    if (editingId === r.id) {
-      resetForm(true);
-    }
+    resetForm();
     await reload();
   }
 
@@ -631,16 +519,29 @@ export default function HomeRemindersTab({
       const ok = await confirmAction({
         title: "Delete repeating reminder?",
         message: "This reminder repeats. Delete it and all future repeats?",
-        confirmLabel: "Yes, Delete",
+        confirmLabel: "Delete all",
+        cancelLabel: "Cancel",
         danger: true,
       });
       if (!ok) return;
     } else {
-      if (!(await confirmDelete({ kind: "reminder", name: r.message }))) return;
+      const ok = await confirmDelete({ kind: "reminder", name: r.message });
+      if (!ok) return;
     }
+    if (editingId === r.id) resetForm();
     await deleteReminder(r.id);
-    if (editingId === r.id) resetForm(true);
     await reload();
+  }
+
+  function handleTick(r: Reminder) {
+    if (editingId === r.id) resetForm();
+    void tickReminderWithUndo(r, reload);
+  }
+
+  function toggleWeekday(dow: number) {
+    setCustomWeekdays((prev) =>
+      prev.includes(dow) ? prev.filter((d) => d !== dow) : [...prev, dow]
+    );
   }
 
   async function handleCreateFolder(parentId: string | null, title: string) {
@@ -655,123 +556,94 @@ export default function HomeRemindersTab({
 
   async function handleDeleteFolder(id: string) {
     const folder = folders.find((f) => f.id === id);
-    const countInFolder = openReminders.filter((r) => r.folderId === id).length;
+    const count = allOpen.filter((r) => r.folderId === id).length;
     if (
-      countInFolder > 0 &&
+      count > 0 &&
       !(await confirmDelete({
         kind: "reminder folder",
-        name: `${folder?.title} (contains ${countInFolder} reminders — contents will be reparented)`,
+        name: `${folder?.title} (contains ${count} reminders — contents will be reparented)`,
       }))
     ) {
       return;
     }
-    if (countInFolder === 0 && !(await confirmDelete({ kind: "reminder folder", name: folder?.title }))) {
-      return;
-    }
+    if (!count && !(await confirmDelete({ kind: "reminder folder", name: folder?.title }))) return;
     await deleteReminderFolder(id);
     if (selFolderId === id) setSelFolderId(null);
-    if (folderFilter === id) setFolderFilter("__all__");
+    if (folderFilter === id) setFolderFilter("");
     await reload();
-  }
-
-  function renderReminderRow(r: Reminder, bucket: ReminderDayBucket) {
-    const rTimed = isReminderTimed(r);
-    const metaParts: string[] = [];
-    if (rTimed) {
-      metaParts.push(formatTimeOnly(r.triggerAt));
-    }
-    if (bucket === "overdue") {
-      metaParts.push(formatDueOverdue(r.triggerAt, nowMs));
-    }
-    if (r.recurrence) {
-      metaParts.push(describeRecurrence(r.recurrence));
-    }
-    if (r.location) {
-      metaParts.push(r.location);
-    }
-    if (r.source === "ics") {
-      metaParts.push("Imported");
-    }
-    if (workspaceNames.count > 1 && r.workspaceId) {
-      const wsName = workspaceNames.map.get(r.workspaceId);
-      if (wsName) metaParts.push(`Created in ${wsName}`);
-    }
-
-    return (
-      <li
-        key={r.id}
-        className={`item rem-row${highlightedId === r.id ? " rem-row-highlight" : ""}`}
-      >
-        <label className="rem-tick-wrap">
-          <input
-            type="checkbox"
-            className="rem-tick"
-            checked={false}
-            aria-label={`Tick off "${r.message}"`}
-            onChange={() => void handleTick(r)}
-          />
-        </label>
-        <div className="rem-row-body">
-          <div className="rem-row-title">{r.message}</div>
-          {metaParts.length > 0 && (
-            <div className="rem-row-meta">
-              {metaParts.map((part, idx) => (
-                <span key={idx}>
-                  {idx > 0 && <span aria-hidden="true"> · </span>}
-                  <span>{part}</span>
-                </span>
-              ))}
-            </div>
-          )}
-          {r.notes && <div className="rem-row-notes">{r.notes}</div>}
-        </div>
-        <div className="rem-row-actions">
-          <button
-            type="button"
-            className="btn-secondary btn-small clickable"
-            onClick={() => startEdit(r)}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="btn-secondary btn-small clickable tl-danger"
-            onClick={() => void handleDelete(r)}
-          >
-            Delete
-          </button>
-        </div>
-      </li>
-    );
   }
 
   if (error) return <ErrorNote error={error} onRetry={reload} />;
   if (loading) return <Loading label="Loading reminders..." />;
 
-  const expanded = showMore || editingId !== null;
-  const overdueItems = view === "all" ? visibleItems.filter((r) => viewOf(r, nowMs) === "overdue") : [];
-  const todayItems = view === "all" ? visibleItems.filter((r) => viewOf(r, nowMs) === "today") : [];
+  const counts = {
+    today: viewBuckets.today.length,
+    overdue: viewBuckets.overdue.length,
+    upcoming: viewBuckets.upcoming.length,
+    all: scopedReminders.length,
+  };
+
+  const currentSidebarFolder = folders.find((f) => f.id === selFolderId) ?? null;
+
+  function renderReminderRow(r: Reminder, isOverdue: boolean) {
+    const wsName =
+      workspaceMap && r.workspaceId ? workspaceMap.get(r.workspaceId) : undefined;
+    return (
+      <ReminderRow
+        key={r.id}
+        reminder={r}
+        isOverdue={isOverdue}
+        workspaceName={wsName}
+        onTick={handleTick}
+        onEdit={beginEdit}
+        onDelete={(rem) => void handleDelete(rem)}
+      />
+    );
+  }
 
   return (
-    <div className="split-pane rem-split-pane">
-      <aside className="split-sidebar rem-folders-sidebar">
-        <div className="rem-folders-head">
-          <h2>Reminder folders</h2>
-          <button
-            type="button"
-            className="btn-secondary btn-small clickable"
-            onClick={() => document.getElementById("new-reminder-folder-input")?.focus()}
-            data-tip="New reminder folder"
-            data-tip-align="right"
-          >
-            New
-          </button>
+    <div className="split-pane">
+      <aside className="split-sidebar">
+        <div
+          style={{
+            padding: "0 0 12px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16 }}>Reminder folders</h2>
+          <div style={{ display: "flex", gap: 6 }}>
+            {folderFilter && (
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => {
+                  setFolderFilter("");
+                  setSelFolderId(null);
+                }}
+              >
+                All folders
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-secondary btn-small clickable"
+              onClick={() => document.getElementById("new-reminder-folder-input")?.focus()}
+              data-tip="New reminder folder"
+              data-tip-align="right"
+            >
+              New
+            </button>
+          </div>
         </div>
         <FolderTree
           foldersAsGrid
           rootInputId="new-reminder-folder-input"
           folders={folders}
-          items={openReminders}
+          items={allOpen}
           folderId={(f) => f.id}
           folderParentId={(f) => f.parentFolderId}
           folderTitle={(f) => f.title}
@@ -780,172 +652,212 @@ export default function HomeRemindersTab({
           itemTitle={(r) => r.message}
           selectedId={selFolderId}
           onSelectFolder={(id) => {
-            if (folderFilter === id) {
-              setFolderFilter("__all__");
-              setSelFolderId(null);
-            } else {
-              setFolderFilter(id);
-              setSelFolderId(id);
-            }
+            setSelFolderId(id);
+            setFolderFilter(id ?? "");
           }}
           onSelectItem={(id) => {
-            const target = openReminders.find((r) => r.id === id);
-            if (target) {
-              setView(viewOf(target, nowMs));
-              setHighlightedId(target.id);
+            const found = allOpen.find((r) => r.id === id);
+            if (found) {
+              setActiveView(viewOf(found));
+              beginEdit(found);
             }
           }}
           onCreateFolder={handleCreateFolder}
           onRenameFolder={handleRenameFolder}
           onDeleteFolder={handleDeleteFolder}
           newFolderPlaceholder={
-            selectedFolderObj ? `New folder under "${selectedFolderObj.title}"…` : "New folder…"
+            currentSidebarFolder ? `New folder under "${currentSidebarFolder.title}"…` : "New folder…"
           }
           renderItemTitle={(r) => (
             <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{r.message}</span>
           )}
           renderFolderMeta={(f) => {
-            const n = openReminders.filter((r) => r.folderId === f.id).length;
+            const n = allOpen.filter((r) => r.folderId === f.id).length;
             return n > 0 ? <span className="item-meta">{n}</span> : null;
           }}
         />
       </aside>
 
-      <main className="split-main rem-main">
-        {/* 2. View switcher & Folder filter */}
-        <div className="rem-toolbar">
-          <div className="rem-view-tabs" role="tablist" aria-label="Reminder views">
-            {VIEW_TABS.map((t) => {
-              const c = counts[t.id];
-              const isOverdueNonEmpty = t.id === "overdue" && c > 0;
-              return (
+      <main className="split-main">
+        {permState !== "granted" && (
+          <div className="rem-notif-strip" role="status">
+            {permState === "default" && (
+              <>
+                <span>
+                  Notifications are off. Turn on notifications so timed reminders can alert you while Panga is open.
+                </span>
                 <button
-                  key={t.id}
                   type="button"
-                  role="tab"
-                  aria-selected={view === t.id}
-                  className={`rem-view-tab${view === t.id ? " rem-view-tab-active" : ""}${
-                    isOverdueNonEmpty ? " rem-view-tab-overdue" : ""
-                  }`}
-                  onClick={() => setView(t.id)}
+                  className="btn-secondary btn-small clickable"
+                  disabled={requestingPerm}
+                  onClick={() => void ensurePermission()}
                 >
-                  {t.label} <span className="rem-view-count">({c})</span>
+                  {requestingPerm ? "Requesting…" : "Enable notifications"}
                 </button>
-              );
-            })}
+              </>
+            )}
+            {permState === "denied" && (
+              <span>
+                Notifications are blocked in your browser. Allow notifications for this site in your browser settings to receive system alerts.
+              </span>
+            )}
+            {permState === "unsupported" && (
+              <span>
+                System notifications are not supported in this browser. Timed reminders still alert inside Panga while open.
+              </span>
+            )}
           </div>
-          <div className="rem-filter-wrap">
-            <label htmlFor="rem-folder-filter" className="rem-filter-label">
-              Folder
-            </label>
-            <select
-              id="rem-folder-filter"
-              aria-label="Folder"
-              value={folderFilter}
-              onChange={(e) => {
-                const val = e.target.value;
-                setFolderFilter(val);
-                setSelFolderId(val !== "__all__" && val !== "__unfiled__" ? val : null);
-              }}
+        )}
+
+        <div className="rem-toolbar">
+          <div className="rem-views" role="tablist" aria-label="Reminder views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "today"}
+              className={`rem-view-btn clickable${activeView === "today" ? " rem-view-btn-active" : ""}`}
+              onClick={() => setActiveView("today")}
             >
-              <option value="__all__">All folders</option>
-              <option value="__unfiled__">Unfiled</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.title}
-                </option>
-              ))}
-            </select>
+              Today ({counts.today})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "overdue"}
+              className={`rem-view-btn clickable${activeView === "overdue" ? " rem-view-btn-active" : ""}${counts.overdue > 0 ? " rem-view-btn-overdue" : ""}`}
+              onClick={() => setActiveView("overdue")}
+            >
+              Overdue ({counts.overdue})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "upcoming"}
+              className={`rem-view-btn clickable${activeView === "upcoming" ? " rem-view-btn-active" : ""}`}
+              onClick={() => setActiveView("upcoming")}
+            >
+              Upcoming ({counts.upcoming})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === "all"}
+              className={`rem-view-btn clickable${activeView === "all" ? " rem-view-btn-active" : ""}`}
+              onClick={() => setActiveView("all")}
+            >
+              All ({counts.all})
+            </button>
+          </div>
+
+          <div className="rem-toolbar-right">
+            {folders.length > 0 && (
+              <label className="rem-folder-filter">
+                <span className="sr-only">Folder</span>
+                <select
+                  aria-label="Filter by folder"
+                  value={folderFilter}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFolderFilter(val);
+                    setSelFolderId(val && val !== UNFILED_FILTER ? val : null);
+                  }}
+                >
+                  <option value="">All folders</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.title}
+                    </option>
+                  ))}
+                  <option value={UNFILED_FILTER}>Unfiled</option>
+                </select>
+              </label>
+            )}
+            {!importCardOpen && (
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => setImportCardOpen(true)}
+              >
+                Import events
+              </button>
+            )}
           </div>
         </div>
 
-        {/* 3. Add / edit reminder form */}
         <section className="dashboard-section rem-form-section">
-          {editingId && <h3 className="section-heading">Edit reminder</h3>}
-          <form onSubmit={(e) => void handleSubmit(e)} noValidate>
-            <div className="rem-form-top">
+          <form onSubmit={(e) => void handleSubmit(e)}>
+            <div className="rem-quick-row">
               <input
-                ref={inputRef}
                 type="text"
+                className="rem-message-input"
                 value={message}
-                onChange={(e) => {
-                  setMessage(e.target.value);
-                  if (formError) setFormError(null);
-                }}
+                onChange={(e) => setMessage(e.target.value)}
                 placeholder="Add a reminder"
                 aria-label="Add a reminder"
-                maxLength={300}
-                className="rem-message-input"
+                required
               />
-              {message.trim() && <ProofreadTrigger value={message} onApply={setMessage} />}
-              {!expanded && (
-                <button type="submit" className="btn-primary clickable">
-                  Add
-                </button>
-              )}
-              {!editingId && (
+              <ProofreadTrigger value={message} onApply={setMessage} />
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((v) => !v)}
+              >
+                {expanded ? "Fewer options" : "More options"}
+              </button>
+              <button type="submit" className="btn-primary clickable">
+                {editingId ? "Save" : "Add"}
+              </button>
+              {editingId && (
                 <button
                   type="button"
-                  className="btn-secondary clickable"
-                  aria-expanded={showMore}
-                  onClick={() => {
-                    setShowMore((v) => !v);
-                    setFormError(null);
-                  }}
+                  className="btn-secondary btn-small clickable"
+                  onClick={resetForm}
                 >
-                  {showMore ? "Fewer options" : "More options"}
+                  Cancel
                 </button>
               )}
             </div>
 
             {expanded && (
-              <div className="rem-options">
-                <div className="rem-option-row">
-                  <div className="rem-field">
-                    <label htmlFor="rem-date">Date</label>
+              <div className="rem-more-options">
+                <div className="rem-options-grid">
+                  <label className="rem-field">
+                    <span>Date</span>
                     <input
-                      id="rem-date"
                       type="date"
                       value={dateStr}
                       onChange={(e) => {
-                        setDateStr(e.target.value);
-                        setFormError(null);
+                        const next = e.target.value;
+                        setDateStr(next);
+                        if (next && repeatPreset === "custom" && customUnit === "week" && customWeekdays.length === 0) {
+                          setCustomWeekdays([dateWeekday(next)]);
+                        }
                       }}
+                      required
                     />
-                  </div>
+                  </label>
 
-                  <div className="rem-field rem-field-check">
-                    <label className="rem-checkbox-label">
+                  <div className="rem-field rem-time-group">
+                    <label className="rem-checkbox-inline">
                       <input
                         type="checkbox"
-                        checked={timed}
-                        onChange={(e) => {
-                          setTimed(e.target.checked);
-                          setFormError(null);
-                        }}
+                        checked={addTime}
+                        onChange={(e) => setAddTime(e.target.checked)}
                       />
-                      <span>Add a time</span>
+                      Add a time
                     </label>
-                  </div>
-
-                  {timed && (
-                    <>
-                      <div className="rem-field">
-                        <label htmlFor="rem-time">Time</label>
+                    {addTime && (
+                      <div className="rem-time-controls">
                         <input
-                          id="rem-time"
                           type="time"
+                          aria-label="Time"
                           value={timeStr}
-                          onChange={(e) => {
-                            setTimeStr(e.target.value);
-                            setFormError(null);
-                          }}
+                          onChange={(e) => setTimeStr(e.target.value)}
+                          required
                         />
-                      </div>
-                      <div className="rem-field">
-                        <label htmlFor="rem-tone">Tone</label>
                         <select
-                          id="rem-tone"
+                          aria-label="Notification tone"
                           value={toneId}
                           onChange={(e) => setToneId(e.target.value)}
                         >
@@ -956,135 +868,131 @@ export default function HomeRemindersTab({
                           ))}
                         </select>
                       </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="rem-option-row">
-                  <div className="rem-field">
-                    <label htmlFor="rem-repeat">Repeat</label>
-                    <select
-                      id="rem-repeat"
-                      value={repeatPreset}
-                      onChange={(e) => handlePresetChange(e.target.value as RepeatPreset)}
-                    >
-                      <option value="none">Does not repeat</option>
-                      <option value="daily_1">Every day</option>
-                      <option value="daily_2">Every 2 days</option>
-                      <option value="daily_3">Every 3 days</option>
-                      <option value="weekly_1">Every week</option>
-                      <option value="monthly_1">Every month</option>
-                      <option value="yearly_1">Every year</option>
-                      <option value="custom">Custom…</option>
-                    </select>
+                    )}
                   </div>
 
-                  {repeatPreset === "custom" && (
-                    <div className="rem-custom-repeat">
+                  <label className="rem-field">
+                    <span>Repeat</span>
+                    <select
+                      value={repeatPreset}
+                      onChange={(e) => {
+                        const next = e.target.value as RepeatPreset;
+                        setRepeatPreset(next);
+                        if (next === "custom") {
+                          setCustomWeekdays([dateWeekday(dateStr)]);
+                        }
+                        setFormError(null);
+                      }}
+                    >
+                      <option value="none">Does not repeat</option>
+                      <option value="daily">Every day</option>
+                      <option value="every2days">Every 2 days</option>
+                      <option value="every3days">Every 3 days</option>
+                      <option value="weekly">Every week</option>
+                      <option value="monthly">Every month</option>
+                      <option value="yearly">Every year</option>
+                      <option value="custom">Custom…</option>
+                    </select>
+                  </label>
+                </div>
+
+                {repeatPreset === "custom" && (
+                  <div className="rem-custom-repeat">
+                    <div className="rem-custom-row">
                       <span>Every</span>
                       <input
                         type="number"
                         min={1}
-                        step={1}
                         aria-label="Repeat interval"
                         value={customInterval}
-                        onChange={(e) => {
-                          setCustomInterval(e.target.value);
-                          setFormError(null);
-                        }}
-                        className="rem-number-input"
+                        onChange={(e) => setCustomInterval(e.target.value)}
+                        style={{ width: 76 }}
                       />
                       <select
                         aria-label="Repeat unit"
-                        value={customFreq}
-                        onChange={(e) => handleCustomFreqChange(e.target.value as ReminderRepeatFreq)}
+                        value={customUnit}
+                        onChange={(e) => {
+                          const next = e.target.value as RecurrenceUnit;
+                          setCustomUnit(next);
+                          if (next === "week" && customWeekdays.length === 0) {
+                            setCustomWeekdays([dateWeekday(dateStr)]);
+                          }
+                        }}
                       >
-                        <option value="daily">days</option>
-                        <option value="weekly">weeks</option>
-                        <option value="monthly">months</option>
-                        <option value="yearly">years</option>
+                        <option value="day">days</option>
+                        <option value="week">weeks</option>
+                        <option value="month">months</option>
+                        <option value="year">years</option>
                       </select>
                     </div>
-                  )}
 
-                  {repeatPreset !== "none" && (
-                    <div className="rem-ends-row">
-                      <div className="rem-field">
-                        <label htmlFor="rem-ends">Ends</label>
-                        <select
-                          id="rem-ends"
-                          value={endMode}
-                          onChange={(e) => {
-                            setEndMode(e.target.value as EndMode);
-                            setFormError(null);
-                          }}
-                        >
-                          <option value="never">Never</option>
-                          <option value="until">On date</option>
-                          <option value="count">After N times</option>
-                        </select>
+                    {customUnit === "week" && (
+                      <div className="rem-weekday-chips" role="group" aria-label="Repeat on weekdays">
+                        {WEEKDAY_CHIPS.map((w) => {
+                          const active = customWeekdays.includes(w.dow);
+                          return (
+                            <button
+                              key={w.dow}
+                              type="button"
+                              aria-pressed={active}
+                              className={`chip clickable${active ? " chip-active" : ""}`}
+                              onClick={() => toggleWeekday(w.dow)}
+                            >
+                              {w.label}
+                            </button>
+                          );
+                        })}
                       </div>
-                      {endMode === "until" && (
-                        <div className="rem-field">
-                          <label htmlFor="rem-end-date">End date</label>
-                          <input
-                            id="rem-end-date"
-                            type="date"
-                            value={endDateStr}
-                            onChange={(e) => {
-                              setEndDateStr(e.target.value);
-                              setFormError(null);
-                            }}
-                          />
-                        </div>
-                      )}
-                      {endMode === "count" && (
-                        <div className="rem-field">
-                          <label htmlFor="rem-end-count">Times</label>
-                          <input
-                            id="rem-end-count"
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={endCountStr}
-                            onChange={(e) => {
-                              setEndCountStr(e.target.value);
-                              setFormError(null);
-                            }}
-                            className="rem-number-input"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {repeatPreset === "custom" && customFreq === "weekly" && (
-                  <div className="rem-weekday-chips" role="group" aria-label="Repeat weekdays">
-                    {WEEKDAY_CHIPS.map((w) => {
-                      const active = customWeekdays.includes(w.day);
-                      return (
-                        <button
-                          key={w.day}
-                          type="button"
-                          aria-pressed={active}
-                          className={`chip${active ? " chip-active" : ""}`}
-                          onClick={() => toggleWeekday(w.day)}
-                        >
-                          {w.label}
-                        </button>
-                      );
-                    })}
+                    )}
                   </div>
                 )}
 
-                <div className="rem-option-row">
-                  <div className="rem-field">
-                    <label htmlFor="rem-folder">Folder</label>
+                {repeatPreset !== "none" && (
+                  <div className="rem-end-row">
+                    <label className="rem-field">
+                      <span>Ends</span>
+                      <select
+                        value={endMode}
+                        onChange={(e) => setEndMode(e.target.value as RepeatEndMode)}
+                      >
+                        <option value="never">Never</option>
+                        <option value="until">On date</option>
+                        <option value="count">After N times</option>
+                      </select>
+                    </label>
+                    {endMode === "until" && (
+                      <label className="rem-field">
+                        <span>End date</span>
+                        <input
+                          type="date"
+                          value={untilDate}
+                          onChange={(e) => setUntilDate(e.target.value)}
+                          required
+                        />
+                      </label>
+                    )}
+                    {endMode === "count" && (
+                      <label className="rem-field">
+                        <span>Occurrences</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={countStr}
+                          onChange={(e) => setCountStr(e.target.value)}
+                          style={{ width: 90 }}
+                          required
+                        />
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                <div className="rem-options-grid">
+                  <label className="rem-field">
+                    <span>Folder</span>
                     <select
-                      id="rem-folder"
-                      value={formFolderId ?? ""}
-                      onChange={(e) => setFormFolderId(e.target.value || null)}
+                      value={folderId ?? ""}
+                      onChange={(e) => setFolderId(e.target.value || null)}
                     >
                       <option value="">None (unfiled)</option>
                       {folders.map((f) => (
@@ -1093,117 +1001,136 @@ export default function HomeRemindersTab({
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </label>
 
-                  <div className="rem-field rem-field-grow">
-                    <label htmlFor="rem-location">Location</label>
+                  <label className="rem-field">
+                    <span>Location</span>
                     <input
-                      id="rem-location"
                       type="text"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
-                      placeholder="Optional"
+                      placeholder="Optional location"
                     />
-                  </div>
+                  </label>
                 </div>
 
                 <div className="rem-field">
-                  <div className="rem-notes-label-row">
-                    <label htmlFor="rem-notes">Notes</label>
-                    {notes.trim() && <ProofreadTrigger value={notes} onApply={setNotes} />}
+                  <div className="rem-notes-head">
+                    <label htmlFor="reminder-notes-input">Notes</label>
+                    <ProofreadTrigger value={notes} onApply={setNotes} />
                   </div>
                   <textarea
-                    id="rem-notes"
+                    id="reminder-notes-input"
+                    rows={3}
+                    maxLength={2000}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    maxLength={2000}
-                    rows={3}
-                    placeholder="Optional notes (up to 2000 characters)"
+                    placeholder="Optional notes"
                   />
-                </div>
-
-                <div className="rem-form-actions">
-                  <button type="submit" className="btn-primary clickable">
-                    {editingId ? "Save" : "Add"}
-                  </button>
-                  {editingId && (
-                    <button
-                      type="button"
-                      className="btn-secondary clickable"
-                      onClick={() => resetForm(true)}
-                    >
-                      Cancel
-                    </button>
-                  )}
                 </div>
               </div>
             )}
 
             {formError && (
-              <p className="rem-form-error" role="alert">
+              <p className="pg-error" role="alert" style={{ marginTop: 8 }}>
                 {formError}
               </p>
             )}
           </form>
         </section>
 
-        {/* 4. List for selected view */}
-        <section className="dashboard-section rem-list-section" aria-live="polite">
-          {visibleItems.length === 0 ? (
-            <p className="empty-state">{emptyStateText(view)}</p>
-          ) : view === "today" ? (
-            <ul className="item-list">
-              {visibleItems.map((r) => renderReminderRow(r, "today"))}
-            </ul>
-          ) : view === "overdue" ? (
-            <ul className="item-list">
-              {visibleItems.map((r) => renderReminderRow(r, "overdue"))}
-            </ul>
-          ) : view === "upcoming" ? (
-            <div className="rem-groups">
-              {upcomingGroups.map((g) => (
-                <div key={g.dayKey} className="rem-day-group">
-                  <h3 className="section-heading">{g.heading}</h3>
-                  <ul className="item-list">
-                    {g.items.map((r) => renderReminderRow(r, "upcoming"))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rem-groups">
-              {overdueItems.length > 0 && (
-                <div className="rem-day-group">
-                  <h3 className="section-heading">Overdue</h3>
-                  <ul className="item-list">
-                    {overdueItems.map((r) => renderReminderRow(r, "overdue"))}
-                  </ul>
-                </div>
-              )}
-              {todayItems.length > 0 && (
-                <div className="rem-day-group">
-                  <h3 className="section-heading">Today</h3>
-                  <ul className="item-list">
-                    {todayItems.map((r) => renderReminderRow(r, "today"))}
-                  </ul>
-                </div>
-              )}
-              {upcomingGroups.length > 0 && (
-                <div className="rem-day-group">
-                  <h3 className="section-heading">Upcoming</h3>
-                  {upcomingGroups.map((g) => (
-                    <div key={g.dayKey} className="rem-sub-day-group">
-                      <h4 className="rem-day-subheading">{g.heading}</h4>
-                      <ul className="item-list">
-                        {g.items.map((r) => renderReminderRow(r, "upcoming"))}
-                      </ul>
+        {activeView === "today" && (
+          <section className="dashboard-section">
+            {viewBuckets.today.length === 0 ? (
+              <p className="empty-state">Nothing on for today.</p>
+            ) : (
+              <ul className="item-list">
+                {viewBuckets.today.map((r) => renderReminderRow(r, false))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {activeView === "overdue" && (
+          <section className="dashboard-section">
+            {viewBuckets.overdue.length === 0 ? (
+              <p className="empty-state">Nothing left over from earlier days.</p>
+            ) : (
+              <ul className="item-list">
+                {viewBuckets.overdue.map((r) => renderReminderRow(r, true))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {activeView === "upcoming" && (
+          <section className="dashboard-section">
+            {upcomingGroups.length === 0 ? (
+              <p className="empty-state">Nothing coming up.</p>
+            ) : (
+              <div className="rem-upcoming-groups">
+                {upcomingGroups.map((group) => (
+                  <div key={group.dayKey} className="rem-day-group">
+                    <h3 className="rem-day-heading">{group.heading}</h3>
+                    <ul className="item-list">
+                      {group.items.map((r) => renderReminderRow(r, false))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeView === "all" && (
+          <div className="rem-all-groups">
+            {scopedReminders.length === 0 ? (
+              <p className="empty-state">Nothing on for today.</p>
+            ) : (
+              <>
+                {viewBuckets.overdue.length > 0 && (
+                  <section className="dashboard-section">
+                    <h3 className="section-heading">Overdue</h3>
+                    <ul className="item-list">
+                      {viewBuckets.overdue.map((r) => renderReminderRow(r, true))}
+                    </ul>
+                  </section>
+                )}
+                {viewBuckets.today.length > 0 && (
+                  <section className="dashboard-section">
+                    <h3 className="section-heading">Today</h3>
+                    <ul className="item-list">
+                      {viewBuckets.today.map((r) => renderReminderRow(r, false))}
+                    </ul>
+                  </section>
+                )}
+                {upcomingGroups.length > 0 && (
+                  <section className="dashboard-section">
+                    <h3 className="section-heading">Upcoming</h3>
+                    <div className="rem-upcoming-groups">
+                      {upcomingGroups.map((group) => (
+                        <div key={group.dayKey} className="rem-day-group">
+                          <h4 className="rem-day-heading">{group.heading}</h4>
+                          <ul className="item-list">
+                            {group.items.map((r) => renderReminderRow(r, false))}
+                          </ul>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {importCardOpen && (
+          <ImportEventsCard
+            onImported={reload}
+            onViewTarget={(v) => setActiveView(v)}
+            onClose={() => setImportCardOpen(false)}
+          />
+        )}
       </main>
     </div>
   );
