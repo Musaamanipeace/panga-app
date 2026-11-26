@@ -1,6 +1,8 @@
 // src/data/reminders.ts
-import { db, type Reminder } from "./db";
+import { accountDb, ensureAccountDbReady } from "./accountDb";
+import type { Reminder } from "./db";
 import { newId, now } from "./utils";
+import { getActiveWorkspaceId } from "./workspaceState";
 
 export type { Reminder };
 export type ReminderBucket = "overdue" | "due" | "upcoming";
@@ -92,7 +94,8 @@ export function startReminderScheduler(): void {
   reminderSchedulerStarted = true;
   const tick = async () => {
     try {
-      const due = await db.reminders.where("status").equals("pending").and((r) => r.triggerAt <= Date.now()).toArray();
+      await ensureAccountDbReady();
+      const due = await accountDb.reminders.where("status").equals("pending").and((r) => r.triggerAt <= Date.now()).toArray();
       for (const r of due) {
         showReminderNotification(r);
         await updateReminder(r.id, { status: "fired" });
@@ -114,11 +117,23 @@ export function stopReminderScheduler(): void {
 }
 
 export async function listReminders(): Promise<Reminder[]> {
-  return db.reminders.toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+  await ensureAccountDbReady();
+  return accountDb.reminders.toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
 }
 
 export async function listPendingReminders(): Promise<Reminder[]> {
-  return db.reminders.where("status").equals("pending").toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+  await ensureAccountDbReady();
+  return accountDb.reminders.where("status").equals("pending").toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+}
+
+export async function getReminder(id: string): Promise<Reminder | undefined> {
+  await ensureAccountDbReady();
+  return accountDb.reminders.get(id);
+}
+
+export async function putReminder(reminder: Reminder): Promise<void> {
+  await ensureAccountDbReady();
+  await accountDb.reminders.put(reminder);
 }
 
 export function bucketReminders(reminders: Reminder[]): Record<ReminderBucket, Reminder[]> {
@@ -141,11 +156,14 @@ export async function createReminder(input: {
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   folderId?: string | null;
+  workspaceId?: string;
 }): Promise<Reminder> {
+  await ensureAccountDbReady();
   const t = now();
   const reminder: Reminder = {
     id: newId(),
     folderId: input.folderId ?? null,
+    workspaceId: input.workspaceId ?? getActiveWorkspaceId(),
     toneId: input.toneId,
     linkedEntityType: input.linkedEntityType,
     linkedEntityId: input.linkedEntityId,
@@ -156,7 +174,7 @@ export async function createReminder(input: {
     updatedAt: t,
     syncStatus: "pending",
   };
-  await db.reminders.add(reminder);
+  await accountDb.reminders.add(reminder);
   return reminder;
 }
 
@@ -164,13 +182,16 @@ export async function updateReminder(
   id: string,
   changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status" | "folderId">>
 ): Promise<void> {
-  await db.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  await ensureAccountDbReady();
+  await accountDb.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
 }
 
 export async function dismissReminder(id: string): Promise<void> {
-  await db.reminders.update(id, { status: "dismissed", updatedAt: now(), syncStatus: "pending" });
+  await ensureAccountDbReady();
+  await accountDb.reminders.update(id, { status: "dismissed", updatedAt: now(), syncStatus: "pending" });
 }
 
 export async function deleteReminder(id: string): Promise<void> {
-  await db.reminders.delete(id);
+  await ensureAccountDbReady();
+  await accountDb.reminders.delete(id);
 }

@@ -3,7 +3,20 @@
 // to an unencrypted, versioned JSON file for backup and restore, carrying the
 // JSON account username and workspace identity.
 
-import { db, exportDbState, importDbState, hasLocalData, switchUserAccount } from "../data/db";
+import {
+  db,
+  exportDbState,
+  importDbState,
+  hasLocalData,
+  switchWorkspaceDb,
+  type Reminder,
+  type ReminderFolder,
+} from "../data/db";
+import {
+  exportAccountDbState,
+  importAccountDbState,
+  REMINDERS_MIGRATED_KEY,
+} from "../data/accountDb";
 import { getAllAccountSettings, isAccountSettingKey, setAccountSetting } from "../data/accountSettings";
 import {
   getActiveWorkspaceId,
@@ -46,9 +59,16 @@ export interface SnapshotWorkspaces {
   items: Array<{ id: string; name: string; data: Record<string, any[]> }>;
 }
 
+export interface SnapshotAccountData {
+  reminders: Reminder[];
+  reminderFolders: ReminderFolder[];
+}
+
 export interface Snapshot {
   metadata: SnapshotMetadata;
   identity?: SnapshotIdentity;
+  /** Account-level reminders and reminder folders shared across workspaces. */
+  accountData?: SnapshotAccountData;
   /** Data of the workspace that was active when the snapshot was taken. */
   data: Record<string, any[]>;
   /** Present when the account has more than one workspace; carries all of them. */
@@ -59,7 +79,9 @@ export interface Snapshot {
 function withAccountSettings(data: Record<string, any[]>): Record<string, any[]> {
   const rows: any[] = Array.isArray(data.settings) ? data.settings.filter((r: any) => !isAccountSettingKey(r?.key)) : [];
   for (const [key, value] of Object.entries(getAllAccountSettings())) {
-    rows.push({ key, value });
+    if (isAccountSettingKey(key)) {
+      rows.push({ key, value });
+    }
   }
   return { ...data, settings: rows };
 }
@@ -95,6 +117,45 @@ export async function setJsonAccountUsername(username: string): Promise<string> 
   return clean;
 }
 
+function collectLegacyAccountData(snapshot: Snapshot): SnapshotAccountData {
+  const sources: Array<{ workspaceId: string; data: Record<string, any[]> }> =
+    snapshot.workspaces?.items && snapshot.workspaces.items.length > 0
+      ? snapshot.workspaces.items.map((w) => ({ workspaceId: w.id, data: w.data || {} }))
+      : [{ workspaceId: DEFAULT_WORKSPACE_ID, data: snapshot.data || {} }];
+
+  const reminders = new Map<string, Reminder>();
+  const folders = new Map<string, ReminderFolder>();
+
+  for (const src of sources) {
+    const rawFolders = Array.isArray(src.data.reminderFolders) ? (src.data.reminderFolders as ReminderFolder[]) : [];
+    for (const f of rawFolders) {
+      if (!f || typeof f.id !== "string") continue;
+      const existing = folders.get(f.id);
+      if (!existing || (f.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+        folders.set(f.id, f);
+      }
+    }
+
+    const rawReminders = Array.isArray(src.data.reminders) ? (src.data.reminders as Reminder[]) : [];
+    for (const r of rawReminders) {
+      if (!r || typeof r.id !== "string") continue;
+      const stamped: Reminder = r.workspaceId ? r : { ...r, workspaceId: src.workspaceId };
+      const existing = reminders.get(stamped.id);
+      if (!existing || (stamped.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+        reminders.set(
+          stamped.id,
+          stamped.workspaceId ? stamped : { ...stamped, workspaceId: existing?.workspaceId ?? src.workspaceId }
+        );
+      }
+    }
+  }
+
+  return {
+    reminders: [...reminders.values()],
+    reminderFolders: [...folders.values()],
+  };
+}
+
 /**
  * Export the whole local database plus the JSON account identity.
  * No encryption or password is applied.
@@ -102,7 +163,11 @@ export async function setJsonAccountUsername(username: string): Promise<string> 
 export async function exportSnapshot(): Promise<Snapshot> {
   const activeId = getActiveWorkspaceId();
   const workspaceList = listWorkspaces();
-  const data = withAccountSettings(await exportDbState({ includeSecrets: true }));
+  const [rawData, accountData] = await Promise.all([
+    exportDbState({ includeSecrets: true }),
+    exportAccountDbState(),
+  ]);
+  const data = withAccountSettings(rawData);
   let workspaces: SnapshotWorkspaces | undefined;
   if (workspaceList.length > 1) {
     const items: SnapshotWorkspaces["items"] = [];
@@ -113,12 +178,12 @@ export async function exportSnapshot(): Promise<Snapshot> {
           continue;
         }
         setActiveWorkspaceId(w.id);
-        await switchUserAccount();
+        await switchWorkspaceDb();
         items.push({ id: w.id, name: w.name, data: withAccountSettings(await exportDbState({ includeSecrets: true })) });
       }
     } finally {
       setActiveWorkspaceId(activeId);
-      await switchUserAccount();
+      await switchWorkspaceDb();
     }
     workspaces = { activeId, items };
   }
@@ -140,6 +205,7 @@ export async function exportSnapshot(): Promise<Snapshot> {
       email,
       loggedIn: !guest && !!userId,
     },
+    accountData,
     data,
     ...(workspaces ? { workspaces } : {}),
   };
@@ -164,17 +230,22 @@ export async function importSnapshot(snapshot: Snapshot): Promise<void> {
     replaceWorkspaceEntries(restoredWorkspaces.map((w) => ({ id: w.id, name: w.name || "Workspace" })));
     for (const w of restoredWorkspaces) {
       setActiveWorkspaceId(w.id);
-      await switchUserAccount();
+      await switchWorkspaceDb();
       await importDbState(w.data, { includeSecrets: true });
       restoreAccountSettings(w.data);
     }
     const wanted = snapshot.workspaces?.activeId;
     setActiveWorkspaceId(restoredWorkspaces.some((w) => w.id === wanted) ? (wanted as string) : DEFAULT_WORKSPACE_ID);
-    await switchUserAccount();
+    await switchWorkspaceDb();
   } else {
     await importDbState(snapshot.data, { includeSecrets: true });
     restoreAccountSettings(snapshot.data);
   }
+
+  // Restore account-level reminders and reminder folders (supporting pre-account snapshots cleanly).
+  const accountData = snapshot.accountData ? snapshot.accountData : collectLegacyAccountData(snapshot);
+  await importAccountDbState(accountData);
+  setAccountSetting(REMINDERS_MIGRATED_KEY, true);
 
   // Restore JSON account username from identity or settings row
   const fromIdentity = identity?.username && identity.username !== "guest" ? identity.username.trim() : "";

@@ -91,7 +91,7 @@ export default function WorkspaceSwitcher({ onChanged }: { onChanged: () => void
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!(await confirmDelete({ kind: "workspace", name, detail: "All of its tasks, notes, links, reminders and clips are removed. Your AI keys are not affected." }))) return;
+    if (!(await confirmDelete({ kind: "workspace", name, detail: "All of its tasks, notes, links and clips are removed. Your reminders and AI keys are not affected." }))) return;
     const wasActive = id === active.id;
     await deleteWorkspace(id);
     if (wasActive) onChanged();

@@ -28,7 +28,6 @@ export default function AppShell() {
   const [workspaceEpoch, setWorkspaceEpoch] = useState(0);
   const [theme, setThemeState] = useState<ThemeId>(() => getTheme());
   const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
-  const shortcutsRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
@@ -105,10 +104,8 @@ export default function AppShell() {
     if (!shortcutsOpen && !menuOpen) return;
     function onPointerDown(e: MouseEvent) {
       const target = e.target as Node | null;
-      if (shortcutsOpen && shortcutsRef.current && target && !shortcutsRef.current.contains(target)) {
+      if (target && menuRef.current && !menuRef.current.contains(target)) {
         setShortcutsOpen(false);
-      }
-      if (menuOpen && menuRef.current && target && !menuRef.current.contains(target)) {
         setMenuOpen(false);
       }
     }
@@ -187,34 +184,6 @@ export default function AppShell() {
           📋 Paste
         </button>
 
-        <div className="header-popover-wrap" ref={shortcutsRef}>
-          <button
-            type="button"
-            className="btn-secondary btn-small clickable header-btn"
-            aria-expanded={shortcutsOpen}
-            aria-haspopup="dialog"
-            onClick={() => {
-              setMenuOpen(false);
-              setShortcutsOpen((o) => !o);
-            }}
-          >
-            Shortcuts
-          </button>
-          {shortcutsOpen && (
-            <div className="header-popover dropdown-anim" role="dialog" aria-label="Keyboard shortcuts">
-              <div className="header-popover-title">Keyboard shortcuts</div>
-              <ul className="shortcut-list">
-                {SHORTCUT_ENTRIES.map((entry) => (
-                  <li key={`${entry.keys}-${entry.action}`} className="shortcut-row">
-                    <span>{entry.action}</span>
-                    <kbd>{entry.keys}</kbd>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
         <div className="header-popover-wrap" ref={menuRef}>
           <button
             type="button"
@@ -238,6 +207,17 @@ export default function AppShell() {
               >
                 Settings
               </Link>
+              <button
+                type="button"
+                className="header-menu-item clickable"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShortcutsOpen(true);
+                }}
+              >
+                Shortcuts
+              </button>
               <button
                 type="button"
                 className="header-menu-item clickable"
@@ -333,6 +313,19 @@ export default function AppShell() {
               >
                 Exit
               </button>
+            </div>
+          )}
+          {shortcutsOpen && (
+            <div className="header-popover dropdown-anim" role="dialog" aria-label="Keyboard shortcuts">
+              <div className="header-popover-title">Keyboard shortcuts</div>
+              <ul className="shortcut-list">
+                {SHORTCUT_ENTRIES.map((entry) => (
+                  <li key={`${entry.keys}-${entry.action}`} className="shortcut-row">
+                    <span>{entry.action}</span>
+                    <kbd>{entry.keys}</kbd>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

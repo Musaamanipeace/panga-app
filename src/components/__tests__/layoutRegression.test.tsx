@@ -44,11 +44,21 @@ afterEach(async () => {
 });
 
 describe("Viewport, layout & z-index regressions", () => {
-  it("aligns the Assistant FAB tooltip inside the right viewport edge", async () => {
+  it("aligns the Assistant FAB tooltip inside the right viewport edge and places Close in the bottom footer", async () => {
     await mountNode(<AssistantPanel />);
-    const fab = host.querySelector(".assistant-fab");
+    const fab = host.querySelector(".assistant-fab") as HTMLButtonElement | null;
     expect(fab).not.toBeNull();
     expect(fab!.getAttribute("data-tip-align")).toBe("right");
+
+    await act(async () => {
+      fab!.click();
+    });
+    const header = host.querySelector(".assistant-panel .drawer-header");
+    const footer = host.querySelector(".assistant-panel .assistant-footer");
+    expect(header).not.toBeNull();
+    expect(footer).not.toBeNull();
+    expect(header!.textContent).not.toContain("Close");
+    expect(footer!.textContent).toContain("Close");
   });
 
   it("renders HomeLinksTab with responsive split-pane classes and no fixed flex sidebar on outer root", async () => {
@@ -109,6 +119,9 @@ describe("Viewport, layout & z-index regressions", () => {
     expect(pangaCss).toContain(".ai-fab, .assistant-fab { z-index: var(--z-chrome); }");
     expect(pangaCss).toContain(".voice-fab, .pg-copy-fab { z-index: var(--z-floating); }");
     expect(pangaCss).toContain("@media (max-width: 820px)");
+    expect(pangaCss).toContain(".app-logo { color: #15803d; }");
+    expect(pangaCss).toContain(':root[data-theme="dark"] .app-logo { color: #4ade80; }');
+    expect(pangaCss).toContain(".pg-connection-status");
     expect(indexCss).toContain('[data-tip-edge="left"]::after');
     expect(indexCss).toContain(":not(.shortcuts-tile-remove)");
   });

@@ -131,4 +131,26 @@ describe("Panga home (smoke)", () => {
     expect(quickLinksIdx).toBe(aiIdx + 1);
     expect(cards[quickLinksIdx].querySelector(".shortcuts-title")?.textContent).toBe("Quick links");
   });
+
+  it("replaces the duplicate Panga heading with live Online/Offline status", async () => {
+    await mount("/home");
+    const head = host.querySelector(".pg-head");
+    expect(head).not.toBeNull();
+    expect(head!.querySelector("h1")).toBeNull();
+    const status = head!.querySelector(".pg-connection-status");
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/Online|Offline/);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    expect(status!.textContent).toContain("Offline");
+    expect(status!.getAttribute("data-online")).toBe("false");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(status!.textContent).toContain("Online");
+    expect(status!.getAttribute("data-online")).toBe("true");
+  });
 });

@@ -87,24 +87,29 @@ afterEach(async () => {
 });
 
 describe("AppShell header, menus and shortcuts", () => {
-  it("renders slim header with Shortcuts and Menu and hides old Exit/Settings/Guest/Local only text", async () => {
+  it("renders slim header with Menu (moving Shortcuts into Menu) and hides old Exit/Settings/Guest/Local only text", async () => {
     await mount("/home");
     const header = host.querySelector("header.app-header")!;
     expect(header.textContent).toContain("Panga");
     expect(header.textContent).toContain("Search");
     expect(header.textContent).toContain("💭 Thoughts");
     expect(header.textContent).toContain("📋 Paste");
-    expect(header.textContent).toContain("Shortcuts");
     expect(header.textContent).toContain("Menu");
+    expect(header.textContent).not.toContain("Shortcuts");
     expect(header.textContent).not.toContain("Settings");
     expect(header.textContent).not.toContain("Exit");
     expect(header.textContent).not.toContain("Guest");
     expect(header.textContent).not.toContain("Local only");
   });
 
-  it("opens Shortcuts popover listing tabs, Search, Voice dictation and ?", async () => {
+  it("opens Shortcuts from the Menu dropdown listing tabs, Search, Voice dictation and ?", async () => {
     await mount("/home");
-    await click(buttonByText("Shortcuts"));
+    await click(buttonByText("Menu"));
+    const menu = host.querySelector('[role="menu"][aria-label="App menu"]');
+    expect(menu).not.toBeNull();
+    const shortcutsBtn = [...menu!.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Shortcuts");
+    expect(shortcutsBtn).toBeDefined();
+    await click(shortcutsBtn);
     const dialog = host.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]');
     expect(dialog).not.toBeNull();
     expect(dialog!.textContent).toContain("Alt+T");

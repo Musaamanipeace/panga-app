@@ -6,6 +6,7 @@
 import Dexie, { type Table } from "dexie";
 import { workspaceDbSuffix } from "./workspaceState";
 import { clearAccountSettings } from "./accountSettings";
+import { clearAccountDbData, ensureAccountDbReady, hasAccountData, mergeAccountDbState, switchAccountDb } from "./accountDb";
 import { getSessionUserId } from "../auth/sessionUserId";
 import { newId } from "./utils";
 
@@ -260,6 +261,7 @@ export interface IssueComment {
 export interface Reminder {
   id: string;
   folderId: string | null;    // null = unfiled (shows at root)
+  workspaceId?: string;       // Workspace where created (display only; never filter by it)
   toneId?: string;            // e.g. "default" | "chime" | "soft" | "urgent"
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
@@ -902,24 +904,32 @@ class PangaDB extends Dexie {
 export let db: PangaDB = new PangaDB();
 
 /**
- * Closes the current Dexie connection and creates a fresh instance with the
- * correct per-user database name. Called after setSession() to switch DB
- * between accounts.
+ * Closes the current workspace Dexie connection only, leaving account-level
+ * stores untouched. Used when switching or inspecting workspaces.
  */
-export async function switchUserAccount(): Promise<void> {
+export async function switchWorkspaceDb(): Promise<void> {
   try {
     if (db && db.isOpen()) {
       await db.close();
     }
   } catch (e) {
-    console.warn("switchUserAccount close error:", e);
+    console.warn("switchWorkspaceDb close error:", e);
   }
   db = new PangaDB();
   try {
     await db.open();
   } catch (e) {
-    console.warn("switchUserAccount open error:", e);
+    console.warn("switchWorkspaceDb open error:", e);
   }
+}
+
+/**
+ * Closes the current Dexie connections and creates fresh instances with the
+ * correct per-user database names. Called on session/account changes.
+ */
+export async function switchUserAccount(): Promise<void> {
+  await switchWorkspaceDb();
+  await switchAccountDb();
 }
 
 /**
@@ -997,6 +1007,7 @@ export async function ensureSeedData() {
         }
       );
     }
+    await ensureAccountDbReady();
   } catch (e) {
     console.error("ensureSeedData error:", e);
   }
@@ -1040,8 +1051,6 @@ export async function exportDbState(options: { includeSecrets?: boolean } = {}):
     "milestones",
     "issues",
     "contacts",
-    "reminders",
-    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",
@@ -1095,8 +1104,6 @@ export async function importDbState(data: Record<string, any[]>, options: { incl
     "milestones",
     "issues",
     "contacts",
-    "reminders",
-    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",
@@ -1157,7 +1164,7 @@ export async function mergeDbState(data: Record<string, any[]>): Promise<void> {
   const tables = [
     "projects", "taskLists", "taskListFolders", "tasks", "linkFolders",
     "noteFolders", "links", "notes", "resources", "docEntries", "milestones",
-    "issues", "contacts", "reminders", "reminderFolders", "calendarEvents",
+    "issues", "contacts", "calendarEvents",
     "scheduleItems", "conversations", "messages", "insights", "drafts",
     "activityLog", "trainOfThought",
   ];
@@ -1171,6 +1178,12 @@ export async function mergeDbState(data: Record<string, any[]>): Promise<void> {
         if (table) await table.bulkPut(rows);
       }
     });
+    if (data.reminders?.length || data.reminderFolders?.length) {
+      await mergeAccountDbState({
+        reminders: data.reminders,
+        reminderFolders: data.reminderFolders,
+      });
+    }
   } finally {
     suppressChangeHooks = false;
   }
@@ -1193,8 +1206,6 @@ export async function hasLocalData(): Promise<boolean> {
     "milestones",
     "issues",
     "contacts",
-    "reminders",
-    "reminderFolders",
     "calendarEvents",
     "scheduleItems",
     "conversations",
@@ -1207,7 +1218,8 @@ export async function hasLocalData(): Promise<boolean> {
   const counts = await Promise.all(
     tables.map((t) => (db as any)[t]?.count().catch(() => 0))
   );
-  return counts.some((c: number) => c > 0);
+  if (counts.some((c: number) => c > 0)) return true;
+  return hasAccountData();
 }
 
 /**
@@ -1244,6 +1256,7 @@ export async function clearAllLocalData(): Promise<void> {
   ];
 
   clearAccountSettings();
+  await clearAccountDbData();
   suppressChangeHooks = true;
   try {
     await db.transaction("rw", tables, async () => {

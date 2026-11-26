@@ -12,8 +12,9 @@ import { createNote, deleteNote, getNote, listAllNotes, searchNotes, updateNote 
 import { createNoteFolder, deleteNoteFolder, getNoteFolder, listNoteFolders, updateNoteFolder } from "../data/noteFolders";
 import { createLink, deleteLink, getLink, listAllLinks, updateLink } from "../data/links";
 import { createLinkFolder, deleteLinkFolder, getLinkFolder, listLinkFolders, updateLinkFolder } from "../data/linkFolders";
-import { createReminder, deleteReminder, dismissReminder, listReminders, updateReminder } from "../data/reminders";
-import { createReminderFolder, deleteReminderFolder, getReminderFolder, listReminderFolders, updateReminderFolder } from "../data/reminderFolders";
+import { createReminder, deleteReminder, dismissReminder, getReminder, listReminders, putReminder, updateReminder } from "../data/reminders";
+import { createReminderFolder, deleteReminderFolder, getReminderFolder, listReminderFolders, putReminderFolder, updateReminderFolder } from "../data/reminderFolders";
+import { accountDb } from "../data/accountDb";
 import { addClip, clearClips, listClips, removeClip } from "../data/clips";
 import { addThought, deleteThought, listThoughts, updateThought } from "../data/thoughts";
 import { copyToClipboard } from "../components/ui";
@@ -1281,13 +1282,13 @@ export async function executeAgentAction(act: AgentAction): Promise<AgentExecRes
     case "delete_reminder_folder": {
       const prev = await getReminderFolder(String(d.id ?? ""));
       if (!prev) throw new Error("Reminder folder not found.");
-      const childFolders = await db.reminderFolders.where("parentFolderId").equals(prev.id).toArray();
-      const childReminders = await db.reminders.where("folderId").equals(prev.id).toArray();
+      const childFolders = await accountDb.reminderFolders.where("parentFolderId").equals(prev.id).toArray();
+      const childReminders = await accountDb.reminders.where("folderId").equals(prev.id).toArray();
       await deleteReminderFolder(prev.id);
       res = {
         summary: `Deleted reminder folder "${prev.title}"`,
         undo: async () => {
-          await db.reminderFolders.put(prev);
+          await putReminderFolder(prev);
           for (const sf of childFolders) await updateReminderFolder(sf.id, { parentFolderId: prev.id });
           for (const r of childReminders) await updateReminder(r.id, { folderId: prev.id });
         },
@@ -1318,7 +1319,7 @@ export async function executeAgentAction(act: AgentAction): Promise<AgentExecRes
       break;
     }
     case "update_reminder": {
-      const prev = await db.reminders.get(String(d.id ?? ""));
+      const prev = await getReminder(String(d.id ?? ""));
       if (!prev) throw new Error("Reminder not found.");
       const changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "status" | "folderId">> = {};
       const nextMessage = typeof d.message === "string" ? d.message : typeof d.title === "string" ? d.title : typeof d.text === "string" ? d.text : "";
@@ -1336,31 +1337,31 @@ export async function executeAgentAction(act: AgentAction): Promise<AgentExecRes
       res = {
         summary: `Updated reminder "${changes.message ?? prev.message}"`,
         undo: async () => {
-          await db.reminders.put(prev);
+          await putReminder(prev);
         },
       };
       break;
     }
     case "dismiss_reminder": {
-      const prev = await db.reminders.get(String(d.id ?? ""));
+      const prev = await getReminder(String(d.id ?? ""));
       if (!prev) throw new Error("Reminder not found.");
       await dismissReminder(prev.id);
       res = {
         summary: `Dismissed reminder "${prev.message}"`,
         undo: async () => {
-          await db.reminders.put(prev);
+          await putReminder(prev);
         },
       };
       break;
     }
     case "delete_reminder": {
-      const prev = await db.reminders.get(String(d.id ?? ""));
+      const prev = await getReminder(String(d.id ?? ""));
       if (!prev) throw new Error("Reminder not found.");
       await deleteReminder(prev.id);
       res = {
         summary: `Deleted reminder "${prev.message}"`,
         undo: async () => {
-          await db.reminders.put(prev);
+          await putReminder(prev);
         },
       };
       break;

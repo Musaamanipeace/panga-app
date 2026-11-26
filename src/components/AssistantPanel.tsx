@@ -232,16 +232,6 @@ export default function AssistantPanel() {
                 >
                   New
                 </button>
-                <button
-                  type="button"
-                  className="btn-secondary btn-small clickable"
-                  onClick={() => setOpen(false)}
-                  data-tip="Close the assistant"
-                  data-tip-pos="bottom"
-                  data-tip-align="right"
-                >
-                  Close
-                </button>
               </div>
             </header>
 
@@ -445,6 +435,17 @@ export default function AssistantPanel() {
                 </div>
               </div>
             )}
+            <footer className="assistant-footer">
+              <button
+                type="button"
+                className="btn-secondary btn-small clickable"
+                onClick={() => setOpen(false)}
+                data-tip="Close the assistant"
+                data-tip-align="right"
+              >
+                Close
+              </button>
+            </footer>
           </div>
         </div>
       )}

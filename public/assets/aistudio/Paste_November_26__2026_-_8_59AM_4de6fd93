@@ -1,0 +1,605 @@
+# Panga: Reminders upgrade and Google Calendar (.ics) import
+### Implementation brief for Google AI Studio
+
+> How to use this file: paste the whole thing as the first message (or the system instructions) in a new AI Studio chat, then attach or paste the source files listed in section 0.3. Work through the stages in section 12 one at a time. Do not let the model skip ahead.
+
+---
+
+## 0. Instructions to the model (read first)
+
+### 0.1 Your role
+You are a senior TypeScript/React engineer working on **Panga**, a local-first, offline-first personal organizer (tasks, links, notes, reminders, clipboard). You will design and write the code for the work described below. You cannot run the code, so the person pasting your output into the repo will run the checks. That changes how you must work:
+
+- **Do not invent APIs.** If you need a function, type or file that is not in the files provided to you, say exactly which file you need pasted and stop. Never guess a signature.
+- **Output complete files**, each under a heading with its exact repo path, in a fenced code block. For an existing file, output the whole new file, not a fragment, unless the file is over ~400 lines, in which case output precise `old -> new` replacement blocks that each quote the old text exactly and appear exactly once in the file.
+- **Work in stages** (section 12). After each stage, list the files you changed, the commands to run, and what the person should see. Then **stop and wait** for "go" or a failure report.
+- **Never assume where the repo is silent.** Where this brief marks something `DECISION PENDING`, use the stated default but flag it in your report so the owner can confirm.
+- **Ask at most three questions at a time**, only when blocked.
+
+### 0.2 Repo rules you must follow (from the repo's `AGENTS.md` and `docs/agent/USER_RULES.md`)
+- One focused change per pull request. Small commits. Workflow: issue, branch, commits, PR containing `Closes #N`. Give the issue title, branch name and PR description for every stage.
+- **No mock data**, no seeded sample content, no placeholder records.
+- Never delete or overwrite existing user content without asking. Never remove database tables or old data as part of a migration; leave legacy tables in place, unused.
+- Do not invent rules. Anything extra you add is marked `(suggested, needs user approval)`.
+- New rules or decisions go in `docs/agent/USER_RULES.md` / `docs/agent/DECISIONS.md`; progress goes in `docs/agent/PROGRESS.md`; leftovers in `docs/agent/NEXT.md`. Update them at the end of each stage.
+- Before finalizing any UI work, apply the **ui-no-redundancy** rule: every fact appears once, in the best place; no icon plus identical text; no summary banner repeating the list beneath it. When unsure, ask.
+- Detect conventions from the repo; do not assume. If you cannot detect something, leave a `TODO(user)` marker and list it under "Open questions".
+
+### 0.3 Files to have in context before you start
+Ask the person to paste these (or attach the repo) so you can read them rather than guess:
+
+`src/data/db.ts`, `src/data/reminders.ts`, `src/components/home/HomeRemindersTab.tsx`, `src/data/settings.ts`, `src/data/workspaces.ts`, `src/data/workspaceState.ts`, `src/data/accountSettings.ts`, `src/sync/snapshot.ts`, `src/pages/PangaHome.tsx`, `src/components/AppShell.tsx`, `src/components/ui.tsx`, `src/data/shortcuts.ts`, `src/ai/agent.ts` (search for `reminder`), `vite.config.ts`, `package.json`, `src/index.css`, `src/styles/panga-ui.css`, and the existing tests in `src/**/__tests__/` that mention reminders.
+
+Also ask for the output of these searches, so no usage is missed:
+```
+grep -rn "db.reminders\|db.reminderFolders\|reminders\b" src --include=*.ts --include=*.tsx | grep -v __tests__
+grep -rn "startReminderScheduler\|stopReminderScheduler\|showReminderNotification\|requestNotificationPermission" src
+```
+
+---
+
+## 1. Product goal
+
+The owner often gets an event by email, or has events in Google Calendar, and wants them inside Panga instead. They need Panga to:
+
+1. **Import events from a Google Calendar export** (and from any `.ics` file, such as an email invite attachment), with a guided flow on the Reminders tab.
+2. Support **repeating reminders** (daily, weekly, monthly, yearly).
+3. Make reminders **cross all workspaces**: a reminder is the same everywhere and fires no matter which workspace is open.
+4. Show **real notifications**, with a **setup prompt** that guides the user to turn them on.
+5. Cover the other reminder features that make imported events usable (snooze, advance notice, event details, duplicate protection, a "missed while closed" list).
+
+There is **no Google sign-in, no Google client ID, no Google API** in this work. Google integration was deliberately removed from the app earlier (rule dated 2026-11-22: remove every Google/Drive/Calendar reference). Import works purely from files the user exports themselves. Do not add any Google script, SDK, OAuth flow or CSP entry. Do not mention Google API keys anywhere in the UI.
+
+---
+
+## 2. Stack and conventions (verified in the repo; confirm against the files you are given)
+
+- **Vite + React + TypeScript**, `react-router-dom`, **Dexie** (IndexedDB), PWA via `vite-plugin-pwa` (`generateSW` mode).
+- Tests: **Vitest**, `fake-indexeddb/auto`, jsdom. Component tests do not use Testing Library: they use `createRoot` + `act` from `react` with small helpers (`mount`, `click`, `type`, `settle`). Match that style.
+- Lint: `oxlint` (warnings exist already; add no errors). Typecheck: `npx tsc -b`, with `noUnusedLocals` on (an unused import is a build error).
+- Checks the owner runs: `npx tsc -b`, `npx oxlint`, `npx vitest run`, `npm run build`.
+- UI helpers in `src/components/ui.tsx`: `useAsync(load, deps)` returns `{data, error, loading, reload}`; `confirmAction({title, message, confirmLabel, cancelLabel, danger})`; `confirmDelete({kind, name, detail})`; `showToast(message, type)`; `copyToClipboard`.
+- Data changes are announced with `window.dispatchEvent(new Event("panga-data-updated"))`; components reload on it.
+- CSS: global `src/index.css` plus the newer `src/styles/panga-ui.css`, which defines theme tokens (`--color-bg`, `--color-bg-subtle`, `--color-surface`, `--color-text`, `--color-text-muted`, `--color-border`, `--color-accent-primary`, `--z-chrome`, `--z-popover`, `--z-overlay`, `--gutter`). Use tokens only, never hard-coded colours, so both dark and light themes work. Reuse `btn-primary`, `btn-secondary`, `btn-small`, `chip`, `modal-backdrop`/`modal`, `pg-card`, `pg-actions`.
+- No emojis or decorative symbols in UI text; use plain words.
+
+---
+
+## 3. Current state of reminders (verified)
+
+**Data model** (`src/data/db.ts`):
+```ts
+export interface Reminder {
+  id: string;
+  folderId: string | null;           // null = unfiled
+  toneId?: string;                   // "default" | "chime" | "soft" | "urgent"
+  linkedEntityType: "task" | "note" | null;
+  linkedEntityId: string | null;
+  message: string;
+  triggerAt: number;                 // epoch ms
+  status: "pending" | "fired" | "dismissed";
+  createdAt: number; updatedAt: number;
+  syncStatus: SyncStatus; userId?: string;
+}
+export interface ReminderFolder { id; parentFolderId; title; order; createdAt; updatedAt; syncStatus; userId? }
+```
+Dexie schema (v13): `reminders: "id, folderId, triggerAt, status, updatedAt, syncStatus"`, `reminderFolders: "id, parentFolderId, order, updatedAt, syncStatus"`. The current Dexie version is **14** (task-list flattening); the next version number is 15.
+
+**Behaviour** (`src/data/reminders.ts`):
+- **Single trigger time. No recurrence, no snooze, no end time, no location/notes, no import.**
+- Scheduler: `startReminderScheduler()` runs once, polls **every 60 seconds** with `setInterval`, queries `db.reminders` where `status = "pending"` and `triggerAt <= now`, calls `showReminderNotification(r)`, then sets `status: "fired"`. It queries the **currently open** database only.
+- `showReminderNotification` uses `new Notification(...)`. **Bug to fix:** Chrome on Android does not allow the `Notification` constructor (it throws; only `ServiceWorkerRegistration.showNotification` works). The owner's target phone is a Samsung Galaxy A07 running Chrome, so notifications from this code likely never appear on the phone. Treat this as a defect in scope.
+- `requestNotificationPermission()` is only called from buttons inside `HomeRemindersTab.tsx`. There is no first-run prompt and no permission status display.
+- Alerts only fire while the app is open in a tab. This is an inherent limit of the no-server architecture (see section 9.5).
+- The tab (`HomeRemindersTab.tsx`) has: a "New reminder" form (message, `datetime-local`, tone select, folder select), reminder folders with `FolderTree`, buckets (`overdue`, `due`, `upcoming`), dismiss, edit, delete. A `ProofreadTrigger` ("Grammar & Spelling") is on the message input.
+
+**Workspaces (already implemented in the UI refresh that precedes this work):**
+- Each workspace is its own IndexedDB: `panga-db-<userId>` for the default workspace (id `main`), `panga-db-<userId>__ws_<workspaceId>` for others. The module-level `db` export is reassigned by `switchUserAccount()` when the workspace changes.
+- Workspace list and active id are in `localStorage` (`panga_workspaces_<userId>`, `panga_active_workspace_<userId>`), handled by `workspaceState.ts`.
+- BYOK keys, `aiProvider` and `aiModel_*` are **account-level**, stored in `localStorage` via `accountSettings.ts` and mirrored into the open DB so JSON snapshots carry them.
+- The JSON snapshot (`snapshot.ts`) exports every workspace: `snapshot.data` is the active workspace; `snapshot.workspaces = { activeId, items: [{ id, name, data }] }` holds all.
+- **If the repo you are given does not contain these files, stop and tell the owner**: this brief depends on that change being merged first.
+
+---
+
+## 4. Decisions (owner has not answered yet: use the defaults, flag them in your report)
+
+| # | Decision | Default used in this brief | Status |
+|---|---|---|---|
+| D1 | Where imported events land | The **Reminders** list (extended with event fields), not the separate calendar events table | DECISION PENDING |
+| D2 | Zip files | Add one small dependency, **`fflate`**, so Google's export zip can be dropped in directly | DECISION PENDING (new dependency needs approval) |
+| D3 | Alerts while the app is closed | **App-open only** (no server). Web Push is documented in 9.5 as a future option, not built | DECISION PENDING |
+| D4 | Cross-workspace reminders | **Option A: account-level reminders store** shared by all workspaces (section 10) | DECISION PENDING |
+| D5 | Past events on import | **Skipped by default**; a checkbox lets the user include them | DECISION PENDING |
+| D6 | Default advance notice for imported events with no alarm | **10 minutes** before start | DECISION PENDING |
+| D7 | All-day event alert time | **09:00 local time** on the day | DECISION PENDING |
+
+Do not silently change a default. If a stage cannot be done safely with the default, stop and ask.
+
+---
+
+## 5. Target user experience
+
+### 5.1 Reminders tab layout (top to bottom)
+1. **Notification status strip** (one line, only when notifications are not fully set up): see 9.2.
+2. **Import card** "Import events" (collapsible; open by default until first successful import, then collapsed behind an "Import events" button in the tab header).
+3. Existing "New reminder" form, extended (section 5.3).
+4. Missed-while-closed list (only when non-empty).
+5. Existing buckets and folders (overdue, due, upcoming), extended to show repeat info and event details.
+
+Do not duplicate controls: the "Import events" button in the header and the card must not both be visible at once (ui-no-redundancy).
+
+### 5.2 Import card: exact copy and states
+
+**Title:** `Import events from Google Calendar`
+
+**Guide (numbered list, plain text):**
+1. `On a computer, open Google Calendar (calendar.google.com).`
+2. `Click the gear icon, then Settings.`
+3. `Choose Import & export, then Export.`
+4. `Google downloads a zip file. You can add it here as it is, or unzip it and add the .ics files inside.`
+
+**Note under the list (muted text):** `Google Calendar's export is only available on the website, not in the phone app. If an event reached you by email, open its .ics attachment and add that file here instead.`
+
+**Primary control:** a file picker button `Choose files`, accepting `.ics,.zip,text/calendar,application/zip`, `multiple`. On desktop widths also accept drag and drop onto the card (visible drop highlight, keyboard-accessible alternative is the button).
+
+**State machine** (single component, one `status` value):
+`idle` -> `reading` -> `preview` -> `importing` -> `done` (or `error` from any step).
+
+- `reading`: text `Reading files…`; shows file count; cancel button.
+- `preview`: see 5.2.1.
+- `importing`: progress `Adding 12 of 40…`, controls disabled.
+- `done`: summary, see 5.2.2; then `Import more` and `Close`.
+- `error`: plain message plus `Try again`. Never show a stack trace.
+
+#### 5.2.1 Preview step (nothing is saved yet)
+Summary line: `42 events found: 31 new, 8 already in Panga, 3 changed since last import.` (omit zero counts.)
+
+Filters (above the list):
+- Checkbox `Include past events` (default off; counts update).
+- Select `Show: All / New only / Changed only`.
+
+List (paged, 50 per page, `Show more` button; do not render thousands of rows at once). Each row: checkbox (checked by default for new and changed rows, unchecked and disabled for unchanged duplicates), title, start (local format, `All day` when applicable), repeat summary (`Repeats weekly on Mon, Wed`), location if any, and a warning badge in plain words when needed:
+- `Repeat pattern simplified` (RRULE not fully supported; imports next occurrence only)
+- `Time zone assumed` (unknown TZID; used device time zone)
+- `Changed` (existing reminder will be updated)
+- `Already in Panga` (unchanged duplicate)
+
+Footer: `Select all` / `Select none`, `Cancel`, and `Add N events` (primary; disabled when N = 0).
+
+Also show a destination choice only if D1 is later changed; with the default there is none.
+
+#### 5.2.2 Done summary
+`Added 31, updated 3, skipped 8. 2 events could not be read.` The unreadable ones expand into a list: file name, event title if known, reason in plain words. Offer `Copy details` (copies that list).
+
+After the first successful import, if notification permission is not `granted`, show the setup prompt (9.2) immediately beneath the summary: `Turn on notifications so these events can alert you.`
+
+### 5.3 New / edit reminder form (extended)
+Existing fields stay. Add, in this order, with `Show more options` collapsing the rarely-used ones on phones:
+- `Repeat`: select `Does not repeat / Daily / Weekly / Monthly / Yearly`. For Weekly show seven weekday toggle chips (Mon..Sun, at least one required, default = weekday of the start). Optional `Every N` number (default 1; labelled e.g. `Every 2 weeks`). Optional `Ends`: `Never / On date / After N times`.
+- `Alert before`: select `At the time / 5 minutes / 10 minutes / 15 minutes / 30 minutes / 1 hour / 1 day`. (Stored as `leadMinutes`.)
+- `All day` checkbox: hides the time input and uses the all-day alert time (D7).
+- `Ends at` (optional, `datetime-local`; hidden for all-day).
+- `Location` (text, optional) and `Notes` (textarea, optional, max 2000 chars; keep the Grammar & Spelling trigger on it).
+- Existing: tone, folder, message.
+
+Validation messages are inline and specific (`Choose at least one weekday.`).
+
+### 5.4 Reminder row actions
+Existing `Dismiss`, `Edit`, `Delete`; add `Snooze` (menu: 10 min, 1 hour, tomorrow morning at the all-day alert time, custom date/time) and, for repeating reminders, `Skip this one` (advance to the next occurrence) and `End repeat` (stops the series, keeps history). `Dismiss` on a repeating reminder means "this occurrence only".
+
+Row text for a repeating event: title; next time; `Repeats weekly on Mon, Wed` in muted text; location below if present. Imported rows get a small muted label `Imported` (word, not icon).
+
+### 5.5 Missed-while-closed list
+When the app opens (or regains focus) and one or more reminders came due while no tab was running, show them in a card `Missed while Panga was closed` with each item and a `Dismiss all` button. Repeating reminders that missed several occurrences appear **once** with `Missed 4 times` (do not list each).
+
+---
+
+## 6. Data model changes
+
+### 6.1 New `Reminder` fields (all optional so old rows stay valid)
+```ts
+export type ReminderRepeatFreq = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface ReminderRecurrence {
+  freq: ReminderRepeatFreq;
+  interval: number;            // >= 1
+  byWeekday?: number[];        // 0 = Sunday .. 6 = Saturday; weekly only
+  byMonthDay?: number;         // 1..31; monthly only (default: day of startAt)
+  until?: number;              // epoch ms, inclusive end of the series
+  count?: number;              // total occurrences, including the first
+  exdates?: number[];          // occurrence start times (epoch ms) that are skipped
+}
+
+export interface Reminder {
+  /* existing fields unchanged */
+  startAt?: number;            // event start; for events triggerAt = startAt - leadMinutes*60000
+  endAt?: number;
+  allDay?: boolean;
+  leadMinutes?: number;        // default 0
+  location?: string;
+  notes?: string;
+  recurrence?: ReminderRecurrence | null;
+  occurrencesFired?: number;   // counts toward `count`
+  snoozedUntil?: number | null;
+  firedAt?: number | null;     // last time an alert was shown
+  missedCount?: number;        // occurrences skipped while the app was closed
+  source?: "manual" | "ics";
+  externalUid?: string;        // iCalendar UID
+  externalInstance?: string | null; // RECURRENCE-ID for a moved single occurrence
+  externalSequence?: number;   // iCalendar SEQUENCE, for update detection
+  externalModified?: number;   // LAST-MODIFIED as epoch ms
+  rruleRaw?: string | null;    // original RRULE text, kept for transparency
+}
+```
+
+Semantics to implement exactly:
+- `triggerAt` remains **the time the alert fires** (this keeps every existing query working). For an event, `triggerAt = startAt - leadMinutes * 60_000`. For a plain reminder, `startAt` is undefined and `triggerAt` is as before.
+- A reminder with `recurrence` is **one row per series**. After an occurrence fires, the row stays `pending`, `startAt`/`triggerAt` advance to the next occurrence, `occurrencesFired` increments, `firedAt` is set. When the series is exhausted (past `until`, or `occurrencesFired >= count`, or the next occurrence does not exist), set `status: "fired"` and `recurrence` stays as history.
+- `snoozedUntil`: while set and in the future, `triggerAt` is treated as that time. Implement by **writing the snooze time into `triggerAt`** and remembering the real occurrence in `startAt` (so a snoozed repeating event still advances correctly afterwards). Clear `snoozedUntil` when it fires.
+
+### 6.2 Migration
+Because of decision D4 the reminders tables move (section 10), so the schema change goes in the **new account database** (version 2 there), not in a workspace DB. Add index `externalUid` to `reminders`:
+```
+reminders: "id, folderId, triggerAt, status, updatedAt, syncStatus, externalUid"
+```
+No backfill is needed: old rows simply lack the optional fields. Do not touch the legacy per-workspace `reminders` / `reminderFolders` tables other than marking them migrated (section 10.3).
+
+---
+
+## 7. iCalendar (.ics) parser: `src/data/ics.ts`
+
+Pure functions, no DOM, no Dexie, fully unit-tested. Public API:
+
+```ts
+export interface ParsedEvent {
+  uid: string;
+  instanceId: string | null;      // RECURRENCE-ID as a stable string, else null
+  title: string;                  // SUMMARY, trimmed; "(No title)" if empty
+  startAt: number;                // epoch ms (for all-day: start of day in device zone)
+  endAt: number | null;
+  allDay: boolean;
+  location: string;
+  notes: string;                  // DESCRIPTION, control characters stripped, max 2000 chars
+  recurrence: ReminderRecurrence | null;
+  rruleRaw: string | null;
+  leadMinutes: number | null;     // from the first usable VALARM TRIGGER, else null
+  sequence: number;               // SEQUENCE, default 0
+  modifiedAt: number | null;      // LAST-MODIFIED or DTSTAMP as epoch ms
+  warnings: ParseWarning[];
+}
+export type ParseWarning = "rrule-simplified" | "timezone-assumed" | "no-title";
+
+export interface ParseResult {
+  events: ParsedEvent[];
+  skipped: { title: string | null; reason: string }[];  // cancelled, no start, unreadable
+}
+export function parseIcs(text: string, opts?: { deviceTimeZone?: string }): ParseResult;
+```
+
+### 7.1 Parsing rules
+1. **Normalise input:** strip a UTF-8 BOM; split on `\r\n`, `\n` or `\r`.
+2. **Unfold lines:** a line starting with a space or tab continues the previous line (remove the break plus that one leading whitespace character).
+3. **Property syntax:** `NAME;PARAM=value;PARAM2="quoted;value":VALUE`. Split on the first unquoted `:`; parameters on unquoted `;`. Names are case-insensitive.
+4. **Text unescaping** for SUMMARY, DESCRIPTION, LOCATION: `\\n`/`\\N` to newline, `\\,` to comma, `\\;` to semicolon, `\\\\` to backslash.
+5. **Only read `BEGIN:VEVENT ... END:VEVENT` blocks.** Ignore `VTIMEZONE` content entirely (rely on IANA names in `TZID`). `VALARM` blocks nested inside a `VEVENT` are read for `TRIGGER` only.
+6. **Skip with a reason** (put in `skipped`, never throw): `STATUS:CANCELLED`; missing `DTSTART`; unparseable date; missing `UID` (generate a deterministic id from title+start instead, and mark no warning).
+7. **Dates** (`DTSTART`, `DTEND`, `RECURRENCE-ID`, `EXDATE`, `UNTIL`):
+   - `...Z` suffix = UTC.
+   - `;VALUE=DATE:YYYYMMDD` = all-day; `startAt` is local midnight in the device zone; `endAt` in iCalendar is **exclusive** (the day after), so subtract one day for display only (store as given minus nothing; document in a comment).
+   - `;TZID=Zone/Name:YYYYMMDDTHHMMSS` = wall-clock time in that IANA zone. Convert with `Intl.DateTimeFormat` (no library): compute the UTC instant whose wall-clock time in `Zone` equals the given fields, using a two-pass offset correction so it is right across DST changes.
+   - No `Z`, no `TZID` (floating) = device zone.
+   - **Unknown or Windows-style TZID** (e.g. `Eastern Standard Time`) that `Intl` rejects: fall back to the device zone and add warning `timezone-assumed`.
+8. **DTEND vs DURATION:** use `DTEND` if present; else `DTSTART + DURATION` (ISO-8601, e.g. `PT1H30M`); else `endAt = null`.
+9. **VALARM `TRIGGER`:** only relative negative durations before start (`-PT15M`, `-P1D`) map to `leadMinutes` (round to whole minutes; cap at 7 days). Absolute triggers and triggers relative to END are ignored. Use the **smallest positive lead** among alarms if several exist (the soonest-firing one is the most useful single alert).
+10. **RECURRENCE-ID:** an event with `RECURRENCE-ID` is a moved/edited single occurrence of a series. It becomes its own `ParsedEvent` with `instanceId` set. The importer (section 8) adds that original occurrence time to the master series' `exdates` so it is not duplicated.
+11. **Size/safety limits** (enforce in the importer, but the parser must also be defensive): process at most 5000 events per file; truncate notes to 2000 chars; truncate title to 300; strip ASCII control characters except newline.
+
+### 7.2 RRULE mapping
+Parse `RRULE:FREQ=...;INTERVAL=...;BYDAY=...;BYMONTHDAY=...;COUNT=...;UNTIL=...`, plus `EXDATE` lines (comma-separated lists allowed, multiple lines allowed).
+
+Supported -> `ReminderRecurrence`:
+| RRULE | Maps to |
+|---|---|
+| `FREQ=DAILY[;INTERVAL=n]` | `daily`, `interval n` |
+| `FREQ=WEEKLY[;INTERVAL=n][;BYDAY=MO,WE]` | `weekly`, `byWeekday [1,3]` (no BYDAY: weekday of start) |
+| `FREQ=MONTHLY[;INTERVAL=n][;BYMONTHDAY=d]` | `monthly`, `byMonthDay d` (none: day of start) |
+| `FREQ=YEARLY[;INTERVAL=n]` | `yearly` |
+| `COUNT=n` | `count n` |
+| `UNTIL=...` | `until` (inclusive; if date-only, end of that local day) |
+| `EXDATE` | `exdates` (epoch ms of each skipped occurrence) |
+
+**Not supported (degrade, do not fail):** `BYSETPOS`, ordinal weekdays like `BYDAY=1MO`/`-1FR` ("first Monday", "last Friday"), `BYYEARDAY`, `BYWEEKNO`, `BYHOUR/BYMINUTE/BYSECOND`, `FREQ=HOURLY/MINUTELY/SECONDLY`, `RDATE`. For these: set `recurrence = null`, keep `rruleRaw`, import the **next future occurrence only** (compute the next occurrence from the start using a minimal expansion if you can, otherwise just `startAt`) and add warning `rrule-simplified`.
+
+### 7.3 Fixture (use this exact file in the tests)
+```ics
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+X-WR-TIMEZONE:Africa/Nairobi
+BEGIN:VEVENT
+UID:meeting-1@google.com
+DTSTART;TZID=Africa/Nairobi:20261201T090000
+DTEND;TZID=Africa/Nairobi:20261201T100000
+SUMMARY:Project sync
+LOCATION:Room 4\, Westlands
+DESCRIPTION:Bring the Q4 numbers.\nAgenda attached.
+SEQUENCE:1
+LAST-MODIFIED:20261120T080000Z
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:DISPLAY
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:birthday-2@google.com
+DTSTART;VALUE=DATE:20261205
+DTEND;VALUE=DATE:20261206
+SUMMARY:Amina's birthday
+RRULE:FREQ=YEARLY
+END:VEVENT
+BEGIN:VEVENT
+UID:standup-3@google.com
+DTSTART;TZID=Africa/Nairobi:20261130T083000
+DTEND;TZID=Africa/Nairobi:20261130T084500
+SUMMARY:Stand-up
+RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261231T210000Z
+EXDATE;TZID=Africa/Nairobi:20261204T083000
+END:VEVENT
+BEGIN:VEVENT
+UID:standup-3@google.com
+RECURRENCE-ID;TZID=Africa/Nairobi:20261202T083000
+DTSTART;TZID=Africa/Nairobi:20261202T110000
+DTEND;TZID=Africa/Nairobi:20261202T111500
+SUMMARY:Stand-up (moved)
+END:VEVENT
+BEGIN:VEVENT
+UID:cancelled-4@google.com
+DTSTART:20261203T120000Z
+SUMMARY:Cancelled lunch
+STATUS:CANCELLED
+END:VEVENT
+BEGIN:VEVENT
+UID:complex-5@google.com
+DTSTART;TZID=Africa/Nairobi:20261207T140000
+SUMMARY:Board meeting
+RRULE:FREQ=MONTHLY;BYDAY=1MO
+END:VEVENT
+BEGIN:VEVENT
+UID:winzone-6@outlook.com
+DTSTART;TZID=Eastern Standard Time:20261208T100000
+SUMMARY:Call from Outlook
+END:VEVENT
+END:VCALENDAR
+```
+Expected results (Africa/Nairobi is UTC+3, no DST; assert these):
+- `meeting-1`: `startAt` = 2026-12-01T06:00:00Z; `endAt` = 07:00:00Z; location `Room 4, Westlands`; notes with a real newline; `leadMinutes` 15; `sequence` 1.
+- `birthday-2`: `allDay` true; `recurrence` = `{freq: "yearly", interval: 1}`; `startAt` = local midnight 2026-12-05.
+- `standup-3` master: weekly Mon/Wed/Fri (`byWeekday [1,3,5]`), `until` = 2026-12-31T21:00:00Z, `exdates` contains 2026-12-04T05:30:00Z.
+- `standup-3` override: `instanceId` set, `startAt` = 2026-12-02T08:00:00Z, title `Stand-up (moved)`.
+- `cancelled-4`: in `skipped`, not in `events`.
+- `complex-5`: `recurrence` null, warning `rrule-simplified`, `rruleRaw` kept.
+- `winzone-6`: warning `timezone-assumed`; `startAt` computed in the device zone (pass `deviceTimeZone: "Africa/Nairobi"` in the test).
+
+Add further tests: folded lines (a SUMMARY split across two lines), CRLF vs LF, BOM, escaped characters, DTEND vs DURATION, empty file (returns `{events: [], skipped: []}`), garbage text (no throw), a DST case in a zone that has DST (e.g. `Europe/London` across the last Sunday of March, so the conversion is verified), and more than 5000 events (capped).
+
+---
+
+## 8. Import pipeline: `src/data/importEvents.ts` and zip handling
+
+### 8.1 Reading files (`src/data/readCalendarFiles.ts`)
+- Input: `File[]`. Output: `{ name: string; text: string }[]` for every `.ics` found, plus a list of problems.
+- `.ics` / `text/calendar`: read with `File.text()`. Size cap 10 MB per file.
+- `.zip` (decision D2): use `fflate` (`unzipSync` with a `filter` that skips entries whose `originalSize` exceeds 10 MB or whose name does not end in `.ics`, and stops after 50 entries and 50 MB total uncompressed, to defuse zip bombs). Decode entries with `TextDecoder("utf-8")`. Google's export contains one `.ics` per calendar, named after the calendar (often an email address); show the file name in results.
+- If D2 is declined: reject zips with the message `This is a zip file. Unzip it first, then add the .ics files inside.`
+- Anything else: `Skipped "x.pdf": only .ics and .zip files can be imported.`
+
+### 8.2 Dedupe, create, update (`importEvents`)
+```ts
+export interface ImportPlanItem {
+  event: ParsedEvent;
+  action: "add" | "update" | "unchanged";
+  existingId?: string;
+  fileName: string;
+}
+export async function planImport(events: {event: ParsedEvent; fileName: string}[], opts: { includePast: boolean; now?: number }): Promise<ImportPlanItem[]>;
+export async function applyImport(plan: ImportPlanItem[], selectedIds: Set<number>, opts: { alertTimeAllDay: { hour: number; minute: number }; defaultLeadMinutes: number }): Promise<{ added: number; updated: number; skipped: number; failed: { title: string; reason: string }[] }>;
+```
+
+Rules:
+- **Identity key** = `externalUid` plus `externalInstance` (null for a normal event or a series master). Look up via the `externalUid` index, then filter by instance.
+- **Series with overrides:** group by UID. For each override (`instanceId` set), add its original occurrence time to the master's `exdates` (if not already there) and import the override as its own non-repeating reminder with the same `externalUid` and its `externalInstance`.
+- `action = "unchanged"` when the existing row's `externalSequence` and `externalModified` are >= the file's. `action = "update"` when the file is newer (higher SEQUENCE, or later LAST-MODIFIED when SEQUENCE ties). `update` rewrites title, start, end, location, notes, recurrence and lead time, but **preserves** `status` (a dismissed reminder stays dismissed unless its next occurrence moved into the future), `folderId`, `toneId`, and any `linkedEntity*`.
+- **Past events (D5):** an event is past when it has no recurrence and its `startAt + (endAt ? duration : 0)` is before `now`, or when it has a recurrence whose `until` is before `now`. Excluded unless `includePast`. A repeating series that started in the past but is still active is **not** past: import it with `startAt` advanced to the next future occurrence (use the recurrence engine from section 9).
+- **Computing the alert time:** `startAt` as parsed; `leadMinutes` = parsed lead, else `defaultLeadMinutes` (D6, default 10); for all-day events `triggerAt` = that day at the all-day alert time (D7, default 09:00 local) minus lead 0 (all-day events ignore lead); otherwise `triggerAt = startAt - leadMinutes*60000`. If `triggerAt` is already in the past but the event itself is in the future, set `triggerAt = max(now + 60s, triggerAt)` so it still alerts once soon.
+- **Status:** `pending` for anything with a future alert; imported past events (when included) are `dismissed`.
+- Set `source: "ics"`, `syncStatus: "pending"`, `folderId: null` (unfiled), `createdAt/updatedAt: now`, `id: newId()`.
+- Write everything in **one Dexie transaction per 200 items**, yielding to the event loop between chunks so the UI stays responsive. Report progress via a callback. Dispatch `panga-data-updated` once at the end.
+- A failure on one item must not abort the rest: collect it in `failed`.
+- After import, make sure the scheduler wakes (section 9.3) so a reminder due in a minute is not missed until the next poll.
+
+### 8.3 Security and robustness
+File contents are untrusted. Never render them as HTML (React text only). Cap lengths as in 7.1. Never `eval`, never fetch URLs found in a file (ignore `URL`, `ATTACH`, `CONFERENCE` properties; do not make network requests). Handle a file that is not text (binary) by returning a clear error rather than crashing.
+
+---
+
+## 9. Recurrence engine, notifications and scheduler
+
+### 9.1 Recurrence engine: `src/data/recurrence.ts` (pure, unit-tested)
+```ts
+export function nextOccurrence(rec: ReminderRecurrence, firstStart: number, after: number, opts?: { timeZone?: string }): number | null;
+export function describeRecurrence(rec: ReminderRecurrence): string;   // "Repeats weekly on Mon, Wed"
+export function occurrencesBetween(rec: ReminderRecurrence, firstStart: number, from: number, to: number, cap?: number): number[];
+```
+Rules:
+- **Wall-clock stable:** occurrences keep the same local time of day across DST changes (use the device zone, or `timeZone` if the event had one). Do not add fixed 24-hour blocks.
+- `weekly` with `byWeekday`: every `interval` weeks counted from the week of `firstStart` (weeks start Monday for counting, to match iCalendar's default `WKST=MO`), on each listed weekday at the same time.
+- `monthly` with `byMonthDay` greater than the days in a month (31 in April): **skip that month** (iCalendar behaviour), do not clamp.
+- `yearly` on Feb 29: only leap years.
+- Skip anything in `exdates`. Stop at `until` (inclusive) or after `count` occurrences total (counted from `firstStart`, including skipped-by-exdate ones, as iCalendar does).
+- Return `null` when there is no next occurrence.
+- Safety: never loop more than ~10,000 iterations; return `null` and log once if exceeded.
+
+Tests: daily, every 3 days, weekly single day, weekly MO/WE/FR with interval 2, monthly day 31 across short months, yearly Feb 29, `count` exhaustion, `until` boundary, `exdates`, DST (Europe/London), and "after" far in the future.
+
+### 9.2 Notification setup prompt (UX and logic)
+Module `src/data/notifications.ts` exposes:
+```ts
+export type NotificationState = "unsupported" | "default" | "granted" | "denied";
+export function getNotificationState(): NotificationState;
+export async function requestNotifications(): Promise<NotificationState>;  // must be called from a click handler
+export async function showReminderNotification(r: Reminder, opts?: { missed?: number }): Promise<boolean>;
+```
+UI component `NotificationSetup` with these states and copy:
+- `default` (never asked): strip `Turn on notifications so reminders can alert you.` + button `Turn on`. Clicking calls `requestNotifications()` (browsers only allow the permission dialog from a user gesture; **never** call it on page load).
+- `granted`: no strip. In the tab header, a muted line `Notifications on. Alerts show while Panga is open.` (the honest limit; keep it, short).
+- `denied`: strip `Notifications are blocked for this site.` plus platform hints in a collapsible `How to turn them on`: Android Chrome: `Tap the lock icon in the address bar, then Permissions, then Notifications, then Allow.` Desktop Chrome/Edge: `Click the lock icon next to the address, then set Notifications to Allow.` Safari/iOS: `On iPhone, add Panga to your Home Screen first, then open it from there and turn notifications on.`
+- `unsupported`: strip `This browser can't show notifications. Panga will list reminders when you open it.`
+- Show a one-time `Send test notification` button after granting, which fires a notification titled `Panga` with body `Notifications are working.` and shows a toast if it fails.
+- Also show the setup prompt right after the first import (5.2.2) and when the user creates their first reminder.
+- Store `notificationPromptDismissedAt` in account settings (not per workspace) so dismissing is remembered across workspaces; re-show at most once every 14 days.
+
+**Showing a notification, correctly for mobile:**
+1. Prefer `const reg = await navigator.serviceWorker?.getRegistration(); reg?.showNotification(title, options)`. This is the only form that works on Android Chrome.
+2. Fall back to `new Notification(title, options)` inside `try/catch` for desktop browsers without a service worker.
+3. Options: `body` = time and location (e.g. `Tue 1 Dec, 09:00 · Room 4`), `tag` = `reminder:<id>:<occurrenceStart>` so a duplicate is replaced rather than stacked, `icon`/`badge` from the existing PWA icons (`/icons/icon-192.png`), `data: { reminderId }`, `requireInteraction: false`.
+4. Also play the reminder's tone with the existing `playTone` (browser may block audio without a prior gesture; ignore the failure).
+5. For a reminder that missed occurrences while the app was closed, set the title to `Panga: <message>` and the body to `Missed N times. Next: <time>.` One notification only.
+
+**Service worker click handling.** The PWA currently uses `vite-plugin-pwa` in `generateSW` mode, which cannot hold custom `notificationclick` code. Choose one of (and flag which in your report):
+- `(a)` Keep `generateSW` and add `workbox.importScripts: ["/sw-notifications.js"]` with a small file in `public/` that handles `notificationclick` (focus an existing client or open `/home?tab=Reminders&reminder=<id>`).
+- `(b)` Switch to `injectManifest`. Larger change; only if (a) is not enough.
+Default: `(a)`. The deep link `/home?tab=Reminders&reminder=<id>` already exists in the app's search routing; confirm in `src/data/shortcuts.ts` and `PangaHome.tsx`.
+
+### 9.3 Scheduler rewrite (`src/data/reminders.ts`)
+Replace the fixed 60-second poll with a **timer to the next due reminder** plus safety nets:
+1. Compute the soonest `triggerAt` among `pending` reminders (account store, section 10). `setTimeout` for `min(delay, 60_000)` so it also self-heals, and re-arm after every tick.
+2. Re-run immediately on: `visibilitychange` (becoming visible), `focus`, `online`, after any `panga-data-updated`, after an import, and after a workspace switch.
+3. **Claim atomically** so two tabs never alert twice: inside one Dexie `rw` transaction, re-read the reminder, and only if it is still `pending` and due, update it (advance/fire) and mark it as claimed by this tab; show the notification only for rows this tab claimed. Additionally wrap the tick in `navigator.locks.request("panga-reminder-scheduler", { ifAvailable: true }, ...)` when `navigator.locks` exists.
+4. **Catch-up:** on start, a reminder whose `triggerAt` is more than 2 minutes in the past is "missed": for a repeating one, count the skipped occurrences in `missedCount`, advance to the next future occurrence, and surface it in the missed list (5.5) instead of firing many notifications. A one-time reminder that is overdue fires once (so the user is alerted) and shows in the missed list.
+5. Never throw out of the tick; log with a prefix `[reminders]`.
+6. Export `startReminderScheduler()` and `stopReminderScheduler()` with unchanged names and idempotent behaviour so existing call sites and tests keep working. Call the start from `AppShell` (not only from the Reminders tab) so reminders fire on every page.
+
+### 9.4 Snooze, skip, end repeat (functions in `reminders.ts`)
+`snoozeReminder(id, untilMs)`, `skipOccurrence(id)`, `endRepeat(id)`, `dismissReminder(id)` (this occurrence only for repeating ones). Each writes in a transaction and dispatches `panga-data-updated`.
+
+### 9.5 Limit to state plainly in the UI and docs
+Panga is serverless, so a notification can only be shown by code that is running. If the app is fully closed (no tab, no installed PWA process), nothing runs. This is why the setup text says "Alerts show while Panga is open" and why the missed list exists. Do **not** rely on:
+- Notification Triggers (`TimestampTrigger`): removed from Chrome.
+- Periodic Background Sync: only for installed PWAs with enough engagement, minimum interval hours, not reliable for time-critical alerts. It may be added later as a best-effort extra (`(suggested, needs user approval)`).
+
+**Future option (document only, do not build without approval):** Web Push needs a server to send at the right time (e.g. a Vercel function plus a store of upcoming alerts and each device's push subscription). It breaks the "only three ways to persist data" rule and needs the owner's decision.
+
+---
+
+## 10. Cross-workspace reminders (decision D4, option A)
+
+Reminders become **account-level**: one shared store for every workspace of the signed-in account (or guest id). Workspace databases keep everything else.
+
+### 10.1 New module `src/data/accountDb.ts`
+- A second Dexie class `AccountDB`, database name `panga-account-<userId>` (use `getSessionUserId() ?? "guest"` exactly as `workspaceState.ts` does; read the id at construction time).
+- Tables: `reminders` and `reminderFolders` (schemas as in section 6.2).
+- Export `accountDb` (a `let`, like `db`), and `switchAccountDb()` that closes and recreates it; call it from `switchUserAccount()` in `db.ts` (session changes) but **not** on workspace changes (the whole point).
+- Optional field `workspaceId?: string` on `Reminder` records **where the reminder was created**, for display only (`Created in Research Hub`). Never filter by it.
+
+### 10.2 Re-point the data layer
+Every function in `reminders.ts` and `src/data/reminderFolders.ts` (if present) reads/writes `accountDb` instead of `db`. Use the grep output from section 0.3 to find every other reader (global search, shortcuts, the AI agent tools, snapshot code, `hasLocalData`, `clearAllLocalData`, `mergeDbState`, `exportDbState`, `importDbState`) and update each. List them all in your report. Do not leave any code path that still reads `db.reminders`.
+
+### 10.3 One-time migration of existing reminders
+On first open of the account DB (guard with a flag `remindersMigrated_v1` stored in **account settings**):
+1. For every workspace of the current account (`listWorkspaces()`), open that workspace's Dexie database **by name** with a temporary Dexie instance (do not switch the global `db`), read `reminders` and `reminderFolders`.
+2. Merge into `accountDb` with `bulkPut` keyed by `id` (ids are globally unique, so no collisions; if a duplicate id appears with different content keep the one with the later `updatedAt`).
+3. Stamp each migrated reminder `workspaceId` with the workspace it came from.
+4. **Do not delete** or modify the old rows or tables (repo rule). Set a per-workspace flag `remindersMovedToAccount = true` in that workspace's `settings` table so the old data is known to be stale.
+5. If a workspace is created later, it has no reminders table content to migrate; nothing to do.
+6. Wrap in try/catch; on failure leave the flag unset so it retries next launch, and show a toast `Couldn't move reminders. Your existing reminders are safe.`
+
+### 10.4 Snapshot / JSON backup (`src/sync/snapshot.ts`)
+- Export: add top-level `accountData: { reminders: Reminder[]; reminderFolders: ReminderFolder[] }` and **exclude** `reminders`/`reminderFolders` from each workspace's data (they are no longer per workspace). Bump nothing in `metadata.version` unless the existing validation requires it; check `validateSnapshot`.
+- Import: if `accountData` exists, restore it into `accountDb` (replace). **Backward compatibility is required:** an old snapshot has `reminders`/`reminderFolders` inside workspace `data` and no `accountData`. In that case merge those rows into `accountDb` (by id), stamping `workspaceId`.
+- Update `exportDbState`, `importDbState`, `mergeDbState`, `hasLocalData`, `clearAllLocalData` table lists accordingly, and the existing tests (`snapshotIdentity.test.ts`, `workspaces.test.ts`, others that mention reminders).
+
+### 10.5 Option B (only if the owner rejects A)
+Keep reminders per workspace; the scheduler opens every workspace DB by name each tick and processes each. The Reminders tab keeps showing only the active workspace's reminders, so "reminders cut across workspaces" is only true for firing, not for viewing. Mention this trade-off in your report if B is chosen.
+
+---
+
+## 11. Other features worth shipping with this (all included above; summarised for the PR description)
+Repeat; snooze; advance notice; all-day events; end time; location and notes; duplicate-safe re-import with update detection; missed-while-closed list; notification status and test button; atomic multi-tab firing; Android-correct notifications; deep link from a notification to the reminder.
+
+Explicitly **not** in scope (offer later, each needing approval): AI "paste an invite email" extraction (would use the user's own BYOK key via the existing `chatCompletion`, with a strict JSON schema, never auto-saved without the same preview step); two-way Google sync; subscribing to a calendar URL; Web Push; calendar month view of reminders.
+
+---
+
+## 12. Work plan: stages, issues, branches, acceptance criteria
+
+Order matters: the storage move comes first so new fields are never migrated twice. Do one stage per pull request, in this order, and stop after each.
+
+### Stage 1: Account-level reminders store (cross-workspace)
+- Issue: `Make reminders account-level so they work across workspaces` | Branch: `feat/<n>-account-reminders`
+- Do: section 10 in full (accountDb, re-pointed data layer, migration, snapshot changes, tests).
+- Acceptance: (1) create a reminder in workspace A, switch to B, it is listed in B; (2) the scheduler fires a due reminder while B is open; (3) existing reminders in several workspaces all appear after the first launch, nothing deleted; (4) old JSON snapshots still import and their reminders appear; (5) new snapshots round-trip; (6) `tsc`, `oxlint`, `vitest`, `build` pass.
+- Tests: migration from two workspace DBs with overlapping ids; snapshot old-format import; snapshot round trip; switching workspace does not change the reminder list; `clearAllLocalData`.
+
+### Stage 2: New fields and recurrence
+- Issue: `Add repeat, snooze, advance notice and event details to reminders` | Branch: `feat/<n>-reminder-recurrence`
+- Do: section 6 (types, account DB v2 index), section 9.1 (engine), 9.4 (snooze/skip/end), form and row UI from 5.3 and 5.4.
+- Acceptance: create a weekly Mon/Wed reminder, fire it (use a test clock), see it advance; snooze 10 minutes; skip; end repeat; edit preserves fields; plain reminders created before this stage behave exactly as before.
+- Tests: all engine tests in 9.1; form validation; row actions; component test for the extended form in the repo's `createRoot` + `act` style.
+
+### Stage 3: Notifications and scheduler
+- Issue: `Reliable reminder notifications with a setup prompt` | Branch: `feat/<n>-reminder-notifications`
+- Do: section 9.2, 9.3, 5.5; the service-worker click handler (9.2 option a); move scheduler start into `AppShell`.
+- Acceptance: permission prompt only after a click; test notification works; on Android Chrome the notification appears (document how to verify on the phone, since automated tests cannot); two tabs open produce one alert; reminders due while closed show in the missed list once; clicking a notification opens the reminder.
+- Tests: scheduler with fake timers (fires once, claims atomically, catch-up counts missed occurrences, re-arms); `getNotificationState` with a stubbed `Notification`; `showReminderNotification` uses the service worker path when available and falls back otherwise.
+
+### Stage 4: `.ics` parser
+- Issue: `Parse iCalendar (.ics) files` | Branch: `feat/<n>-ics-parser`
+- Do: section 7 only (pure module + tests, including the fixture and the extra cases). No UI.
+- Acceptance: every expectation in 7.3 holds; garbage input never throws.
+
+### Stage 5: Import flow
+- Issue: `Import events from a Google Calendar export` | Branch: `feat/<n>-ics-import`
+- Do: section 8 (file reading with `fflate` if D2 approved, `planImport`/`applyImport`), 5.1, 5.2 (card, preview, done), 9.2's post-import prompt, docs.
+- Acceptance: drop Google's real export zip; preview shows counts; re-importing the same file shows everything as `Already in Panga` and adds nothing; editing an event in a newer export shows `Changed` and updates in place; past events excluded unless ticked; a series with a moved occurrence appears once with the right exception; a 2,000-event file imports without freezing the UI; unreadable files are listed with reasons; nothing is written until `Add N events`.
+- Tests: plan/apply with fake-indexeddb (add, update, unchanged, past filter, series override, default lead, all-day alert time, failure isolation); zip handling (valid zip, zip with a non-ics file, oversized entry skipped); preview component test (counts, filter toggles, confirm).
+
+### Stage 6: Docs and cleanup
+- Update `CHANGES.md` (Reminders row), `docs/agent/PROGRESS.md`, `DECISIONS.md` (record D1-D7 as chosen), `USER_RULES.md` (only rules the owner stated), `NEXT.md` (leftovers: Web Push, AI invite extraction, Periodic Background Sync).
+
+---
+
+## 13. Edge-case checklist (verify each in tests or in the stage report)
+- Event starts at 00:00 local or ends at midnight; all-day events spanning several days (store as one reminder starting on the first day).
+- The device time zone differs from the event's `TZID`; the owner is in Africa/Nairobi (UTC+3, no DST) but the code must be correct for DST zones.
+- A series whose `UNTIL` is date-only vs date-time; `UNTIL` in UTC while the event uses `TZID`.
+- `EXDATE` on a date that is not an occurrence (ignore silently).
+- Duplicate UIDs across different calendar files in the same zip (Google sometimes repeats shared events): treat the same UID+instance as one; if details differ, the higher SEQUENCE wins.
+- Importing the same file twice quickly (double click): disable the button while `importing`; the unique key logic must make a second run a no-op even if the first one is still finishing.
+- Empty title, very long description, emoji in titles (keep as text; do not strip).
+- Browser tab closed mid-import: chunked transactions mean a partial import is possible; the next import completes it safely thanks to the identity key.
+- Notification permission revoked after being granted: the state check runs on every tab focus.
+- Locale: format dates with `Intl.DateTimeFormat(undefined, ...)`; do not hard-code `en-US`.
+- Accessibility: file input has a visible label; preview checkboxes have accessible names including the event title; `aria-live="polite"` on progress and result text; focus moves to the summary on `done`; the modal closes on Escape and returns focus to the trigger.
+- Phone layout (Galaxy A07, ~360px wide): no horizontal scroll, 14px outer margin (`--gutter`), long titles wrap (`overflow-wrap: anywhere`), tap targets at least 44px.
+
+---
+
+## 14. Don'ts
+- No Google API, client ID, OAuth, `gapi`, GIS script, or network call to Google. No CSP changes for Google.
+- No mock or sample reminders, no seeded data.
+- No new dependency except `fflate`, and only if D2 is approved. State its exact version and licence in the PR.
+- No deleting of legacy tables or rows. No hard-coded colours. No emojis in the UI.
+- Do not change unrelated files, rename existing exports, or reformat files you do not need to touch.
+- Do not weaken or delete existing tests to make them pass; update them only where behaviour intentionally changed, and say which and why.
+
+---
+
+## 15. What to report at the end of every stage
+1. Files added/changed (paths).
+2. Commands for the owner to run and the expected result.
+3. Manual test steps (including the Android Chrome check in Stage 3).
+4. Which `DECISION PENDING` defaults you relied on.
+5. Anything you could not verify because you could not run code.
+6. `Open questions` (max three) and any `TODO(user)` you left.
+7. Suggested issue title, branch name, commit messages (small, one logical unit each) and PR text containing `Closes #N`.

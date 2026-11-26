@@ -1,5 +1,13 @@
 # NEXT.md — next phase
 
+## Reminders upgrade & Google Calendar (.ics) import plan (6 sequential stages)
+- [x] Stage 1: Account-level cross-workspace reminders store (`src/data/accountDb.ts`, data layer, migration, snapshots, tests)
+- [ ] Stage 2: Reminder fields & recurrence engine (`src/data/recurrence.ts`, snooze/skip/end repeat, form & row UI) — waiting for owner "go" + D1–D7 confirmation
+- [ ] Stage 3: Notifications & scheduler rewrite (`src/data/notifications.ts`, `NotificationSetup`, `sw-notifications.js`, `AppShell` lifecycle)
+- [ ] Stage 4: Pure `.ics` parser (`src/data/ics.ts` + fixture tests)
+- [ ] Stage 5: `.ics` / `.zip` import flow (`readCalendarFiles.ts`, `importEvents.ts`, preview UI; confirm D2 `fflate` dependency before starting)
+- [ ] Stage 6: Final docs & cleanup (`CHANGES.md`, agent docs)
+
 ## Latest completed work (2026-11-23)
 - [x] Force-pulled `origin/main` (`7b07fae`) from `Musaamanipeace/panga-app`.
 - [x] Removed AI model selector from `Settings.tsx` and added automatic model resolution in `src/ai/providers.ts` / `src/ai/chat.ts` so users only need to enter API keys.

@@ -134,25 +134,40 @@ export function summarizeSnapshot(snap: Snapshot): SnapshotSummary {
   let clips = 0;
   let thoughts = 0;
 
+  const scanTimestamps = (rows: any[]) => {
+    for (const row of rows) {
+      if (!row || typeof row !== "object") continue;
+      const ts = Math.max(
+        typeof row.updatedAt === "number" ? row.updatedAt : 0,
+        typeof row.createdAt === "number" ? row.createdAt : 0
+      );
+      if (ts > latestRecordAt) latestRecordAt = ts;
+    }
+  };
+
   for (const data of datasets) {
     tasks += Array.isArray(data.tasks) ? data.tasks.length : 0;
     taskLists += Array.isArray(data.taskLists) ? data.taskLists.length : 0;
     notes += Array.isArray(data.notes) ? data.notes.length : 0;
     links += Array.isArray(data.links) ? data.links.length : 0;
-    reminders += Array.isArray(data.reminders) ? data.reminders.length : 0;
+    if (!snap.accountData) {
+      reminders += Array.isArray(data.reminders) ? data.reminders.length : 0;
+    }
     clips += Array.isArray(data.clips) ? data.clips.length : 0;
     thoughts += Array.isArray(data.thoughts) ? data.thoughts.length : 0;
 
     for (const rows of Object.values(data)) {
-      if (!Array.isArray(rows)) continue;
-      for (const row of rows) {
-        if (!row || typeof row !== "object") continue;
-        const ts = Math.max(
-          typeof row.updatedAt === "number" ? row.updatedAt : 0,
-          typeof row.createdAt === "number" ? row.createdAt : 0
-        );
-        if (ts > latestRecordAt) latestRecordAt = ts;
-      }
+      if (Array.isArray(rows)) scanTimestamps(rows);
+    }
+  }
+
+  if (snap.accountData) {
+    if (Array.isArray(snap.accountData.reminders)) {
+      reminders = snap.accountData.reminders.length;
+      scanTimestamps(snap.accountData.reminders);
+    }
+    if (Array.isArray(snap.accountData.reminderFolders)) {
+      scanTimestamps(snap.accountData.reminderFolders);
     }
   }
 
@@ -187,6 +202,12 @@ export function computeSnapshotDigest(snap: Snapshot): string {
   const stable = {
     version: snap.metadata?.version ?? SNAPSHOT_VERSION,
     username: snap.identity?.username ?? "",
+    accountData: snap.accountData
+      ? sortTablesForDigest({
+          reminders: snap.accountData.reminders || [],
+          reminderFolders: snap.accountData.reminderFolders || [],
+        })
+      : null,
     data: sortTablesForDigest(snap.data || {}),
     workspaces: snap.workspaces
       ? {
@@ -410,6 +431,49 @@ export function mergeSnapshots(localSnap: Snapshot, remoteSnap: Snapshot): Snaps
     mergedItems[0]?.data ??
     mergeTableMaps(localSnap.data || {}, remoteSnap.data || {}, remoteNewer);
 
+  const extractAccountMap = (snap: Snapshot): Record<string, any[]> => {
+    if (snap.accountData) {
+      return {
+        reminders: Array.isArray(snap.accountData.reminders) ? snap.accountData.reminders : [],
+        reminderFolders: Array.isArray(snap.accountData.reminderFolders) ? snap.accountData.reminderFolders : [],
+      };
+    }
+    const sources: Array<{ id: string; data: Record<string, any[]> }> =
+      snap.workspaces?.items && snap.workspaces.items.length > 0
+        ? snap.workspaces.items.map((w) => ({ id: w.id, data: w.data || {} }))
+        : [{ id: DEFAULT_WORKSPACE_ID, data: snap.data || {} }];
+    const reminders: any[] = [];
+    const reminderFolders: any[] = [];
+    for (const s of sources) {
+      if (Array.isArray(s.data.reminders)) {
+        for (const r of s.data.reminders) {
+          reminders.push(r && !r.workspaceId ? { ...r, workspaceId: s.id } : r);
+        }
+      }
+      if (Array.isArray(s.data.reminderFolders)) {
+        reminderFolders.push(...s.data.reminderFolders);
+      }
+    }
+    return { reminders, reminderFolders };
+  };
+
+  const mergedAccountMap = mergeTableMaps(
+    extractAccountMap(localSnap),
+    extractAccountMap(remoteSnap),
+    remoteNewer
+  );
+
+  const stripWorkspaceReminders = (data: Record<string, any[]>): Record<string, any[]> => {
+    if (!("reminders" in data) && !("reminderFolders" in data)) return data;
+    const { reminders: _r, reminderFolders: _rf, ...rest } = data;
+    return rest;
+  };
+
+  const cleanedItems = mergedItems.map((item) => ({
+    ...item,
+    data: stripWorkspaceReminders(item.data),
+  }));
+
   const localIdentity = localSnap.identity;
   const remoteIdentity = remoteSnap.identity;
   const identity = localIdentity?.loggedIn
@@ -426,8 +490,12 @@ export function mergeSnapshots(localSnap: Snapshot, remoteSnap: Snapshot): Snaps
       dbVersion: Math.max(localSnap.metadata?.dbVersion ?? 1, remoteSnap.metadata?.dbVersion ?? 1),
     },
     ...(identity ? { identity } : {}),
-    data: activeData,
-    ...(mergedItems.length > 1 ? { workspaces: { activeId, items: mergedItems } } : {}),
+    accountData: {
+      reminders: mergedAccountMap.reminders || [],
+      reminderFolders: mergedAccountMap.reminderFolders || [],
+    },
+    data: stripWorkspaceReminders(activeData),
+    ...(cleanedItems.length > 1 ? { workspaces: { activeId, items: cleanedItems } } : {}),
   };
 }
 

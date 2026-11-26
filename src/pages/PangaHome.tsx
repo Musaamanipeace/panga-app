@@ -28,6 +28,18 @@ export default function PangaHome() {
   const noteId = params.get("note") ?? null;
   const reminderId = params.get("reminder") ?? null;
   const [voiceNotice, setVoiceNotice] = useState<VoiceStatus | null>(null);
+  const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   // Launched from the "Quick capture" app shortcut: put the cursor in the capture box.
   useEffect(() => {
@@ -59,7 +71,15 @@ export default function PangaHome() {
   return (
     <div className="page pg-home">
       <header className="pg-head">
-        <h1>Panga</h1>
+        <div
+          className="pg-connection-status"
+          role="status"
+          aria-live="polite"
+          data-online={online ? "true" : "false"}
+        >
+          <span className="pg-status-dot" aria-hidden="true" />
+          <span>{online ? "Online" : "Offline"}</span>
+        </div>
         <div className="pg-actions">
           <button
             type="button"

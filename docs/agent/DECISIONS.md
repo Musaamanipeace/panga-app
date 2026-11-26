@@ -64,3 +64,9 @@ Decisions made + why (short): what, why, alternatives rejected.
 - Uses client-side Google Identity Services (token flow, `https://www.googleapis.com/auth/drive.file`; no Firebase, no backend) with strictly in-memory access token caching and the Drive REST API. The backup is `panga-backup.json` inside a `panga` folder that the app creates in the user's Drive. Needs `VITE_GOOGLE_CLIENT_ID`.
 - Never silently mutates Drive or local DB: read-only preflight compares deterministic snapshot digests against the last synced baseline (`no_remote`, `in_sync`, `local_ahead`, `remote_ahead`, `conflict`), then presents `DriveSyncReviewModal` with record-level `Merge both & sync`, `Overwrite Drive with local`, `Restore Drive to device`, or `Cancel`.
 - API key boxes in `Settings.tsx` start `readOnly` until user focus with `autoComplete="new-password"` so browser password managers cannot preload/auto-save dots across providers.
+
+## 2026-11-26 — Account-level reminders store (Stage 1 of Reminders & .ics import plan)
+- Reminders and `reminderFolders` live in a dedicated account-level Dexie DB (`panga-account-<userId|guest>`) shared across all workspaces; legacy per-workspace `reminders` tables remain intact (never deleted) with `remindersMovedToAccount = true` marked on migrated workspace `settings`.
+- Used stated brief defaults (`DECISION PENDING` owner confirmation): `D1` imported events go to Reminders; `D3` app-open notifications; `D4` option A account-level reminders; `D2` (`fflate` zip import), `D5` (skip past events), `D6` (10 min lead), and `D7` (09:00 local all-day) pending before Stages 3 & 5.
+- `.ics` calendar import remains strictly file-based with zero Google Calendar API scripts or OAuth, while preserving the existing Google Drive JSON backup feature.
+

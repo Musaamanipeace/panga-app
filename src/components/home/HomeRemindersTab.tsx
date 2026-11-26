@@ -20,6 +20,7 @@ import {
   updateReminderFolder,
   type ReminderFolder,
 } from "../../data/reminderFolders";
+import { listWorkspaces } from "../../data/workspaces";
 import { ErrorNote, Loading, StatusLabel, useAsync, Editable, confirmDelete } from "../../components/ui";
 import FolderTree from "./FolderTree";
 
@@ -170,6 +171,12 @@ export default function HomeRemindersTab({
   const folders: ReminderFolder[] = data?.folders ?? [];
   const allReminders: Reminder[] = data?.reminders ?? [];
 
+  const workspaces = listWorkspaces();
+  const workspaceNames = {
+    count: workspaces.length,
+    map: new Map(workspaces.map((w) => [w.id, w.name])),
+  };
+
   const currentFolder = useMemo(() => folders.find((f) => f.id === selId) ?? null, [folders, selId]);
   const currentReminder = useMemo(() => allReminders.find((r) => r.id === selId) ?? null, [allReminders, selId]);
 
@@ -318,6 +325,11 @@ export default function HomeRemindersTab({
               }}
               label="Edit reminder text"
             />
+            {workspaceNames.count > 1 && currentReminder.workspaceId && workspaceNames.map.get(currentReminder.workspaceId) && (
+              <div className="item-meta" style={{ marginTop: 4 }}>
+                <span className="chip-small">Created in {workspaceNames.map.get(currentReminder.workspaceId)}</span>
+              </div>
+            )}
             <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input
                 type="datetime-local"
@@ -398,6 +410,9 @@ export default function HomeRemindersTab({
                             <span className="item-meta">
                               <StatusLabel status={new Date(reminder.triggerAt).toLocaleString()} />
                               {reminder.toneId && <span className="chip-small">{reminder.toneId}</span>}
+                              {workspaceNames.count > 1 && reminder.workspaceId && workspaceNames.map.get(reminder.workspaceId) && (
+                                <span className="chip-small">Created in {workspaceNames.map.get(reminder.workspaceId)}</span>
+                              )}
                               {id === "overdue" && <StatusLabel status="overdue" className="chip-overdue" />}
                             </span>
                           </span>

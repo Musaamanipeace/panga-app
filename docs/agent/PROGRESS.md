@@ -1,5 +1,21 @@
 # PROGRESS.md — what has been done, by phase, newest first
 
+## 2026-11-26 — Reminders upgrade Stage 1: account-level cross-workspace store
+- **Account DB & one-time migration (`src/data/accountDb.ts`)**: Added `AccountDB` (`panga-account-<userId|guest>`) holding `reminders` and `reminderFolders`, `switchAccountDb()` tied to account session changes only, and `migrateWorkspaceRemindersToAccount()` guarded by `remindersMigrated_v1` in account settings (reads every workspace DB safely, merges by `id` keeping newer `updatedAt`, stamps `workspaceId`, marks `remindersMovedToAccount = true` without deleting legacy rows).
+- **Decoupled workspace vs session switching & data layer (`db.ts`, `workspaces.ts`, `reminders.ts`, `reminderFolders.ts`, `agent.ts`, `HomeRemindersTab.tsx`, `WorkspaceSwitcher.tsx`)**: Added `switchWorkspaceDb()` for workspace switches so `accountDb` stays untouched, added optional display-only `Reminder.workspaceId`, re-pointed `reminders.ts`, `reminderFolders.ts`, `agent.ts`, `hasLocalData`, `mergeDbState`, and `clearAllLocalData` to `accountDb`, and rendered optional `Created in <workspace>` metadata in `HomeRemindersTab`.
+- **Snapshots & Google Drive sync (`snapshot.ts`, `googleDriveSync.ts`)**: Added top-level `accountData` (`{ reminders, reminderFolders }`) to snapshot exports (omitting them from workspace `data`), backward-compatible legacy snapshot merge into `accountDb`, and Drive summary/digest/merge support for `accountData`.
+- **Tests (`src/data/__tests__/accountReminders.test.ts`, `src/ai/__tests__/agent.test.ts`)**: Added 7 tests covering cross-workspace visibility & scheduler firing, multi-workspace legacy migration, snapshot round-trip, legacy snapshot import, `clearAllLocalData`, and Drive sync digest/merge.
+
+## 2026-11-26 — AI Assistant bottom Close, Menu Shortcuts, green Panga wordmark & Online/Offline status
+- **Assistant panel (`AssistantPanel.tsx`, `panga-ui.css`)**: Moved the `Close` button out of the top `.drawer-header` into a bottom `.assistant-footer` alongside the bottom-right `.assistant-fab` open button.
+- **Header & Menu (`AppShell.tsx`)**: Moved the `Shortcuts` button from the top header into the `Menu` dropdown, keeping `Keyboard shortcuts` accessible from Menu and `?`.
+- **Wordmark & home status (`panga-ui.css`, `index.css`, `PangaHome.tsx`)**: Updated `.app-logo` ("Panga") from purple to green (`#15803d` in light theme, `#4ade80` in dark theme) and replaced the duplicate `<h1>Panga</h1>` below the workspace selector in `.pg-head` with a live `Online` / `Offline` status indicator.
+- **Tests**: Updated `AppShell.test.tsx`, `layoutRegression.test.tsx`, and `PangaHome.test.tsx`.
+
+## 2026-11-26 — Pull latest upstream changes (`de817eb`)
+- **Upstream sync**: Reconnected `origin` (`https://github.com/Musaamanipeace/panga-app.git`) and synced `main` to `origin/main` at `de817eb` (`input option for workspace`), pulling direct GIS Google Sign-In (`VITE_GOOGLE_CLIENT_ID`, no Firebase dependency), `panga/` Drive backup folder, `/privacy.html` policy and UI links, and type-to-filter/create in `WorkspaceSwitcher`.
+- **Env template & checks**: Added `VITE_GOOGLE_CLIENT_ID=` placeholder to `.env.example`; `npx tsc -b`, `npx vitest run` (24 files / 129 tests), build, and lint verified.
+
 ## 2026-11-25 — Google Drive OAuth sync, conflict guardrails & API key eye peek
 - **Google Drive auth & sync (`googleAuth.ts`, `googleDriveSync.ts`, `useGoogleDriveSync.ts`)**: Added client-side Firebase Google Auth (`https://www.googleapis.com/auth/drive.file`, in-memory access token only), read-only Drive preflight (`inspectDriveSync`), digest-based classification (`no_remote`, `in_sync`, `local_ahead`, `remote_ahead`, `conflict`), record-level snapshot merge (`mergeSnapshots`), and explicit confirmation/conflict modal (`DriveSyncReviewModal.tsx`) across Landing (`Landing.tsx`), Settings (`AccountPanel.tsx`), and Menu (`AppShell.tsx`). Updated CSP in `server.ts` & `vercel.json`.
 - **Settings AI key inputs (`Settings.tsx`)**: Prevented browser password autofill from pre-populating all 6 inputs (`autoComplete="new-password"`, `readOnly` until focus, ignore hints) and replaced `Show`/`Hide` text with a 1-click Eye icon that auto-hides after 4 seconds without requiring a second click; masked dots and `Saved` status only show for human-entered/saved keys.

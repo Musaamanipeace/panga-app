@@ -2,7 +2,7 @@
 // Workspace switching. Each workspace is its own IndexedDB under the same account;
 // BYOK credentials live in the account-level store, so they are untouched by switches.
 
-import { db, switchUserAccount } from "./db";
+import { db, switchWorkspaceDb } from "./db";
 import {
   getAllAccountSettings,
   isAccountSettingKey,
@@ -51,7 +51,7 @@ export async function switchWorkspace(id: string): Promise<void> {
   if (!listWorkspaces().some((w) => w.id === id)) return;
   await captureAccountSettings();
   setActiveWorkspaceId(id);
-  await switchUserAccount();
+  await switchWorkspaceDb();
 }
 
 export async function createWorkspace(name: string): Promise<WorkspaceInfo> {

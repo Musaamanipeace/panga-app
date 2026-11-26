@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../data/db";
+import { accountDb } from "../../data/accountDb";
 import * as chatMod from "../chat";
 import {
   buildAgentSystemInstruction,
@@ -29,8 +30,8 @@ afterEach(async () => {
     db.notes.clear(),
     db.linkFolders.clear(),
     db.links.clear(),
-    db.reminderFolders.clear(),
-    db.reminders.clear(),
+    accountDb.reminderFolders.clear(),
+    accountDb.reminders.clear(),
     db.resources.clear(),
     db.trainOfThought.clear(),
   ]);
