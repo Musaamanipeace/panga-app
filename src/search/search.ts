@@ -10,7 +10,7 @@ import { listTaskLists } from "../data/taskLists";
 import { listAllNotes } from "../data/notes";
 import { listAllLinks } from "../data/links";
 import { listAllTasks } from "../data/tasks";
-import { listReminders } from "../data/reminders";
+import { formatReminderSummaryWhen, listReminders } from "../data/reminders";
 import { listClips } from "../data/clips";
 
 export type SearchResultType = "folder" | "file" | "taskList";
@@ -161,7 +161,7 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
         type: "file",
         key: `reminder-${r.id}`,
         title: r.message,
-        subtitle: `Reminder (${new Date(r.triggerAt).toLocaleString()})`,
+        subtitle: `Reminder (${formatReminderSummaryWhen(r)})`,
         route: r.folderId ? `/home?tab=Reminders&folder=${r.folderId}` : "/home?tab=Reminders",
       });
     }

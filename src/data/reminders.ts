@@ -1,11 +1,14 @@
 // src/data/reminders.ts
 import { accountDb, ensureAccountDbReady } from "./accountDb";
-import type { Reminder } from "./db";
+import { recordImportedDone, removeImportedDone } from "./accountSettings";
+import type { Reminder, ReminderRecurrence } from "./db";
+import { nextAfterComplete } from "./recurrence";
 import { newId, now } from "./utils";
 import { getActiveWorkspaceId } from "./workspaceState";
 
-export type { Reminder };
-export type ReminderBucket = "overdue" | "due" | "upcoming";
+export type { Reminder, ReminderRecurrence };
+export type ReminderDayBucket = "today" | "overdue" | "upcoming";
+export type ReminderView = ReminderDayBucket | "all";
 
 export const TONE_PRESETS: { id: string; label: string }[] = [
   { id: "default", label: "Default" },
@@ -13,6 +16,51 @@ export const TONE_PRESETS: { id: string; label: string }[] = [
   { id: "soft", label: "Soft" },
   { id: "urgent", label: "Urgent" },
 ];
+
+function emitDataUpdated(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("panga-data-updated"));
+  }
+}
+
+export function isReminderOpen(r: Pick<Reminder, "status">): boolean {
+  // Decision D11: legacy "dismissed" rows are hidden everywhere; "pending" & "fired" stay open.
+  return r.status !== "dismissed";
+}
+
+export function isReminderTimed(r: Pick<Reminder, "timed">): boolean {
+  // Legacy rows have timed === undefined and MUST be treated as timed.
+  return r.timed !== false;
+}
+
+export function startOfLocalDay(epochMs: number): number {
+  const d = new Date(epochMs);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+export function viewOf(
+  reminder: Pick<Reminder, "triggerAt">,
+  nowMs = Date.now()
+): ReminderDayBucket {
+  const dueDay = startOfLocalDay(reminder.triggerAt);
+  const today = startOfLocalDay(nowMs);
+  if (dueDay < today) return "overdue";
+  if (dueDay === today) return "today";
+  return "upcoming";
+}
+
+export function formatReminderSummaryWhen(
+  reminder: Pick<Reminder, "triggerAt" | "timed">
+): string {
+  if (!isReminderTimed(reminder)) {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(reminder.triggerAt);
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(reminder.triggerAt);
+}
 
 let audioCtx: AudioContext | null = null;
 
@@ -29,38 +77,38 @@ export function playTone(toneId: string | null): void {
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
-    const now = ctx.currentTime;
+    const nowTime = ctx.currentTime;
     const duration = 0.5;
     switch (toneId) {
       case "chime":
         osc.type = "sine";
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.2);
-        gain.gain.setValueAtTime(0.15, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        osc.frequency.setValueAtTime(880, nowTime);
+        osc.frequency.exponentialRampToValueAtTime(1320, nowTime + 0.2);
+        gain.gain.setValueAtTime(0.15, nowTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, nowTime + duration);
         break;
       case "soft":
         osc.type = "triangle";
-        osc.frequency.setValueAtTime(520, now);
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        osc.frequency.setValueAtTime(520, nowTime);
+        gain.gain.setValueAtTime(0.12, nowTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, nowTime + duration);
         break;
       case "urgent":
         osc.type = "square";
-        osc.frequency.setValueAtTime(960, now);
-        osc.frequency.setValueAtTime(960, now + 0.12);
-        osc.frequency.setValueAtTime(760, now + 0.24);
-        gain.gain.setValueAtTime(0.25, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        osc.frequency.setValueAtTime(960, nowTime);
+        osc.frequency.setValueAtTime(960, nowTime + 0.12);
+        osc.frequency.setValueAtTime(760, nowTime + 0.24);
+        gain.gain.setValueAtTime(0.25, nowTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, nowTime + duration);
         break;
       default:
         osc.type = "sine";
-        osc.frequency.setValueAtTime(700, now);
-        gain.gain.setValueAtTime(0.15, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        osc.frequency.setValueAtTime(700, nowTime);
+        gain.gain.setValueAtTime(0.15, nowTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, nowTime + duration);
     }
-    osc.start(now);
-    osc.stop(now + duration);
+    osc.start(nowTime);
+    osc.stop(nowTime + duration);
   } catch {
     // Audio not available (blocked/unsupported) — silently skip.
   }
@@ -79,7 +127,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 export function showReminderNotification(reminder: Reminder): void {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
   new Notification(`Panga: ${reminder.message}`, {
-    body: new Date(reminder.triggerAt).toLocaleString(),
+    body: formatReminderSummaryWhen(reminder),
     tag: `reminder-${reminder.id}`,
   });
   playTone(reminder.toneId ?? null);
@@ -95,7 +143,11 @@ export function startReminderScheduler(): void {
   const tick = async () => {
     try {
       await ensureAccountDbReady();
-      const due = await accountDb.reminders.where("status").equals("pending").and((r) => r.triggerAt <= Date.now()).toArray();
+      const due = await accountDb.reminders
+        .where("status")
+        .equals("pending")
+        .and((r) => isReminderTimed(r) && r.triggerAt <= Date.now())
+        .toArray();
       for (const r of due) {
         showReminderNotification(r);
         await updateReminder(r.id, { status: "fired" });
@@ -118,12 +170,87 @@ export function stopReminderScheduler(): void {
 
 export async function listReminders(): Promise<Reminder[]> {
   await ensureAccountDbReady();
-  return accountDb.reminders.toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+  const rows = await accountDb.reminders.toArray();
+  return rows.filter(isReminderOpen).sort((a, b) => a.triggerAt - b.triggerAt);
 }
 
 export async function listPendingReminders(): Promise<Reminder[]> {
   await ensureAccountDbReady();
-  return accountDb.reminders.where("status").equals("pending").toArray().then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+  return accountDb.reminders
+    .where("status")
+    .equals("pending")
+    .toArray()
+    .then((rows) => rows.sort((a, b) => a.triggerAt - b.triggerAt));
+}
+
+export function sortRemindersForView(
+  items: Reminder[],
+  bucket: ReminderDayBucket
+): Reminder[] {
+  const copy = [...items];
+  switch (bucket) {
+    case "today":
+      return copy.sort((a, b) => {
+        const at = isReminderTimed(a) ? 0 : 1;
+        const bt = isReminderTimed(b) ? 0 : 1;
+        if (at !== bt) return at - bt;
+        return a.triggerAt - b.triggerAt || a.createdAt - b.createdAt;
+      });
+    case "overdue":
+      return copy.sort((a, b) => a.triggerAt - b.triggerAt || a.createdAt - b.createdAt);
+    case "upcoming":
+      return copy.sort((a, b) => {
+        const da = startOfLocalDay(a.triggerAt);
+        const dbDay = startOfLocalDay(b.triggerAt);
+        if (da !== dbDay) return da - dbDay;
+        const at = isReminderTimed(a) ? 0 : 1;
+        const bt = isReminderTimed(b) ? 0 : 1;
+        if (at !== bt) return at - bt;
+        return a.triggerAt - b.triggerAt || a.createdAt - b.createdAt;
+      });
+  }
+}
+
+export function filterRemindersForView(
+  openReminders: Reminder[],
+  view: ReminderView,
+  folderId?: string | null,
+  nowMs = Date.now()
+): Reminder[] {
+  const byFolder =
+    folderId === undefined || folderId === "__all__"
+      ? openReminders
+      : openReminders.filter((r) => r.folderId === folderId);
+
+  if (view === "all") {
+    const overdue = sortRemindersForView(
+      byFolder.filter((r) => viewOf(r, nowMs) === "overdue"),
+      "overdue"
+    );
+    const today = sortRemindersForView(
+      byFolder.filter((r) => viewOf(r, nowMs) === "today"),
+      "today"
+    );
+    const upcoming = sortRemindersForView(
+      byFolder.filter((r) => viewOf(r, nowMs) === "upcoming"),
+      "upcoming"
+    );
+    return [...overdue, ...today, ...upcoming];
+  }
+
+  return sortRemindersForView(
+    byFolder.filter((r) => viewOf(r, nowMs) === view),
+    view
+  );
+}
+
+export async function listByView(
+  view: ReminderView,
+  folderId?: string | null,
+  nowMs = Date.now()
+): Promise<Reminder[]> {
+  const open = await listReminders();
+  return filterRemindersForView(open, view, folderId, nowMs);
 }
 
 export async function getReminder(id: string): Promise<Reminder | undefined> {
@@ -134,64 +261,160 @@ export async function getReminder(id: string): Promise<Reminder | undefined> {
 export async function putReminder(reminder: Reminder): Promise<void> {
   await ensureAccountDbReady();
   await accountDb.reminders.put(reminder);
-}
-
-export function bucketReminders(reminders: Reminder[]): Record<ReminderBucket, Reminder[]> {
-  const nowMs = Date.now();
-  const todayStart = new Date(nowMs);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-
-  return {
-    overdue: reminders.filter((r) => r.triggerAt < nowMs),
-    due: reminders.filter((r) => r.triggerAt >= nowMs && r.triggerAt < todayEnd.getTime()),
-    upcoming: reminders.filter((r) => r.triggerAt >= todayEnd.getTime()),
-  };
+  emitDataUpdated();
 }
 
 export async function createReminder(input: {
   message: string;
   triggerAt: number;
+  timed?: boolean;
   toneId?: string;
+  endAt?: number;
+  location?: string;
+  notes?: string;
+  recurrence?: ReminderRecurrence | null;
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   folderId?: string | null;
   workspaceId?: string;
+  source?: "manual" | "ics";
 }): Promise<Reminder> {
   await ensureAccountDbReady();
   const t = now();
+  const timed = input.timed !== false;
+  const triggerAt = timed ? input.triggerAt : startOfLocalDay(input.triggerAt);
+  const recurrence = input.recurrence
+    ? { ...input.recurrence, anchorAt: input.recurrence.anchorAt || triggerAt }
+    : null;
+  const location = input.location?.trim() ? input.location.trim() : undefined;
+  const notes = input.notes?.trim() ? input.notes.trim().slice(0, 2000) : undefined;
+
   const reminder: Reminder = {
     id: newId(),
     folderId: input.folderId ?? null,
     workspaceId: input.workspaceId ?? getActiveWorkspaceId(),
-    toneId: input.toneId,
+    toneId: timed ? input.toneId : undefined,
     linkedEntityType: input.linkedEntityType,
     linkedEntityId: input.linkedEntityId,
     message: input.message,
-    triggerAt: input.triggerAt,
+    triggerAt,
+    timed,
     status: "pending",
+    ...(input.endAt !== undefined ? { endAt: input.endAt } : {}),
+    ...(location !== undefined ? { location } : {}),
+    ...(notes !== undefined ? { notes } : {}),
+    ...(recurrence ? { recurrence, occurrencesDone: 0 } : {}),
+    source: input.source ?? "manual",
     createdAt: t,
     updatedAt: t,
     syncStatus: "pending",
   };
   await accountDb.reminders.add(reminder);
+  emitDataUpdated();
   return reminder;
 }
 
 export async function updateReminder(
   id: string,
-  changes: Partial<Pick<Reminder, "message" | "triggerAt" | "toneId" | "linkedEntityType" | "linkedEntityId" | "status" | "folderId">>
+  changes: Partial<
+    Pick<
+      Reminder,
+      | "message"
+      | "triggerAt"
+      | "timed"
+      | "toneId"
+      | "endAt"
+      | "location"
+      | "notes"
+      | "recurrence"
+      | "occurrencesDone"
+      | "lastAlertedAt"
+      | "linkedEntityType"
+      | "linkedEntityId"
+      | "status"
+      | "folderId"
+    >
+  >
 ): Promise<void> {
   await ensureAccountDbReady();
-  await accountDb.reminders.update(id, { ...changes, updatedAt: now(), syncStatus: "pending" });
+  const next: Record<string, unknown> = {
+    ...changes,
+    updatedAt: now(),
+    syncStatus: "pending",
+  };
+  if (changes.notes !== undefined) {
+    next.notes = changes.notes.trim() ? changes.notes.trim().slice(0, 2000) : undefined;
+  }
+  if (changes.location !== undefined) {
+    next.location = changes.location.trim() ? changes.location.trim() : undefined;
+  }
+  if (changes.timed === false && typeof changes.triggerAt === "number") {
+    next.triggerAt = startOfLocalDay(changes.triggerAt);
+  }
+  await accountDb.reminders.update(id, next);
+  emitDataUpdated();
+}
+
+export async function completeReminder(
+  id: string,
+  nowMs = Date.now()
+): Promise<{ undo: () => Promise<void>; nextAt: number | null }> {
+  await ensureAccountDbReady();
+  const result = await accountDb.transaction("rw", accountDb.reminders, async () => {
+    const prev = await accountDb.reminders.get(id);
+    if (!prev) {
+      return { kind: "missing" as const, nextAt: null, prev: null };
+    }
+
+    if (prev.recurrence) {
+      const nextAt = nextAfterComplete(prev.recurrence, prev.triggerAt, nowMs);
+      if (nextAt !== null) {
+        await accountDb.reminders.update(id, {
+          triggerAt: nextAt,
+          occurrencesDone: (prev.occurrencesDone ?? 0) + 1,
+          lastAlertedAt: null,
+          status: "pending",
+          updatedAt: now(),
+          syncStatus: "pending",
+        });
+        return { kind: "advanced" as const, nextAt, prev };
+      }
+    }
+
+    await accountDb.reminders.delete(id);
+    return { kind: "deleted" as const, nextAt: null, prev };
+  });
+
+  if (result.kind === "missing") {
+    return { nextAt: null, undo: async () => {} };
+  }
+
+  const prev = result.prev;
+  if (result.kind === "deleted" && prev.externalUid) {
+    recordImportedDone(prev.externalUid, prev.externalInstance ?? null);
+  }
+
+  emitDataUpdated();
+
+  return {
+    nextAt: result.nextAt,
+    undo: async () => {
+      await ensureAccountDbReady();
+      if (result.kind === "deleted" && prev.externalUid) {
+        removeImportedDone(prev.externalUid, prev.externalInstance ?? null);
+      }
+      await accountDb.reminders.put(prev);
+      emitDataUpdated();
+    },
+  };
 }
 
 export async function dismissReminder(id: string): Promise<void> {
-  await ensureAccountDbReady();
-  await accountDb.reminders.update(id, { status: "dismissed", updatedAt: now(), syncStatus: "pending" });
+  await completeReminder(id);
 }
 
 export async function deleteReminder(id: string): Promise<void> {
   await ensureAccountDbReady();
   await accountDb.reminders.delete(id);
+  emitDataUpdated();
 }

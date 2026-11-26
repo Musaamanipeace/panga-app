@@ -70,3 +70,9 @@ Decisions made + why (short): what, why, alternatives rejected.
 - Used stated brief defaults (`DECISION PENDING` owner confirmation): `D1` imported events go to Reminders; `D3` app-open notifications; `D4` option A account-level reminders; `D2` (`fflate` zip import), `D5` (skip past events), `D6` (10 min lead), and `D7` (09:00 local all-day) pending before Stages 3 & 5.
 - `.ics` calendar import remains strictly file-based with zero Google Calendar API scripts or OAuth, while preserving the existing Google Drive JSON backup feature.
 
+## 2026-11-26 — Reminders dated checklist, plain/timed split & recurrence (Stage 2, brief v2 D1–D11)
+- Revised plan to v2 per owner vision: dropped server, Web Push, background scheduling, snooze, advance-notice offsets, and catch-up missed-alerts lists (`D3` settled). Approved `fflate` for Stage 5 `.zip` import (`D2` settled) and tick-to-delete/advance with brief Undo (`D5` settled).
+- Defaulted Stage 2 semantics (`D6–D11`): one open item per missed repeating series in Overdue (`D6`); fixed-anchor schedule via `nextAfterComplete` strictly after completed occurrence and on/after today's local midnight (`D7`); reminder folders preserved in "More options" and list `Folder` filter (`D10`); legacy `status: "dismissed"` kept in DB and hidden everywhere while `pending`/`fired` show as open and legacy `timed === undefined` behaves as timed (`D11`).
+- Account DB upgraded to v2 adding `externalUid` index on `reminders` (`src/data/accountDb.ts`) and `importedDone` account-settings tracking (`src/data/accountSettings.ts`) ready for Stage 5.
+
+

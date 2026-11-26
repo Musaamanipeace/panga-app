@@ -1,11 +1,11 @@
 # NEXT.md — next phase
 
-## Reminders upgrade & Google Calendar (.ics) import plan (6 sequential stages)
+## Reminders upgrade & Google Calendar (.ics) import plan (6 sequential stages, brief v2)
 - [x] Stage 1: Account-level cross-workspace reminders store (`src/data/accountDb.ts`, data layer, migration, snapshots, tests)
-- [ ] Stage 2: Reminder fields & recurrence engine (`src/data/recurrence.ts`, snooze/skip/end repeat, form & row UI) — waiting for owner "go" + D1–D7 confirmation
-- [ ] Stage 3: Notifications & scheduler rewrite (`src/data/notifications.ts`, `NotificationSetup`, `sw-notifications.js`, `AppShell` lifecycle)
-- [ ] Stage 4: Pure `.ics` parser (`src/data/ics.ts` + fixture tests)
-- [ ] Stage 5: `.ics` / `.zip` import flow (`readCalendarFiles.ts`, `importEvents.ts`, preview UI; confirm D2 `fflate` dependency before starting)
+- [x] Stage 2: Views, plain/timed reminders, tick-to-delete/advance and repeats (`src/data/recurrence.ts`, `accountDb.ts` v2, `reminders.ts`, `HomeRemindersTab.tsx`, tests)
+- [ ] Stage 3: In-app alerts & notification setup prompt (`src/data/notifications.ts`, `NotificationSetup`, `sw-notifications.js`, timer scheduler with atomic claim & no catch-up alerts, `AppShell` startup) — waiting for owner `"go"`
+- [ ] Stage 4: Pure `.ics` parser (`src/data/ics.ts` + Section 7.3 fixture & DST/error tests, no VALARM offsets)
+- [ ] Stage 5: `.ics` / `.zip` import flow (`src/data/readCalendarFiles.ts` with `fflate`, `src/data/importEvents.ts`, collapsible import card + preview + done prompt)
 - [ ] Stage 6: Final docs & cleanup (`CHANGES.md`, agent docs)
 
 ## Latest completed work (2026-11-23)

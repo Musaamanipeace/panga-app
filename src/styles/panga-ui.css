@@ -788,4 +788,261 @@ body { background: var(--color-page); color: var(--color-text); }
   background: var(--color-surface);
 }
 
+/* ---- 12. Reminders dated checklist ------------------------------------- */
+.rem-folders-head {
+  padding: 0 0 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rem-folders-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.rem-folders-sidebar {
+  order: 2;
+  border-bottom: none;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+  padding-bottom: 0;
+}
+@media (min-width: 900px) {
+  .rem-folders-sidebar {
+    order: 0;
+    border-top: none;
+    padding-top: 0;
+  }
+}
+
+.rem-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rem-view-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-subtle);
+}
+.rem-view-tab {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rem-view-tab:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+.rem-view-tab-overdue {
+  color: var(--color-accent-primary);
+  font-weight: 600;
+}
+:root[data-theme="dark"] .rem-view-tab-overdue {
+  color: #c9b5ff;
+}
+.rem-view-tab-active,
+.rem-view-tab-active:hover,
+:root[data-theme="dark"] .rem-view-tab-active {
+  background: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.rem-view-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.rem-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.rem-filter-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.rem-form-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rem-message-input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.rem-options {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rem-option-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.rem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.rem-field label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.rem-field-grow {
+  flex: 1 1 180px;
+}
+.rem-field-check {
+  justify-content: center;
+  padding-bottom: 6px;
+}
+.rem-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 36px;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.rem-custom-repeat,
+.rem-ends-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rem-number-input {
+  width: 76px;
+}
+.rem-weekday-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rem-notes-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rem-form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rem-form-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--color-accent-issue);
+}
+
+.rem-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.rem-day-subheading {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.rem-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.rem-row-highlight {
+  border-color: var(--color-accent-primary);
+  background: var(--color-tint);
+}
+.rem-tick-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  cursor: pointer;
+  flex: none;
+}
+.rem-tick {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.rem-row-body {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rem-row-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.rem-row-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.rem-row-notes {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rem-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+@media (pointer: coarse) {
+  .rem-tick-wrap,
+  .rem-view-tab,
+  .rem-weekday-chips .chip {
+    min-height: 44px;
+  }
+  .rem-tick-wrap {
+    min-width: 44px;
+  }
+}
+
+
 

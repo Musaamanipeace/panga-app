@@ -258,16 +258,42 @@ export interface IssueComment {
   updatedAt: number;
 }
 
+export type ReminderRepeatFreq = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface ReminderRecurrence {
+  freq: ReminderRepeatFreq;
+  interval: number;              // >= 1. "Every 2 days" = { freq: "daily", interval: 2 }
+  anchorAt: number;              // epoch ms of the series' first occurrence (the fixed schedule is computed from this)
+  byWeekday?: number[];          // 0 = Sunday .. 6 = Saturday; weekly only
+  byMonthDay?: number;           // 1..31; monthly only (default: day of anchorAt)
+  until?: number;                // epoch ms, inclusive end of the series
+  count?: number;                // total occurrences from anchorAt, including the first
+  exdates?: number[];            // occurrence times (epoch ms) that are skipped (from imports)
+}
+
 export interface Reminder {
   id: string;
-  folderId: string | null;    // null = unfiled (shows at root)
-  workspaceId?: string;       // Workspace where created (display only; never filter by it)
-  toneId?: string;            // e.g. "default" | "chime" | "soft" | "urgent"
+  folderId: string | null;       // null = unfiled (shows at root)
+  workspaceId?: string;          // Workspace where created (display only; never filter by it)
+  toneId?: string;               // e.g. "default" | "chime" | "soft" | "urgent"
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   message: string;
   triggerAt: number;
   status: "pending" | "fired" | "dismissed";
+  timed?: boolean;               // true = alerts at triggerAt; false = plain reminder (triggerAt = local 00:00). Legacy undefined = timed.
+  endAt?: number;                // optional event end (imports)
+  location?: string;
+  notes?: string;
+  recurrence?: ReminderRecurrence | null;
+  occurrencesDone?: number;      // counts toward `count`
+  lastAlertedAt?: number | null; // triggerAt value last alerted for, so each occurrence alerts once
+  source?: "manual" | "ics";
+  externalUid?: string;          // iCalendar UID
+  externalInstance?: string | null; // RECURRENCE-ID for a moved single occurrence
+  externalSequence?: number;     // iCalendar SEQUENCE, for update detection
+  externalModified?: number;     // LAST-MODIFIED as epoch ms
+  rruleRaw?: string | null;      // original RRULE text, kept for transparency
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;

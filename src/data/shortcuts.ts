@@ -12,7 +12,7 @@ import { listAllNotes } from "./notes";
 import { listLinkFolders } from "./linkFolders";
 import { listAllLinks } from "./links";
 import { listReminderFolders } from "./reminderFolders";
-import { listReminders } from "./reminders";
+import { formatReminderSummaryWhen, listReminders } from "./reminders";
 
 export const QUICK_SHORTCUTS_KEY = "quickShortcuts";
 
@@ -308,7 +308,7 @@ export async function listAvailableShortcutTargets(): Promise<ShortcutTargetOpti
       targetId: r.id,
       name: r.message.trim() || "Reminder",
       categoryLabel: "Reminder",
-      subtitle: new Date(r.triggerAt).toLocaleString(),
+      subtitle: formatReminderSummaryWhen(r),
       route: `/home?tab=Reminders&reminder=${encodeURIComponent(r.id)}`,
     });
   }
