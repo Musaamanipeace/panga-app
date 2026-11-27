@@ -12,8 +12,7 @@ import { listAllNotes } from "./notes";
 import { listLinkFolders } from "./linkFolders";
 import { listAllLinks } from "./links";
 import { listReminderFolders } from "./reminderFolders";
-import { listOpenReminders } from "./reminders";
-import { formatPreviewDateTime, isTimedReminder } from "./recurrence";
+import { formatReminderSummaryWhen, listReminders } from "./reminders";
 
 export const QUICK_SHORTCUTS_KEY = "quickShortcuts";
 
@@ -217,7 +216,7 @@ export async function listAvailableShortcutTargets(): Promise<ShortcutTargetOpti
     listLinkFolders(),
     listAllLinks(),
     listReminderFolders(),
-    listOpenReminders(),
+    listReminders(),
   ]);
 
   const options: ShortcutTargetOption[] = [];
@@ -309,7 +308,7 @@ export async function listAvailableShortcutTargets(): Promise<ShortcutTargetOpti
       targetId: r.id,
       name: r.message.trim() || "Reminder",
       categoryLabel: "Reminder",
-      subtitle: formatPreviewDateTime(r.triggerAt, !isTimedReminder(r)),
+      subtitle: formatReminderSummaryWhen(r),
       route: `/home?tab=Reminders&reminder=${encodeURIComponent(r.id)}`,
     });
   }

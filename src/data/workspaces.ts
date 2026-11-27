@@ -16,14 +16,24 @@ import {
   removeWorkspaceEntry,
   renameWorkspaceEntry,
   setActiveWorkspaceId,
+  setWorkspaceParentEntry,
   workspaceDbSuffix,
   type WorkspaceInfo,
+  type WorkspaceTemplateId,
 } from "./workspaceState";
+import { seedTemplateIntoCurrentDb } from "./workspaceTemplates";
 import { getSessionUserId } from "../auth/sessionUserId";
 import Dexie from "dexie";
 
-export type { WorkspaceInfo };
-export { getActiveWorkspace, getActiveWorkspaceId, listWorkspaces } from "./workspaceState";
+export type { WorkspaceInfo, WorkspaceTemplateId };
+export {
+  formatWorkspaceLabel,
+  getActiveWorkspace,
+  getActiveWorkspaceId,
+  getWorkspaceDepth,
+  getWorkspacePath,
+  listWorkspaces,
+} from "./workspaceState";
 
 /**
  * Copy account-level settings (BYOK keys, provider/model) that still sit in the
@@ -52,16 +62,32 @@ export async function switchWorkspace(id: string): Promise<void> {
   await captureAccountSettings();
   setActiveWorkspaceId(id);
   await switchWorkspaceDb();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("panga-workspace-switched", { detail: { workspaceId: id } }));
+  }
 }
 
-export async function createWorkspace(name: string): Promise<WorkspaceInfo> {
-  const info = addWorkspaceEntry(name);
+export async function createWorkspace(
+  name: string,
+  options?: { parentWorkspaceId?: string | null; templateId?: WorkspaceTemplateId | null }
+): Promise<WorkspaceInfo> {
+  const info = addWorkspaceEntry(name, {
+    parentWorkspaceId: options?.parentWorkspaceId ?? null,
+    templateId: options?.templateId ?? undefined,
+  });
   await switchWorkspace(info.id);
+  if (options?.templateId) {
+    await seedTemplateIntoCurrentDb(options.templateId);
+  }
   return info;
 }
 
 export function renameWorkspace(id: string, name: string): void {
   renameWorkspaceEntry(id, name);
+}
+
+export function setWorkspaceParent(id: string, parentWorkspaceId: string | null): void {
+  setWorkspaceParentEntry(id, parentWorkspaceId);
 }
 
 /** Deletes a workspace and its data. The default workspace cannot be deleted. */

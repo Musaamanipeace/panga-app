@@ -1,5 +1,6 @@
 // src/data/taskLists.ts
-import { db, type TaskList } from "./db";
+import { db, notifyLocalDataMutated, type TaskList } from "./db";
+import { emitGlobalItemPrompt } from "./workspaceMove";
 import { newId, now } from "./utils";
 import { logActivity } from "./activity";
 
@@ -36,6 +37,8 @@ export async function createTaskList(input: {
     syncStatus: "pending",
   };
   await db.taskLists.add(list);
+  notifyLocalDataMutated();
+  emitGlobalItemPrompt({ kind: "taskList", id: list.id, title: list.title });
   void logActivity({ entityType: "taskList", entityId: list.id, action: "created", description: `Created task list "${list.title}"` });
   return list;
 }
@@ -47,6 +50,7 @@ export async function updateTaskList(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.taskLists.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  notifyLocalDataMutated();
 }
 
 export async function renameTaskList(id: string, title: string): Promise<void> {
@@ -60,6 +64,7 @@ export async function reorderTaskLists(orderedIds: string[]): Promise<void> {
       await db.taskLists.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
+  notifyLocalDataMutated();
 }
 
 export async function deleteTaskList(id: string, options?: { moveTasksToListId?: string }): Promise<void> {
@@ -76,5 +81,6 @@ export async function deleteTaskList(id: string, options?: { moveTasksToListId?:
     }
     await db.taskLists.delete(id);
   });
+  notifyLocalDataMutated();
   void logActivity({ entityType: "taskList", entityId: id, action: "deleted", description: "Task list deleted" });
 }

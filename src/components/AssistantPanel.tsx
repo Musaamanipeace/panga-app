@@ -55,6 +55,15 @@ export default function AssistantPanel() {
     pruneExpiredConversations();
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   async function startNew() {
     const c = await createConversation("New conversation");
     setConversationId(c.id);
@@ -231,6 +240,14 @@ export default function AssistantPanel() {
                   data-tip-align="right"
                 >
                   New
+                </button>
+                <button
+                  type="button"
+                  className="modal-close-x clickable"
+                  aria-label="Close assistant"
+                  onClick={() => setOpen(false)}
+                >
+                  ×
                 </button>
               </div>
             </header>

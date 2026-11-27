@@ -1,18 +1,14 @@
 // src/search/search.ts
-// Header search across the current model: folders, task lists, tasks, notes, links, reminders, and clipboard clips.
-// Clicking a result takes the user straight to the saved item.
+// Cross-workspace search across all workspaces & subworkspaces plus account-wide reminders.
+// Clicking a result switches into the item's workspace (when needed) and navigates directly to it.
 
-import { listNoteFolders } from "../data/noteFolders";
-import { listLinkFolders } from "../data/linkFolders";
-import { listTaskListFolders } from "../data/taskListFolders";
-import { listReminderFolders } from "../data/reminderFolders";
-import { listTaskLists } from "../data/taskLists";
-import { listAllNotes } from "../data/notes";
-import { listAllLinks } from "../data/links";
-import { listAllTasks } from "../data/tasks";
-import { listOpenReminders } from "../data/reminders";
-import { formatPreviewDateTime, isTimedReminder } from "../data/recurrence";
-import { listClips } from "../data/clips";
+import { readWorkspaceTablesForSearch } from "../data/db";
+import { formatReminderSummaryWhen, listReminders } from "../data/reminders";
+import {
+  formatWorkspaceLabel,
+  getActiveWorkspaceId,
+  listWorkspaces,
+} from "../data/workspaceState";
 
 export type SearchResultType = "folder" | "file" | "taskList";
 
@@ -21,6 +17,9 @@ export interface SearchResult {
   key: string;
   title: string;
   subtitle: string;
+  workspaceId: string;
+  workspaceName: string;
+  skipWorkspaceSwitch?: boolean;
   /** Route to navigate to when the result is clicked. */
   route: string;
 }
@@ -37,122 +36,166 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return [];
 
-  const [
-    noteFolders,
-    linkFolders,
-    taskListFolders,
-    reminderFolders,
-    taskLists,
-    notes,
-    links,
-    tasks,
-    reminders,
-    clips,
-  ] = await Promise.all([
-    listNoteFolders(),
-    listLinkFolders(),
-    listTaskListFolders(),
-    listReminderFolders(),
-    listTaskLists(),
-    listAllNotes(),
-    listAllLinks(),
-    listAllTasks(),
-    listOpenReminders(),
-    listClips(),
+  const allWorkspaces = listWorkspaces();
+  const activeWsId = getActiveWorkspaceId();
+  // Search active workspace first so its hits appear at the top.
+  const orderedWorkspaces = [
+    ...allWorkspaces.filter((w) => w.id === activeWsId),
+    ...allWorkspaces.filter((w) => w.id !== activeWsId),
+  ];
+
+  const [workspaceDatasets, reminders] = await Promise.all([
+    Promise.all(
+      orderedWorkspaces.map(async (w) => ({
+        workspace: w,
+        label: formatWorkspaceLabel(w, allWorkspaces),
+        data: await readWorkspaceTablesForSearch(w.id),
+      }))
+    ),
+    listReminders(),
   ]);
 
   const results: SearchResult[] = [];
 
-  for (const f of noteFolders) {
-    if (matches(q, f.title)) {
-      results.push({
-        type: "folder",
-        key: `folder-note-${f.id}`,
-        title: f.title,
-        subtitle: "Note folder",
-        route: `/home?tab=Notes&folder=${f.id}`,
-      });
+  for (const { workspace, label, data } of workspaceDatasets) {
+    const wsId = workspace.id;
+    for (const f of data.noteFolders) {
+      if (matches(q, f.title)) {
+        results.push({
+          type: "folder",
+          key: `ws-${wsId}-folder-note-${f.id}`,
+          title: f.title,
+          subtitle: "Note folder",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Notes&folder=${f.id}`,
+        });
+      }
     }
-  }
-  for (const f of linkFolders) {
-    if (matches(q, f.title)) {
-      results.push({
-        type: "folder",
-        key: `folder-link-${f.id}`,
-        title: f.title,
-        subtitle: "Link folder",
-        route: `/home?tab=Links&folder=${f.id}`,
-      });
+    for (const f of data.linkFolders) {
+      if (matches(q, f.title)) {
+        results.push({
+          type: "folder",
+          key: `ws-${wsId}-folder-link-${f.id}`,
+          title: f.title,
+          subtitle: "Link folder",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Links&folder=${f.id}`,
+        });
+      }
     }
-  }
-  for (const f of taskListFolders) {
-    if (matches(q, f.title)) {
-      results.push({
-        type: "folder",
-        key: `folder-tasklist-${f.id}`,
-        title: f.title,
-        subtitle: "Task list folder",
-        route: `/home?tab=Task lists&folder=${f.id}`,
-      });
+    for (const f of data.taskListFolders) {
+      if (matches(q, f.title)) {
+        results.push({
+          type: "folder",
+          key: `ws-${wsId}-folder-tasklist-${f.id}`,
+          title: f.title,
+          subtitle: "Task list folder",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Task lists&folder=${f.id}`,
+        });
+      }
     }
-  }
-  for (const f of reminderFolders) {
-    if (matches(q, f.title)) {
-      results.push({
-        type: "folder",
-        key: `folder-reminder-${f.id}`,
-        title: f.title,
-        subtitle: "Reminder folder",
-        route: `/home?tab=Reminders&folder=${f.id}`,
-      });
-    }
-  }
 
-  for (const tl of taskLists) {
-    if (matches(q, tl.title)) {
-      results.push({
-        type: "taskList",
-        key: `taskList-${tl.id}`,
-        title: tl.title,
-        subtitle: "Task list",
-        route: `/home?tab=Task lists&list=${tl.id}`,
-      });
+    for (const tl of data.taskLists) {
+      if (matches(q, tl.title, tl.description)) {
+        results.push({
+          type: "taskList",
+          key: `ws-${wsId}-taskList-${tl.id}`,
+          title: tl.title,
+          subtitle: "Task list",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Task lists&list=${tl.id}`,
+        });
+      }
     }
-  }
 
-  for (const t of tasks) {
-    if (matches(q, t.title, t.notes, t.tags)) {
-      results.push({
-        type: "file",
-        key: `task-${t.id}`,
-        title: t.title,
-        subtitle: t.completed ? "Completed task" : "Task",
-        route: t.listId ? `/home?tab=Task lists&list=${t.listId}` : "/home?tab=Task lists",
-      });
+    for (const t of data.tasks) {
+      if (matches(q, t.title, t.notes, t.tags)) {
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-task-${t.id}`,
+          title: t.title,
+          subtitle: t.completed ? "Completed task" : "Task",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: t.listId ? `/home?tab=Task lists&list=${t.listId}` : "/home?tab=Task lists",
+        });
+      }
     }
-  }
 
-  for (const n of notes) {
-    if (matches(q, n.title, n.body, n.tags)) {
-      results.push({
-        type: "file",
-        key: `note-${n.id}`,
-        title: n.title,
-        subtitle: "Note",
-        route: n.folderId ? `/home?tab=Notes&folder=${n.folderId}` : "/home?tab=Notes",
-      });
+    for (const n of data.notes) {
+      if (matches(q, n.title, n.body, n.tags)) {
+        const folderParam = n.folderId ? `&folder=${n.folderId}` : "";
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-note-${n.id}`,
+          title: n.title,
+          subtitle: "Note",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Notes${folderParam}&note=${n.id}`,
+        });
+      }
     }
-  }
 
-  for (const l of links) {
-    if (matches(q, l.title, l.url, l.notes, l.tags)) {
-      results.push({
-        type: "file",
-        key: `link-${l.id}`,
-        title: l.title,
-        subtitle: l.url,
-        route: l.folderId ? `/home?tab=Links&folder=${l.folderId}` : "/home?tab=Links",
-      });
+    for (const l of data.links) {
+      if (matches(q, l.title, l.url, l.notes, l.tags)) {
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-link-${l.id}`,
+          title: l.title,
+          subtitle: l.url,
+          workspaceId: wsId,
+          workspaceName: label,
+          route: l.folderId ? `/home?tab=Links&folder=${l.folderId}` : "/home?tab=Links",
+        });
+      }
+    }
+
+    for (const th of data.thoughts) {
+      if (matches(q, th.text)) {
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-thought-${th.id}`,
+          title: th.text.slice(0, 80),
+          subtitle: "Train of thought",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: "/home",
+        });
+      }
+    }
+
+    for (const c of data.clips) {
+      if (matches(q, c.title, c.body)) {
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-clip-${c.id}`,
+          title: c.title,
+          subtitle: "Clipboard item",
+          workspaceId: wsId,
+          workspaceName: label,
+          route: "/home?tab=Clipboard",
+        });
+      }
+    }
+
+    for (const m of data.mediaItems) {
+      if (matches(q, m.title, m.fileName, m.driveRoute, m.notes, m.tags)) {
+        results.push({
+          type: "file",
+          key: `ws-${wsId}-media-${m.id}`,
+          title: m.title || m.fileName,
+          subtitle: `${m.kind === "audio" ? "Audio" : "Image"} · ${m.driveRoute}`,
+          workspaceId: wsId,
+          workspaceName: label,
+          route: `/home?tab=Media&media=${m.id}`,
+        });
+      }
     }
   }
 
@@ -162,23 +205,14 @@ export async function globalSearch(rawQuery: string): Promise<SearchResult[]> {
         type: "file",
         key: `reminder-${r.id}`,
         title: r.message,
-        subtitle: `Reminder (${formatPreviewDateTime(r.triggerAt, !isTimedReminder(r))})`,
+        subtitle: `Reminder (${formatReminderSummaryWhen(r)})`,
+        workspaceId: activeWsId,
+        workspaceName: "Account · Reminders",
+        skipWorkspaceSwitch: true,
         route: r.folderId ? `/home?tab=Reminders&folder=${r.folderId}` : "/home?tab=Reminders",
       });
     }
   }
 
-  for (const c of clips) {
-    if (matches(q, c.title, c.body)) {
-      results.push({
-        type: "file",
-        key: `clip-${c.id}`,
-        title: c.title,
-        subtitle: "Clipboard item",
-        route: "/home?tab=Clipboard",
-      });
-    }
-  }
-
-  return results.slice(0, 30);
+  return results.slice(0, 40);
 }

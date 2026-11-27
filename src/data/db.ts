@@ -4,7 +4,7 @@
 // from this /data folder — never imports Dexie itself.
 
 import Dexie, { type Table } from "dexie";
-import { workspaceDbSuffix } from "./workspaceState";
+import { getActiveWorkspaceId, workspaceDbSuffix } from "./workspaceState";
 import { clearAccountSettings } from "./accountSettings";
 import { clearAccountDbData, ensureAccountDbReady, hasAccountData, mergeAccountDbState, switchAccountDb } from "./accountDb";
 import { getSessionUserId } from "../auth/sessionUserId";
@@ -258,41 +258,42 @@ export interface IssueComment {
   updatedAt: number;
 }
 
-export type RecurrenceUnit = "day" | "week" | "month" | "year";
-
-export type ReminderRecurrenceEnd =
-  | { type: "never" }
-  | { type: "until"; untilAt: number }
-  | { type: "count"; remaining: number };
+export type ReminderRepeatFreq = "daily" | "weekly" | "monthly" | "yearly";
 
 export interface ReminderRecurrence {
-  interval: number;
-  unit: RecurrenceUnit;
-  weekdays?: number[];
-  end?: ReminderRecurrenceEnd;
-  anchorAt: number;
+  freq: ReminderRepeatFreq;
+  interval: number;              // >= 1. "Every 2 days" = { freq: "daily", interval: 2 }
+  anchorAt: number;              // epoch ms of the series' first occurrence (the fixed schedule is computed from this)
+  byWeekday?: number[];          // 0 = Sunday .. 6 = Saturday; weekly only
+  byMonthDay?: number;           // 1..31; monthly only (default: day of anchorAt)
+  until?: number;                // epoch ms, inclusive end of the series
+  count?: number;                // total occurrences from anchorAt, including the first
+  exdates?: number[];            // occurrence times (epoch ms) that are skipped (from imports)
 }
 
 export interface Reminder {
   id: string;
-  folderId: string | null;    // null = unfiled (shows at root)
-  workspaceId?: string;       // Workspace where created (display only; never filter by it)
-  toneId?: string;            // e.g. "default" | "chime" | "soft" | "urgent"
+  folderId: string | null;       // null = unfiled (shows at root)
+  workspaceId?: string;          // Workspace where created (display only; never filter by it)
+  toneId?: string;               // e.g. "default" | "chime" | "soft" | "urgent"
   linkedEntityType: "task" | "note" | null;
   linkedEntityId: string | null;
   message: string;
   triggerAt: number;
-  timed?: boolean;            // false = plain day reminder (no alert); undefined/true = timed alert
-  endAt?: number;
-  allDay?: boolean;
+  status: "pending" | "fired" | "dismissed";
+  timed?: boolean;               // true = alerts at triggerAt; false = plain reminder (triggerAt = local 00:00). Legacy undefined = timed.
+  endAt?: number;                // optional event end (imports)
   location?: string;
   notes?: string;
+  recurrence?: ReminderRecurrence | null;
+  occurrencesDone?: number;      // counts toward `count`
+  lastAlertedAt?: number | null; // triggerAt value last alerted for, so each occurrence alerts once
   source?: "manual" | "ics";
-  externalUid?: string;
-  recurrence?: ReminderRecurrence;
-  rrule?: string;
-  simplifiedRecurrence?: boolean;
-  status: "pending" | "fired" | "dismissed";
+  externalUid?: string;          // iCalendar UID
+  externalInstance?: string | null; // RECURRENCE-ID for a moved single occurrence
+  externalSequence?: number;     // iCalendar SEQUENCE, for update detection
+  externalModified?: number;     // LAST-MODIFIED as epoch ms
+  rruleRaw?: string | null;      // original RRULE text, kept for transparency
   createdAt: number;
   updatedAt: number;
   syncStatus: SyncStatus;
@@ -414,6 +415,38 @@ export interface PdfDoc {
   updatedAt: number;
 }
 
+export type MediaKind = "image" | "audio";
+
+/** Light media route saved in JSON & synced with Google Drive (never embeds binary data). */
+export interface MediaItem {
+  id: string;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  kind: MediaKind;
+  size: number;
+  durationSeconds?: number | null;
+  driveFileId: string | null;
+  driveUrl: string | null;
+  driveRoute: string;
+  uploadStatus: "pending" | "uploaded" | "error";
+  uploadError?: string | null;
+  tags: string[];
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+  syncStatus: SyncStatus;
+}
+
+/** Local device-only blob cache for recent media previews/playback (never exported to JSON). */
+export interface MediaBlobCache {
+  id: string;
+  mimeType: string;
+  size: number;
+  blob: Blob;
+  updatedAt: number;
+}
+
 export interface ThoughtEntry {
   id: string;
   text: string;
@@ -452,9 +485,11 @@ class PangaDB extends Dexie {
   activityLog!: Table<ActivityLog, string>;
   trainOfThought!: Table<ThoughtEntry, string>;
   pdfDocs!: Table<PdfDoc, string>;
+  mediaItems!: Table<MediaItem, string>;
+  mediaBlobs!: Table<MediaBlobCache, string>;
 
-  constructor() {
-    super(getUserDbName());
+  constructor(dbName: string = getUserDbName()) {
+    super(dbName);
     this.version(2).stores({
       projects: "id, status, updatedAt, syncStatus",
       tasks: "id, projectId, status, dueDate, updatedAt, syncStatus, *tags",
@@ -922,9 +957,15 @@ class PangaDB extends Dexie {
       }
     });
 
-    // v15: index externalUid on reminders (no backfill; all new reminder fields are optional).
+    // v15: Media route items (synced) + on-device media preview cache (local-only).
     this.version(15).stores({
-      reminders: "id, folderId, triggerAt, status, externalUid, updatedAt, syncStatus",
+      mediaItems: "id, kind, driveFileId, uploadStatus, createdAt, updatedAt, syncStatus, *tags",
+      mediaBlobs: "id, updatedAt",
+    });
+
+    // v16: Ensure createdAt index on mediaItems for chronological queries on upgraded DBs.
+    this.version(16).stores({
+      mediaItems: "id, kind, driveFileId, uploadStatus, createdAt, updatedAt, syncStatus, *tags",
     });
   }
 }
@@ -969,6 +1010,79 @@ export async function switchUserAccount(): Promise<void> {
 export let suppressChangeHooks = false;
 export function setSuppressChangeHooks(v: boolean) {
   suppressChangeHooks = v;
+}
+
+export function notifyLocalDataMutated(): void {
+  if (suppressChangeHooks || typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("panga-local-mutated"));
+}
+
+export interface WorkspaceSearchTables {
+  noteFolders: NoteFolder[];
+  linkFolders: LinkFolder[];
+  taskListFolders: TaskListFolder[];
+  taskLists: TaskList[];
+  notes: Note[];
+  links: Link[];
+  tasks: Task[];
+  clips: Resource[];
+  thoughts: ThoughtEntry[];
+  mediaItems: MediaItem[];
+}
+
+/** Read-only workspace inspection used by global cross-workspace search without flipping global `db`. */
+export async function readWorkspaceTablesForSearch(workspaceId: string): Promise<WorkspaceSearchTables> {
+  const empty: WorkspaceSearchTables = {
+    noteFolders: [],
+    linkFolders: [],
+    taskListFolders: [],
+    taskLists: [],
+    notes: [],
+    links: [],
+    tasks: [],
+    clips: [],
+    thoughts: [],
+    mediaItems: [],
+  };
+
+  const readFrom = async (conn: PangaDB): Promise<WorkspaceSearchTables> => {
+    const [noteFolders, linkFolders, taskListFolders, taskLists, notes, links, tasks, clips, thoughts, mediaItems] =
+      await Promise.all([
+        conn.table("noteFolders").toArray().catch(() => []),
+        conn.table("linkFolders").toArray().catch(() => []),
+        conn.table("taskListFolders").toArray().catch(() => []),
+        conn.table("taskLists").toArray().catch(() => []),
+        conn.table("notes").toArray().catch(() => []),
+        conn.table("links").toArray().catch(() => []),
+        conn.table("tasks").toArray().catch(() => []),
+        conn.table("resources").where("category").equals("clipboard").toArray().catch(() => []),
+        conn.table("trainOfThought").toArray().catch(() => []),
+        conn.table("mediaItems").toArray().catch(() => []),
+      ]);
+    return { noteFolders, linkFolders, taskListFolders, taskLists, notes, links, tasks, clips, thoughts, mediaItems };
+  };
+
+  if (workspaceId === getActiveWorkspaceId()) {
+    if (!db.isOpen()) await db.open();
+    return readFrom(db);
+  }
+
+  const userId = getSessionUserId();
+  const base = userId ? `panga-db-${userId}` : "panga-db-guest";
+  const dbName = `${base}${workspaceDbSuffix(workspaceId)}`;
+  try {
+    const exists = await Dexie.exists(dbName);
+    if (!exists) return empty;
+    const tempDb = new PangaDB(dbName);
+    try {
+      await tempDb.open();
+      return await readFrom(tempDb);
+    } finally {
+      tempDb.close();
+    }
+  } catch {
+    return empty;
+  }
 }
 
 const LEGACY_SEED_PURGED_KEY = "legacySeedPurged";
@@ -1090,6 +1204,7 @@ export async function exportDbState(options: { includeSecrets?: boolean } = {}):
     "drafts",
     "activityLog",
     "trainOfThought",
+    "mediaItems",
   ];
 
   const data: Record<string, any[]> = {};
@@ -1143,6 +1258,7 @@ export async function importDbState(data: Record<string, any[]>, options: { incl
     "drafts",
     "activityLog",
     "trainOfThought",
+    "mediaItems",
   ];
 
   // Capture existing local credentials to preserve them
@@ -1196,7 +1312,7 @@ export async function mergeDbState(data: Record<string, any[]>): Promise<void> {
     "noteFolders", "links", "notes", "resources", "docEntries", "milestones",
     "issues", "contacts", "calendarEvents",
     "scheduleItems", "conversations", "messages", "insights", "drafts",
-    "activityLog", "trainOfThought",
+    "activityLog", "trainOfThought", "mediaItems",
   ];
   suppressChangeHooks = true;
   try {
@@ -1244,6 +1360,7 @@ export async function hasLocalData(): Promise<boolean> {
     "drafts",
     "activityLog",
     "trainOfThought",
+    "mediaItems",
   ];
   const counts = await Promise.all(
     tables.map((t) => (db as any)[t]?.count().catch(() => 0))
@@ -1283,6 +1400,8 @@ export async function clearAllLocalData(): Promise<void> {
     "drafts",
     "activityLog",
     "trainOfThought",
+    "mediaItems",
+    "mediaBlobs",
   ];
 
   clearAccountSettings();

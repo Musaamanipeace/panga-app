@@ -30,3 +30,19 @@ Every rule the user has given me, verbatim where possible, dated. Rules persist 
 
 - Google Drive sign-in and JSON backup sync is implemented client-side across the landing page, Settings, and Menu (showing signed-in / signed-out status in the Menu), with explicit confirmation & conflict guardrails between local and online work.
 - AI provider API key inputs in Settings must never come preloaded with starred/autofilled values; masked stars and `Saved` status appear only when a human keyed in and saved a key, and an eye icon provides a 1-click peek that hides automatically without a second click.
+
+## 2026-11-26 — Reminders dated checklist & no-server rules (owner vision)
+
+- "drop the sever, we won need it. notifications inside the app are fine enough." No server, no Web Push, no background scheduling, no snooze, no advance-notice offsets, and no missed/catch-up alerts list.
+- "a reminder is as such, you can add a timed notification, or you could leave it as a reminder. when you tick it off, it deletes. you dont need to be reminded any more."
+- "youll go to your reminders and check. ooh, what i gotta do today, and you might not care about it. then you can see what did i not do yesterday, so you go to past events, and you tick some off, and leave some open."
+- "you can set daily reminders. weekly, whatever. 2 day, 3 day. thas the vision." Ticking a repeating reminder completes the current occurrence and advances it to its next scheduled date rather than deleting the series.
+
+## 2026-11-27 — Media Drive routes, workspace templates/nesting, Notes persistence, quiet auto-sync & escape UX
+
+- **Add Media tab**: Quickly save image and sound files directly to Google Drive (`panga/media`); store only lightweight routes/metadata in JSON backups (never raw binary blobs in JSON) and cache recent previews locally for offline access.
+- **Notes & Train of Thought**: Notes tab defaults to an open editor and saves/restores draft state; Train of Thought is workspace-scoped, collapses at 5 items for `Show history` / `Show fewer`, and includes a Copy button on each thought item.
+- **Main workspace & starter templates**: `Main` acts as the global workspace and prompts to move newly created items into a specific workspace. Preload `Developer` (git commands + workspace scripts), `Daily routine` (can start empty), and `Social events` templates — deletable and restorable on demand.
+- **Nested workspaces alongside folders & split workspace controls**: Support parent workspaces and subworkspaces alongside existing note folders; separate the workspace switcher from a dedicated `+ Add workspace` button; support global cross-workspace search across all workspaces.
+- **Consistent mobile & desktop dismissal**: Include escape/dismiss buttons across components (bottom `Close`/`Cancel` for phone ergonomics alongside top-right `×` and `Escape` key).
+- **Google Drive auto-sync & alerts**: Auto-sync quietly after edits and prompt only on conflicts; include remaining in-app reminder alert banners and `.ics`/`.zip` calendar import.

@@ -410,23 +410,16 @@ async function start() {
           if (rel.startsWith("assets/") || rel.startsWith("ort/") || rel.startsWith("icons/")) {
             // Content-hashed (or versioned) files never change in place.
             res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-          } else if (
-            rel === "sw.js" ||
-            rel === "registerSW.js" ||
-            rel === "index.html" ||
-            rel === "manifest.webmanifest" ||
-            rel.startsWith("workbox-")
-          ) {
-            // The service worker and app shell must never be cached across deploys
-            // so new releases reach open and installed apps immediately.
-            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          } else if (rel === "sw.js" || rel === "index.html" || rel === "manifest.webmanifest" || rel.startsWith("workbox-")) {
+            // The service worker and app shell must be re-checked on every load
+            // so new releases reach installed apps.
+            res.setHeader("Cache-Control", "no-cache");
           }
         },
       }),
     );
     app.use((req, res, next) => {
       if (req.method === "GET" && !req.path.startsWith("/api")) {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.sendFile(path.resolve(distPath, "index.html"));
       } else {
         next();

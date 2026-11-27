@@ -33,7 +33,7 @@ class AccountDB extends Dexie {
       reminderFolders: "id, parentFolderId, order, updatedAt, syncStatus",
     });
     this.version(2).stores({
-      reminders: "id, folderId, triggerAt, status, externalUid, updatedAt, syncStatus",
+      reminders: "id, folderId, triggerAt, status, updatedAt, syncStatus, externalUid",
       reminderFolders: "id, parentFolderId, order, updatedAt, syncStatus",
     });
   }

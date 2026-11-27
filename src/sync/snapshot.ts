@@ -24,6 +24,7 @@ import {
   replaceWorkspaceEntries,
   setActiveWorkspaceId,
   DEFAULT_WORKSPACE_ID,
+  type WorkspaceTemplateId,
 } from "../data/workspaceState";
 import { getSetting, setSetting } from "../data/settings";
 import {
@@ -56,7 +57,13 @@ export interface SnapshotIdentity {
 
 export interface SnapshotWorkspaces {
   activeId: string;
-  items: Array<{ id: string; name: string; data: Record<string, any[]> }>;
+  items: Array<{
+    id: string;
+    name: string;
+    parentWorkspaceId?: string | null;
+    templateId?: WorkspaceTemplateId;
+    data: Record<string, any[]>;
+  }>;
 }
 
 export interface SnapshotAccountData {
@@ -173,13 +180,17 @@ export async function exportSnapshot(): Promise<Snapshot> {
     const items: SnapshotWorkspaces["items"] = [];
     try {
       for (const w of workspaceList) {
+        const wsMeta = {
+          ...(w.parentWorkspaceId !== undefined ? { parentWorkspaceId: w.parentWorkspaceId } : {}),
+          ...(w.templateId ? { templateId: w.templateId } : {}),
+        };
         if (w.id === activeId) {
-          items.push({ id: w.id, name: w.name, data });
+          items.push({ id: w.id, name: w.name, ...wsMeta, data });
           continue;
         }
         setActiveWorkspaceId(w.id);
         await switchWorkspaceDb();
-        items.push({ id: w.id, name: w.name, data: withAccountSettings(await exportDbState({ includeSecrets: true })) });
+        items.push({ id: w.id, name: w.name, ...wsMeta, data: withAccountSettings(await exportDbState({ includeSecrets: true })) });
       }
     } finally {
       setActiveWorkspaceId(activeId);
@@ -227,7 +238,14 @@ export async function importSnapshot(snapshot: Snapshot): Promise<void> {
 
   const restoredWorkspaces = snapshot.workspaces?.items?.filter((w) => w && typeof w.id === "string" && w.data);
   if (restoredWorkspaces && restoredWorkspaces.length > 0) {
-    replaceWorkspaceEntries(restoredWorkspaces.map((w) => ({ id: w.id, name: w.name || "Workspace" })));
+    replaceWorkspaceEntries(
+      restoredWorkspaces.map((w) => ({
+        id: w.id,
+        name: w.name || "Workspace",
+        ...(w.parentWorkspaceId !== undefined ? { parentWorkspaceId: w.parentWorkspaceId } : {}),
+        ...(w.templateId ? { templateId: w.templateId } : {}),
+      }))
+    );
     for (const w of restoredWorkspaces) {
       setActiveWorkspaceId(w.id);
       await switchWorkspaceDb();

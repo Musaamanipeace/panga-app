@@ -19,8 +19,10 @@ import { stopSpeaking } from "../speech/tts";
 import { SHORTCUT_ENTRIES, homeTabRoute, matchShortcut } from "../shortcuts";
 import DriveSyncReviewModal from "./DriveSyncReviewModal";
 import { useGoogleDriveSync } from "../sync/useGoogleDriveSync";
-import ReminderAlertBanner from "./ReminderAlertBanner";
+import { ensureDefaultWorkspaceTemplates } from "../data/workspaceTemplates";
 import { startReminderScheduler } from "../data/reminders";
+import GlobalWorkspacePrompt from "./GlobalWorkspacePrompt";
+import ReminderAlertBanner from "./alerts/ReminderAlertBanner";
 
 export default function AppShell() {
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
@@ -34,12 +36,28 @@ export default function AppShell() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const drive = useGoogleDriveSync();
+  const drive = useGoogleDriveSync({ enableAutoSync: true });
 
   useEffect(() => {
+    let cancelled = false;
     void migrateStash();
     void captureAccountSettings();
-    startReminderScheduler();
+    void startReminderScheduler();
+    void ensureDefaultWorkspaceTemplates().then(({ restored }) => {
+      if (cancelled) return;
+      if (restored.length > 0) {
+        notifyWorkspaceUpdated();
+        setWorkspaceEpoch((n) => n + 1);
+      }
+    });
+    const onSwitched = () => {
+      if (!cancelled) setWorkspaceEpoch((n) => n + 1);
+    };
+    window.addEventListener("panga-workspace-switched", onSwitched);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("panga-workspace-switched", onSwitched);
+    };
   }, []);
 
   function handleWorkspaceChanged() {
@@ -202,6 +220,17 @@ export default function AppShell() {
           </button>
           {menuOpen && (
             <div className="header-popover dropdown-anim" role="menu" aria-label="App menu">
+              <div className="panel-head-row">
+                <strong className="panel-head-title">Menu</strong>
+                <button
+                  type="button"
+                  className="modal-close-x clickable"
+                  aria-label="Close menu"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
               <Link
                 to="/settings"
                 className="header-menu-item clickable"
@@ -316,11 +345,26 @@ export default function AppShell() {
               >
                 Exit
               </button>
+              <div className="panel-foot-row">
+                <button type="button" className="btn-secondary btn-small clickable" onClick={() => setMenuOpen(false)}>
+                  Close
+                </button>
+              </div>
             </div>
           )}
           {shortcutsOpen && (
             <div className="header-popover dropdown-anim" role="dialog" aria-label="Keyboard shortcuts">
-              <div className="header-popover-title">Keyboard shortcuts</div>
+              <div className="panel-head-row">
+                <span className="header-popover-title" style={{ margin: 0 }}>Keyboard shortcuts</span>
+                <button
+                  type="button"
+                  className="modal-close-x clickable"
+                  aria-label="Close shortcuts"
+                  onClick={() => setShortcutsOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
               <ul className="shortcut-list">
                 {SHORTCUT_ENTRIES.map((entry) => (
                   <li key={`${entry.keys}-${entry.action}`} className="shortcut-row">
@@ -329,6 +373,11 @@ export default function AppShell() {
                   </li>
                 ))}
               </ul>
+              <div className="panel-foot-row">
+                <button type="button" className="btn-secondary btn-small clickable" onClick={() => setShortcutsOpen(false)}>
+                  Close
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -346,12 +395,13 @@ export default function AppShell() {
         }}
       />
       <WorkspaceSwitcher onChanged={handleWorkspaceChanged} />
-      <ReminderAlertBanner />
       <main className="app-main">
         <Outlet key={workspaceEpoch} />
       </main>
       <AssistantPanel />
       <ThoughtTrain open={thoughtsOpen} onClose={() => setThoughtsOpen(false)} />
+      <GlobalWorkspacePrompt />
+      <ReminderAlertBanner />
       <SelectionCopy />
       <DriveSyncReviewModal
         open={drive.modalOpen}

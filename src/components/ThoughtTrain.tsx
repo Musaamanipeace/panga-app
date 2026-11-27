@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { confirmDelete } from "./ui";
+import { CopyButton, confirmDelete } from "./ui";
 import ReadAloudButton from "./ReadAloudButton";
 import { ProofreadTrigger } from "./Proofread";
 import { listThoughts, addThought, deleteThought, type ThoughtEntry } from "../data/thoughts";
@@ -21,6 +21,15 @@ export default function ThoughtTrain({ open, onClose }: Props) {
   useEffect(() => {
     if (open) void reload();
   }, [open, reload]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   useEffect(() => {
     const h = () => void reload();
@@ -55,17 +64,19 @@ export default function ThoughtTrain({ open, onClose }: Props) {
       <aside
         className="thought-panel slide-enter"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
         aria-label="Thought train"
       >
         <header className="thought-panel-header">
           <div>
             <h2>Thought train</h2>
             <p className="thought-panel-sub">
-              Capture fleeting notes in a distracting workplace. Voice supported. Scroll back anytime.
+              Saved per workspace. Capture fleeting notes fast with typing or voice.
             </p>
           </div>
-          <button type="button" className="btn-secondary btn-small clickable" onClick={onClose} aria-label="Close">
-            Close
+          <button type="button" className="modal-close-x clickable" onClick={onClose} aria-label="Close">
+            ×
           </button>
         </header>
 
@@ -109,6 +120,7 @@ export default function ThoughtTrain({ open, onClose }: Props) {
                     minute: "2-digit",
                   })}
                 </time>
+                <CopyButton text={th.text} />
                 <ReadAloudButton text={th.text} />
                 <button
                   type="button"
@@ -126,6 +138,12 @@ export default function ThoughtTrain({ open, onClose }: Props) {
             </li>
           ))}
         </ul>
+
+        <div className="panel-foot-row">
+          <button type="button" className="btn-secondary btn-small clickable" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </aside>
     </div>
   );

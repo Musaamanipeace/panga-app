@@ -1,5 +1,5 @@
 // src/data/tasks.ts
-import { db, type Task, type TaskStatus, type SyncStatus } from "./db";
+import { db, notifyLocalDataMutated, type Task, type TaskStatus, type SyncStatus } from "./db";
 import { newId, now } from "./utils";
 import { logActivity } from "./activity";
 
@@ -63,6 +63,7 @@ export async function createTask(input: {
     syncStatus: "pending",
   };
   await db.tasks.add(task);
+  notifyLocalDataMutated();
   void logActivity({ entityType: "task", entityId: task.id, action: "created", description: `Created task "${task.title}"` });
   return task;
 }
@@ -83,6 +84,7 @@ export async function updateTask(
   if (changes.status !== undefined) next.completed = changes.status === "completed";
   if (changes.completed !== undefined) next.status = changes.completed ? "completed" : "active";
   await db.tasks.update(id, next);
+  notifyLocalDataMutated();
 }
 
 export async function toggleTaskCompleted(id: string): Promise<void> {
@@ -107,6 +109,7 @@ export async function deleteTask(id: string): Promise<void> {
   await db.transaction("rw", db.tasks, async () => {
     for (const taskId of toDelete) await db.tasks.delete(taskId);
   });
+  notifyLocalDataMutated();
   void logActivity({ entityType: "task", entityId: id, action: "deleted", description: "Task deleted" });
 }
 
@@ -116,6 +119,7 @@ export async function moveTask(taskId: string, changes: { listId?: string | null
   if (changes.listId !== undefined) updates.listId = changes.listId;
   if (changes.parentId !== undefined) updates.parentId = changes.parentId;
   await db.tasks.update(taskId, updates);
+  notifyLocalDataMutated();
 }
 
 export async function reorderTasks(orderedIds: string[]): Promise<void> {
@@ -125,6 +129,7 @@ export async function reorderTasks(orderedIds: string[]): Promise<void> {
       await db.tasks.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
+  notifyLocalDataMutated();
 }
 
 /** Build a nested task tree for a task list (roots = parentId === null). */
@@ -165,4 +170,5 @@ export async function listAllActiveTasks(): Promise<Task[]> {
 export async function restoreTask(task: Task): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.tasks.put({ ...task, updatedAt: now(), syncStatus: "pending" });
+  notifyLocalDataMutated();
 }

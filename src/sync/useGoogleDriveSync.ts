@@ -1,8 +1,8 @@
 // src/sync/useGoogleDriveSync.ts
 // Shared React hook coordinating Google Auth state, read-only Drive preflight checks,
-// online/offline conflict alerts, and user-confirmed Drive backup mutations.
+// quiet debounced background auto-sync (prompting only on conflict), and user-confirmed actions.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getDriveAccessToken,
   getGoogleAuthState,
@@ -17,15 +17,29 @@ import {
   DriveAuthExpiredError,
   getDriveSyncBaseline,
   inspectDriveSync,
+  markLocalMutation,
   mergeAndSyncDrive,
   pullSnapshotFromDrive,
   pushSnapshotToDrive,
   type DriveSyncBaseline,
   type DriveSyncReport,
 } from "./googleDriveSync";
+import { getDriveAutoSyncEnabled } from "../data/accountSettings";
+import { uploadPendingMediaToDrive } from "../data/media";
 import { confirmAction, showToast } from "../components/ui";
 
-export function useGoogleDriveSync() {
+const AUTO_SYNC_DEBOUNCE_MS = 2200;
+
+let sharedAutoSyncInFlight: Promise<void> | null = null;
+let sharedAutoSyncPendingAgain = false;
+
+export interface UseGoogleDriveSyncOptions {
+  /** Only AppShell should pass true so background listeners run once app-wide. */
+  enableAutoSync?: boolean;
+}
+
+export function useGoogleDriveSync(options?: UseGoogleDriveSyncOptions) {
+  const enableAutoSync = Boolean(options?.enableAutoSync);
   const [auth, setAuth] = useState<GoogleAuthState>(() => getGoogleAuthState());
   const [report, setReport] = useState<DriveSyncReport | null>(null);
   const [baseline, setBaseline] = useState<DriveSyncBaseline | null>(() =>
@@ -35,13 +49,31 @@ export function useGoogleDriveSync() {
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modalOpenRef = useRef(modalOpen);
+  const busyRef = useRef(busy);
+  modalOpenRef.current = modalOpen;
+  busyRef.current = busy;
+
+  const notifySyncStateUpdated = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("panga-drive-sync-updated"));
+    }
+  };
 
   useEffect(() => {
     initGoogleAuth();
-    return subscribeGoogleAuth((next) => {
+    const unsub = subscribeGoogleAuth((next) => {
       setAuth(next);
       setBaseline(getDriveSyncBaseline(next.user?.uid));
     });
+    const onSyncUpdate = () => {
+      setBaseline(getDriveSyncBaseline(getGoogleAuthState().user?.uid));
+    };
+    window.addEventListener("panga-drive-sync-updated", onSyncUpdate);
+    return () => {
+      unsub();
+      window.removeEventListener("panga-drive-sync-updated", onSyncUpdate);
+    };
   }, []);
 
   const ensureTokenInteractive = useCallback(async (): Promise<{ token: string; uid: string; email: string | null } | null> => {
@@ -92,22 +124,108 @@ export function useGoogleDriveSync() {
     []
   );
 
-  // Read-only background preflight when coming back online with an active Drive token.
-  useEffect(() => {
-    function onOnline() {
-      if (!auth.user || !auth.hasAccessToken) return;
-      void refreshInspection({ interactive: false, openReview: false }).then((rep) => {
-        if (!rep) return;
-        if (rep.status === "conflict") {
-          showToast("Google Drive conflict detected — review sync in Settings.", "error");
-        } else if (rep.status === "remote_ahead") {
-          showToast("Google Drive has a newer backup — review restore in Settings.", "info");
-        }
-      });
+  const runQuietAutoSync = useCallback(async () => {
+    if (!getDriveAutoSyncEnabled()) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (modalOpenRef.current || busyRef.current) return;
+
+    const token = await getDriveAccessToken();
+    const uid = getGoogleAuthState().user?.uid ?? null;
+    if (!token || !uid) return;
+
+    if (sharedAutoSyncInFlight) {
+      sharedAutoSyncPendingAgain = true;
+      return sharedAutoSyncInFlight;
     }
+
+    const execute = async () => {
+      try {
+        // Upload any cached local media blobs first so exported snapshots include their Drive routes.
+        await uploadPendingMediaToDrive(token).catch(() => {});
+
+        const rep = await inspectDriveSync(token, uid);
+        setReport(rep);
+        setBaseline(getDriveSyncBaseline(uid));
+
+        if (rep.status === "no_remote" || rep.status === "local_ahead") {
+          const next = await pushSnapshotToDrive(token, {
+            uid,
+            fileId: rep.remoteFile?.id ?? null,
+            snapshot: rep.localSnapshot,
+          });
+          setBaseline(next);
+          notifySyncStateUpdated();
+        } else if (rep.status === "remote_ahead" && rep.remoteFile && rep.remoteSnapshot) {
+          const next = await pullSnapshotFromDrive({
+            uid,
+            remoteFile: rep.remoteFile,
+            remoteSnapshot: rep.remoteSnapshot,
+          });
+          setBaseline(next);
+          notifySyncStateUpdated();
+        } else if (rep.status === "conflict") {
+          // Prompt only when a genuine two-way conflict occurs — never silently overwrite.
+          setModalOpen(true);
+        }
+      } catch (err: unknown) {
+        if (err instanceof DriveAuthExpiredError) {
+          setError(err.message);
+        }
+        // Keep background errors non-intrusive; next edit or reconnect retries cleanly.
+      }
+    };
+
+    sharedAutoSyncInFlight = execute().finally(() => {
+      sharedAutoSyncInFlight = null;
+      if (sharedAutoSyncPendingAgain) {
+        sharedAutoSyncPendingAgain = false;
+        void runQuietAutoSync();
+      }
+    });
+    return sharedAutoSyncInFlight;
+  }, []);
+
+  // Quiet background auto-sync coordinator (active in AppShell).
+  useEffect(() => {
+    if (!enableAutoSync) return;
+    let debounceTimer: number | undefined;
+
+    function scheduleSync(delayMs = AUTO_SYNC_DEBOUNCE_MS) {
+      if (!getDriveAutoSyncEnabled()) return;
+      if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = undefined;
+        void runQuietAutoSync();
+      }, delayMs);
+    }
+
+    function onLocalMutated() {
+      markLocalMutation();
+      scheduleSync(AUTO_SYNC_DEBOUNCE_MS);
+    }
+
+    function onOnline() {
+      scheduleSync(400);
+    }
+
+    window.addEventListener("panga-local-mutated", onLocalMutated);
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [auth.user, auth.hasAccessToken, refreshInspection]);
+    return () => {
+      if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+      window.removeEventListener("panga-local-mutated", onLocalMutated);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [enableAutoSync, runQuietAutoSync]);
+
+  // Trigger a gentle initial quiet sync whenever an active Drive access token becomes available.
+  useEffect(() => {
+    if (!enableAutoSync) return;
+    if (!auth.user || !auth.hasAccessToken) return;
+    const t = window.setTimeout(() => {
+      void runQuietAutoSync();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [enableAutoSync, auth.user, auth.hasAccessToken, runQuietAutoSync]);
 
   const handleSignInOnly = useCallback(async () => {
     setError(null);
@@ -138,6 +256,7 @@ export function useGoogleDriveSync() {
       const next = await mergeAndSyncDrive(session.token, { uid: session.uid, report });
       setBaseline(next);
       setModalOpen(false);
+      notifySyncStateUpdated();
       showToast("Merged local and Google Drive backups.", "success");
       return true;
     } catch (err: unknown) {
@@ -164,6 +283,7 @@ export function useGoogleDriveSync() {
       });
       setBaseline(next);
       setModalOpen(false);
+      notifySyncStateUpdated();
       showToast("Saved backup to Google Drive.", "success");
       return true;
     } catch (err: unknown) {
@@ -189,6 +309,7 @@ export function useGoogleDriveSync() {
       });
       setBaseline(next);
       setModalOpen(false);
+      notifySyncStateUpdated();
       showToast("Restored backup from Google Drive.", "success");
       return true;
     } catch (err: unknown) {
@@ -223,6 +344,7 @@ export function useGoogleDriveSync() {
       await deleteDriveBackup(session.token, { uid: session.uid, fileId: current.remoteFile.id });
       setBaseline(null);
       setReport(null);
+      notifySyncStateUpdated();
       showToast("Deleted Google Drive backup.", "info");
       return true;
     } catch (err: unknown) {
@@ -240,6 +362,7 @@ export function useGoogleDriveSync() {
     setReport(null);
     setModalOpen(false);
     setError(null);
+    notifySyncStateUpdated();
     showToast("Signed out of Google.", "info");
   }, []);
 
@@ -254,6 +377,7 @@ export function useGoogleDriveSync() {
     setModalOpen,
     handleSignInOnly,
     refreshInspection,
+    runQuietAutoSync,
     openSyncReview,
     handleMerge,
     handlePushLocal,

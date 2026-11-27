@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { addThought, deleteThought, listThoughts, updateThought, type ThoughtEntry } from "../../data/thoughts";
+import { addThought, countThoughts, deleteThought, listThoughts, updateThought, type ThoughtEntry } from "../../data/thoughts";
 import { createTask } from "../../data/tasks";
 import { createNote } from "../../data/notes";
 import { listTaskLists, type TaskList } from "../../data/taskLists";
 import { listNoteFolders, type NoteFolder } from "../../data/noteFolders";
-import { confirmDelete, showToast } from "../ui";
+import { CopyButton, confirmDelete, showToast } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
 import { ProofreadTrigger } from "../Proofread";
 
 export const CAPTURE_INPUT_ID = "panga-capture-input";
 
+export const THOUGHT_HISTORY_THRESHOLD = 5;
+
 export default function ThoughtStream() {
   const [thoughts, setThoughts] = useState<ThoughtEntry[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [draft, setDraft] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [lists, setLists] = useState<TaskList[]>([]);
@@ -22,8 +25,14 @@ export default function ThoughtStream() {
   const [promoteFolderId, setPromoteFolderId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [thoughtsList, allLists, allFolders] = await Promise.all([listThoughts(showAll ? 200 : 8), listTaskLists(), listNoteFolders()]);
+    const [thoughtsList, total, allLists, allFolders] = await Promise.all([
+      listThoughts(showAll ? 200 : THOUGHT_HISTORY_THRESHOLD),
+      countThoughts(),
+      listTaskLists(),
+      listNoteFolders(),
+    ]);
     setThoughts(thoughtsList);
+    setTotalCount(total);
     setLists(allLists);
     setFolders(allFolders);
   }, [showAll]);
@@ -155,6 +164,7 @@ export default function ThoughtStream() {
                     </button>
                   </>
                 )}
+                <CopyButton text={th.text} />
                 <ReadAloudButton text={th.text} />
                 <button
                   type="button"
@@ -172,16 +182,18 @@ export default function ThoughtStream() {
         </ul>
       )}
       <div className="pg-actions">
-        <button type="button" className="btn-secondary btn-small" onClick={() => setShowAll((v) => !v)}>
-          {showAll ? "Show fewer" : "Show history"}
-        </button>
+        {(totalCount > THOUGHT_HISTORY_THRESHOLD || showAll) && (
+          <button type="button" className="btn-secondary btn-small" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Show fewer" : `Show history (${totalCount})`}
+          </button>
+        )}
         <button
           type="button"
           className="btn-secondary btn-small"
           onClick={() => window.dispatchEvent(new CustomEvent("panga-ai-command", { detail: "Turn my recent thoughts that are not yet tasks into tasks." }))}
           title="Uses your own AI key"
         >
-          ✨ Make tasks from thoughts
+          Make tasks from thoughts
         </button>
       </div>
     </section>

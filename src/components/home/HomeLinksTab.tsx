@@ -54,6 +54,18 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
     return () => window.removeEventListener("panga-data-updated", onUpdate);
   }, [reload]);
 
+  useEffect(() => {
+    if (!showAddForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowAddForm(false);
+        setEditingId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showAddForm]);
+
   // A search result for a folder selects it directly.
   useEffect(() => {
     if (!initialFolderId) return;
@@ -223,6 +235,18 @@ export default function HomeLinksTab({ initialFolderId }: { initialFolderId?: st
           <form onSubmit={handleSaveLink} className="stack" style={sx.addForm}>
             <div style={sx.addFormHeader}>
               <h3 style={sx.addFormH3}>{editingId ? "Edit link" : "Add a link"}</h3>
+              <button
+                type="button"
+                className="modal-close-x clickable"
+                aria-label="Close link form"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setEditingId(null);
+                  setError(null);
+                }}
+              >
+                ×
+              </button>
             </div>
             <div style={sx.addFormField}>
               <label htmlFor="link-url" style={sx.addFormLabel}>URL <span style={{ color: "var(--color-accent-issue)" }}>*</span></label>

@@ -1,5 +1,6 @@
 // src/data/links.ts
-import { db, type Link } from "./db";
+import { db, notifyLocalDataMutated, type Link } from "./db";
+import { emitGlobalItemPrompt } from "./workspaceMove";
 import { newId, now } from "./utils";
 import { logActivity } from "./activity";
 
@@ -50,6 +51,8 @@ export async function createLink(input: {
     syncStatus: "pending",
   };
   await db.links.add(link);
+  notifyLocalDataMutated();
+  emitGlobalItemPrompt({ kind: "link", id: link.id, title: link.title || link.url });
   void logActivity({ entityType: "link", entityId: link.id, action: "created", description: `Created link "${link.title}"` });
   return link;
 }
@@ -61,11 +64,13 @@ export async function updateLink(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.links.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  notifyLocalDataMutated();
 }
 
 export async function deleteLink(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.links.delete(id);
+  notifyLocalDataMutated();
   void logActivity({ entityType: "link", entityId: id, action: "deleted", description: "Link deleted" });
 }
 
@@ -76,4 +81,5 @@ export async function reorderLinks(_folderId: string | null, orderedIds: string[
       await db.links.update(id, { order: index, updatedAt: now(), syncStatus: "pending" });
     }
   });
+  notifyLocalDataMutated();
 }

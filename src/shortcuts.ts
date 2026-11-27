@@ -14,6 +14,7 @@ export const HOME_TABS: readonly HomeTabDef[] = [
   { id: "Notes", code: "KeyN", shortcut: "Alt+N", description: "Notes" },
   { id: "Reminders", code: "KeyR", shortcut: "Alt+R", description: "Reminders" },
   { id: "Clipboard", code: "KeyC", shortcut: "Alt+C", description: "Clipboard" },
+  { id: "Media", code: "KeyM", shortcut: "Alt+M", description: "Media" },
 ];
 
 export type HomeTabId = (typeof HOME_TABS)[number]["id"];

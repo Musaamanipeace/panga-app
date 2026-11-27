@@ -56,7 +56,6 @@ export default defineConfig({
         ],
       },
       workbox: {
-        cleanupOutdatedCaches: true,
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
         // The speech runtime (WebAssembly) is ~40 MB. Never precache it at
         // install time; it is cached the first time voice input is used.

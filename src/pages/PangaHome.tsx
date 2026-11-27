@@ -9,6 +9,7 @@ import HomeLinksTab from "../components/home/HomeLinksTab";
 import NotesPanel from "../components/home/NotesPanel";
 import HomeRemindersTab from "../components/home/HomeRemindersTab";
 import ClipboardPanel from "../components/home/ClipboardPanel";
+import HomeMediaTab from "../components/home/HomeMediaTab";
 import { HOME_TABS, type HomeTabId } from "../shortcuts";
 import {
   dismissReadAloudNotice,
@@ -27,6 +28,7 @@ export default function PangaHome() {
   const listId = params.get("list") ?? null;
   const noteId = params.get("note") ?? null;
   const reminderId = params.get("reminder") ?? null;
+  const mediaId = params.get("media") ?? null;
   const [voiceNotice, setVoiceNotice] = useState<VoiceStatus | null>(null);
   const [online, setOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
 
@@ -146,6 +148,7 @@ export default function PangaHome() {
         {tab === "Notes" && <NotesPanel initialFolderId={folderId} initialNoteId={noteId} />}
         {tab === "Reminders" && <HomeRemindersTab initialFolderId={folderId} initialReminderId={reminderId} />}
         {tab === "Clipboard" && <ClipboardPanel />}
+        {tab === "Media" && <HomeMediaTab initialMediaId={mediaId} />}
       </section>
     </div>
   );

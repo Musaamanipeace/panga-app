@@ -12,6 +12,9 @@ import {
   listNoteFolders,
   type NoteFolder,
 } from "../../data/noteFolders";
+import { db } from "../../data/db";
+import { getActiveWorkspaceId } from "../../data/workspaceState";
+import { getSessionUserId } from "../../auth/sessionUserId";
 import { confirmAction, confirmDelete, copyToClipboard } from "../ui";
 import ReadAloudButton from "../ReadAloudButton";
 import { ProofreadTrigger } from "../Proofread";
@@ -25,6 +28,8 @@ import {
 
 const ALL = "__all__";
 const UNFILED = "__unfiled__";
+const NOTES_STATE_PREFIX = "panga_notes_editor_state";
+const NOTES_DB_DRAFT_ID = "notes_active_draft";
 
 interface Draft {
   /** null while the note has not been saved yet. */
@@ -34,6 +39,63 @@ interface Draft {
   folderId: string | null;
   baseTitle: string;
   baseBody: string;
+}
+
+interface PersistedNotesState {
+  view: string;
+  draft: Draft | null;
+}
+
+function emptyDraft(folderId: string | null = null): Draft {
+  return {
+    id: null,
+    title: "",
+    body: "",
+    folderId,
+    baseTitle: "",
+    baseBody: "",
+  };
+}
+
+function storageKey(): string {
+  return `${NOTES_STATE_PREFIX}_${getSessionUserId() ?? "guest"}_${getActiveWorkspaceId()}`;
+}
+
+function readLocalNotesState(): PersistedNotesState | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    const raw = localStorage.getItem(storageKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedNotesState>;
+    if (!parsed || typeof parsed !== "object") return null;
+    const view = typeof parsed.view === "string" && parsed.view ? parsed.view : ALL;
+    const d = parsed.draft;
+    if (d && typeof d === "object") {
+      return {
+        view,
+        draft: {
+          id: typeof d.id === "string" ? d.id : null,
+          title: typeof d.title === "string" ? d.title : "",
+          body: typeof d.body === "string" ? d.body : "",
+          folderId: typeof d.folderId === "string" ? d.folderId : null,
+          baseTitle: typeof d.baseTitle === "string" ? d.baseTitle : "",
+          baseBody: typeof d.baseBody === "string" ? d.baseBody : "",
+        },
+      };
+    }
+    return { view, draft: null };
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalNotesState(state: PersistedNotesState): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify(state));
+  } catch {
+    /* ignore storage quota errors */
+  }
 }
 
 function clipTitle(t: string): string {
@@ -57,10 +119,24 @@ export default function NotesPanel({
   initialFolderId?: string | null;
   initialNoteId?: string | null;
 }) {
+  const initialSaved = useMemo(() => readLocalNotesState(), []);
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [view, setView] = useState<string>(ALL);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [view, setView] = useState<string>(() => {
+    if (initialFolderId) return initialFolderId;
+    return initialSaved?.view || ALL;
+  });
+  // Default Notes tab directly into an open editor: restore saved draft if any, else start blank composer.
+  const [draft, setDraft] = useState<Draft | null>(() => {
+    if (initialSaved?.draft) return initialSaved.draft;
+    const initFolder =
+      initialFolderId && initialFolderId !== ALL && initialFolderId !== UNFILED
+        ? initialFolderId
+        : initialSaved?.view && initialSaved.view !== ALL && initialSaved.view !== UNFILED
+          ? initialSaved.view
+          : null;
+    return emptyDraft(initFolder);
+  });
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -70,6 +146,7 @@ export default function NotesPanel({
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const foldersRef = useRef<HTMLElement>(null);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
+  const hydratedFromDb = useRef(false);
 
   const reload = useCallback(async () => {
     const [allFolders, allNotes] = await Promise.all([listNoteFolders(), listAllNotes()]);
@@ -84,6 +161,50 @@ export default function NotesPanel({
     window.addEventListener("panga-data-updated", onUpdate);
     return () => window.removeEventListener("panga-data-updated", onUpdate);
   }, [reload]);
+
+  // Fallback hydration from IndexedDB draft record when localStorage had no draft (e.g. after JSON import/sync).
+  useEffect(() => {
+    if (hydratedFromDb.current || initialNoteId) return;
+    hydratedFromDb.current = true;
+    if (initialSaved?.draft) return;
+    void (async () => {
+      try {
+        if (!db.isOpen()) await db.open();
+        const row = await db.drafts.get(NOTES_DB_DRAFT_ID);
+        if (!row?.content) return;
+        const parsed = JSON.parse(row.content) as Partial<PersistedNotesState>;
+        if (parsed.view) setView(parsed.view);
+        if (parsed.draft) setDraft(parsed.draft);
+      } catch {
+        /* ignore malformed db draft */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist editor state + view immediately in localStorage and debounced in IndexedDB.
+  useEffect(() => {
+    const state: PersistedNotesState = { view, draft };
+    writeLocalNotesState(state);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          if (!db.isOpen()) await db.open();
+          await db.drafts.put({
+            id: NOTES_DB_DRAFT_ID,
+            entityType: "note",
+            entityId: draft?.id ?? null,
+            title: draft?.title ?? null,
+            content: JSON.stringify(state),
+            updatedAt: Date.now(),
+          });
+        } catch {
+          /* ignore background draft persistence error */
+        }
+      })();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [view, draft]);
 
   // A search result or shortcut for a folder/note selects it directly.
   useEffect(() => {
@@ -153,19 +274,19 @@ export default function NotesPanel({
 
   function openNote(n: Note) {
     setError(null);
-    setDraft({ id: n.id, title: n.title, body: n.body ?? "", folderId: n.folderId ?? null, baseTitle: n.title, baseBody: n.body ?? "" });
+    setDraft({
+      id: n.id,
+      title: n.title,
+      body: n.body ?? "",
+      folderId: n.folderId ?? null,
+      baseTitle: n.title,
+      baseBody: n.body ?? "",
+    });
   }
 
   function startNew() {
     setError(null);
-    setDraft({
-      id: null,
-      title: "",
-      body: "",
-      folderId: view === ALL || view === UNFILED ? null : view,
-      baseTitle: "",
-      baseBody: "",
-    });
+    setDraft(emptyDraft(view === ALL || view === UNFILED ? null : view));
   }
 
   async function closeEditor() {
@@ -208,12 +329,12 @@ export default function NotesPanel({
 
   async function removeNote() {
     if (!draft?.id) {
-      setDraft(null);
+      setDraft(emptyDraft(draft?.folderId ?? null));
       return;
     }
     if (!(await confirmDelete({ kind: "note", name: draft.title }))) return;
     await deleteNote(draft.id);
-    setDraft(null);
+    setDraft(emptyDraft(view === ALL || view === UNFILED ? null : view));
     await reload();
   }
 
@@ -272,6 +393,17 @@ export default function NotesPanel({
           <span className={`workspace-caret${folderMenuOpen ? " workspace-caret-open" : ""}`} aria-hidden="true" />
         </button>
         <div className="notes-folders-panel dropdown-anim sweep-on-mount" data-open={folderMenuOpen} role="menu">
+          <div className="panel-head-row notes-folders-panel-head">
+            <strong className="panel-head-title">Note folders</strong>
+            <button
+              type="button"
+              className="modal-close-x clickable"
+              aria-label="Close folders"
+              onClick={() => setFolderMenuOpen(false)}
+            >
+              ×
+            </button>
+          </div>
           <ul className="notes-folder-list">
             <li>
               <button type="button" role="menuitemradio" aria-checked={view === ALL} className={`notes-folder-item clickable${view === ALL ? " notes-folder-active" : ""}`} onClick={() => pickView(ALL)}>
@@ -310,6 +442,11 @@ export default function NotesPanel({
               <button type="button" className="btn-secondary btn-small clickable tl-danger" disabled={!currentFolder} onClick={() => void handleDeleteFolder()}>Delete</button>
             </div>
           )}
+          <div className="panel-foot-row notes-folders-panel-foot">
+            <button type="button" className="btn-secondary btn-small clickable" onClick={() => setFolderMenuOpen(false)}>
+              Close
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -354,7 +491,10 @@ export default function NotesPanel({
 
       <section className="notes-editor-pane sweep-on-mount" key={draft ? `edit-${draft.id ?? "new"}` : "idle"} aria-label="Note editor">
         {!draft ? (
-          <p className="tl-empty tl-empty-pane">Select a note, or add a new one, to start writing.</p>
+          <div className="tl-empty tl-empty-pane">
+            <p>Select a note, or start writing a new one.</p>
+            <button type="button" className="btn-primary btn-small clickable" onClick={startNew}>Open note editor</button>
+          </div>
         ) : (
           <form
             className="notes-editor"
@@ -373,6 +513,9 @@ export default function NotesPanel({
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                 spellCheck
               />
+              <button type="button" className="btn-secondary btn-small clickable" onClick={startNew}>
+                New note
+              </button>
             </header>
 
             <div className="notes-toolbar" role="toolbar" aria-label="Text formatting">
@@ -388,7 +531,6 @@ export default function NotesPanel({
 
             <textarea
               ref={bodyRef}
-              autoFocus={!draft.id}
               className="notes-body-input"
               placeholder="Write your note"
               aria-label="Note text"
@@ -404,7 +546,7 @@ export default function NotesPanel({
               <button type="button" className="btn-secondary btn-small clickable" onClick={() => void copyToClipboard(draft.body || draft.title)}>Copy</button>
               <ReadAloudButton text={() => `${draft.title}. ${stripMarkdown(draft.body)}`} label="Read" />
               <button type="button" className="btn-secondary btn-small clickable tl-danger" onClick={() => void removeNote()}>
-                {draft.id ? "Delete" : "Discard"}
+                {draft.id ? "Delete" : "Clear"}
               </button>
               <button type="submit" className="btn-primary clickable notes-save" disabled={saving || (!dirty && !!draft.id)}>
                 {saving ? "Saving…" : !draft.id ? "Save note" : dirty ? "Save changes" : "Saved"}

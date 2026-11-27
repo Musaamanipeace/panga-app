@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { globalSearch, type SearchResult } from "../search/search";
+import { getActiveWorkspaceId, switchWorkspace } from "../data/workspaces";
+import { notifyWorkspaceUpdated } from "../ai/agent";
 
 const TYPE_LABEL: Record<SearchResult["type"], string> = {
   folder: "Folder",
@@ -28,7 +30,6 @@ export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Pro
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Standalone mode (if mounted without AppShell): still toggle on Ctrl/Cmd+K.
       if (controlledOpen === undefined && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setUncontrolledOpen((o) => !o);
@@ -56,17 +57,21 @@ export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Pro
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
     let cancelled = false;
-    globalSearch(query).then((r) => {
+    void globalSearch(query).then((r) => {
       if (!cancelled) setResults(r);
     });
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, open]);
 
-  // Clicking a result takes you directly to the saved item.
-  function goTo(result: SearchResult) {
+  async function goTo(result: SearchResult) {
+    if (!result.skipWorkspaceSwitch && result.workspaceId !== getActiveWorkspaceId()) {
+      await switchWorkspace(result.workspaceId);
+      notifyWorkspaceUpdated();
+    }
     setOpen(false);
     setQuery("");
     navigate(result.route);
@@ -77,7 +82,7 @@ export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Pro
       <button
         type="button"
         className="global-search-trigger clickable"
-        data-tip="Search folders, files and task lists"
+        data-tip="Search across all workspaces"
         data-tip-pos="bottom"
         onClick={() => setOpen(true)}
       >
@@ -86,31 +91,57 @@ export default function GlobalSearch({ open: controlledOpen, onOpenChange }: Pro
       </button>
 
       {open && (
-        <div className="search-overlay" onClick={() => setOpen(false)}>
+        <div
+          className="search-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Global cross-workspace search"
+          onClick={() => setOpen(false)}
+        >
           <div className="search-panel search-panel-open" onClick={(e) => e.stopPropagation()}>
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search folders, files, task lists…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+            <div className="search-head-row">
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="Search across all workspaces…"
+                aria-label="Search across all workspaces"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <button
+                type="button"
+                className="modal-close-x clickable"
+                aria-label="Close search"
+                onClick={() => setOpen(false)}
+              >
+                ×
+              </button>
+            </div>
             <div className="search-results">
               {query.trim() === "" ? (
-                <p className="empty-state">Start typing to search folders, files and task lists.</p>
+                <p className="empty-state">Start typing to search notes, tasks, links, media, and folders across all workspaces.</p>
               ) : results.length === 0 ? (
-                <p className="empty-state">No matches.</p>
+                <p className="empty-state">No matches across any workspace.</p>
               ) : (
                 results.map((r) => (
-                  <button key={r.key} type="button" className="search-card clickable" onClick={() => goTo(r)}>
+                  <button key={r.key} type="button" className="search-card clickable" onClick={() => void goTo(r)}>
                     <span className="search-card-icon">{TYPE_LABEL[r.type]}</span>
                     <span className="search-card-body">
                       <span className="search-card-title">{r.title}</span>
-                      <span className="search-card-sub">{r.subtitle}</span>
+                      <span className="search-card-sub">
+                        <span className="search-card-ws">{r.workspaceName}</span>
+                        {" · "}
+                        {r.subtitle}
+                      </span>
                     </span>
                   </button>
                 ))
               )}
+            </div>
+            <div className="panel-foot-row">
+              <button type="button" className="btn-secondary btn-small clickable" onClick={() => setOpen(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 // src/data/notes.ts
-import { db, type Note } from "./db";
+import { db, notifyLocalDataMutated, type Note } from "./db";
+import { emitGlobalItemPrompt } from "./workspaceMove";
 import { newId, now } from "./utils";
 import { logActivity } from "./activity";
 
@@ -42,6 +43,8 @@ export async function createNote(input: {
     syncStatus: "pending",
   };
   await db.notes.add(note);
+  notifyLocalDataMutated();
+  emitGlobalItemPrompt({ kind: "note", id: note.id, title: note.title || "Untitled note" });
   void logActivity({ entityType: "note", entityId: note.id, action: "created", description: `Created note "${note.title}"` });
   return note;
 }
@@ -53,11 +56,13 @@ export async function updateNote(
   if (!db.isOpen()) await db.open();
   const updatedAt = now();
   await db.notes.update(id, { ...changes, updatedAt, syncStatus: "pending" });
+  notifyLocalDataMutated();
 }
 
 export async function deleteNote(id: string): Promise<void> {
   if (!db.isOpen()) await db.open();
   await db.notes.delete(id);
+  notifyLocalDataMutated();
   void logActivity({ entityType: "note", entityId: id, action: "deleted", description: "Note deleted" });
 }
 

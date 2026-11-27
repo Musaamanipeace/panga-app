@@ -1,6 +1,7 @@
 // src/components/DriveSyncReviewModal.tsx
 // Explicit user confirmation & conflict-resolution modal for Google Drive sync.
 
+import { useEffect } from "react";
 import type { DriveSyncReport, SnapshotSummary } from "../sync/googleDriveSync";
 
 interface DriveSyncReviewModalProps {
@@ -32,6 +33,7 @@ function SummaryStats({ summary }: { summary: SnapshotSummary }) {
       <span>Reminders: {summary.reminders}</span>
       <span>Clipboard: {summary.clips}</span>
       <span>Thoughts: {summary.thoughts}</span>
+      <span>Media routes: {summary.media ?? 0}</span>
     </div>
   );
 }
@@ -71,6 +73,15 @@ export default function DriveSyncReviewModal({
   onPullRemote,
   onClose,
 }: DriveSyncReviewModalProps) {
+  useEffect(() => {
+    if (!open || busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy, onClose]);
+
   if (!open || !report) return null;
 
   const meta = STATUS_META[report.status];
@@ -91,7 +102,18 @@ export default function DriveSyncReviewModal({
         aria-label={meta.heading}
         className="confirm-dialog drive-review-dialog"
       >
-        <h3 style={{ margin: "0 0 6px", fontSize: 17 }}>{meta.heading}</h3>
+        <div className="panel-head-row" style={{ marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 17 }}>{meta.heading}</h3>
+          <button
+            type="button"
+            className="modal-close-x clickable"
+            aria-label="Close sync review"
+            disabled={busy}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
         {accountEmail && (
           <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--color-text-muted)" }}>
             Google account: <strong>{accountEmail}</strong>

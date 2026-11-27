@@ -11,6 +11,10 @@ import InstallSettings from "../components/InstallSettings";
 import AccountPanel from "../components/AccountPanel";
 import ReadAloudSettings from "../speech/ReadAloudSettings";
 
+import { ensureDefaultWorkspaceTemplates } from "../data/workspaceTemplates";
+import { showToast } from "../components/ui";
+import NotificationSetup from "../components/settings/NotificationSetup";
+
 const AI_PROVIDER_OPTIONS: { id: AIProviderId; label: string; hint: string }[] = [
   { id: "openrouter", label: "OpenRouter", hint: "Best free + paid" },
   { id: "gemini", label: "Google Gemini", hint: "Free tier available" },
@@ -306,7 +310,31 @@ export default function Settings() {
         </div>
       </section>
 
+      <section className="settings-section" style={{ border: "1px solid var(--color-border)", borderRadius: 12, padding: 20 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 18 }}>Workspace templates</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--color-text-muted)" }}>
+          Restore deleted default starter workspaces (Developer, Daily routine, Social events) without overwriting any existing workspaces.
+        </p>
+        <button
+          type="button"
+          className="btn-secondary btn-small clickable"
+          onClick={() => {
+            void ensureDefaultWorkspaceTemplates({ forceRestore: true }).then(({ restored }) => {
+              showToast(
+                restored.length > 0
+                  ? `Restored templates: ${restored.join(", ")}`
+                  : "All starter templates are already present.",
+                "info"
+              );
+            });
+          }}
+        >
+          Restore default templates
+        </button>
+      </section>
+
       <AccountPanel />
+      <NotificationSetup />
       <ReadAloudSettings />
       <VoiceSettings />
       <InstallSettings />

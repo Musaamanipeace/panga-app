@@ -57,3 +57,75 @@ export function clearAccountSettings(): void {
 export function getAllAccountSettings(): Record<string, unknown> {
   return readAll();
 }
+
+const IMPORTED_DONE_KEY = "importedDone";
+
+export function importedDoneKey(externalUid: string, externalInstance?: string | null): string {
+  return `${externalUid}|${externalInstance ?? ""}`;
+}
+
+export function listImportedDone(): string[] {
+  const raw = getAccountSetting<unknown>(IMPORTED_DONE_KEY);
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : [];
+}
+
+export function hasImportedDone(externalUid: string, externalInstance?: string | null): boolean {
+  const key = importedDoneKey(externalUid, externalInstance);
+  return listImportedDone().includes(key);
+}
+
+export function recordImportedDone(externalUid: string, externalInstance?: string | null): void {
+  const key = importedDoneKey(externalUid, externalInstance);
+  const current = listImportedDone();
+  if (!current.includes(key)) {
+    setAccountSetting(IMPORTED_DONE_KEY, [...current, key]);
+  }
+}
+
+export function removeImportedDone(externalUid: string, externalInstance?: string | null): void {
+  const key = importedDoneKey(externalUid, externalInstance);
+  const current = listImportedDone();
+  const next = current.filter((k) => k !== key);
+  if (next.length !== current.length) {
+    setAccountSetting(IMPORTED_DONE_KEY, next);
+  }
+}
+
+const AUTO_SYNC_KEY = "driveAutoSyncEnabled";
+
+export function getDriveAutoSyncEnabled(): boolean {
+  return getAccountSetting<boolean>(AUTO_SYNC_KEY) !== false;
+}
+
+export function setDriveAutoSyncEnabled(enabled: boolean): void {
+  setAccountSetting(AUTO_SYNC_KEY, enabled);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("panga-settings-updated"));
+  }
+}
+
+const OS_NOTIFICATIONS_KEY = "osNotificationsEnabled";
+const REMINDER_SOUND_KEY = "reminderSoundEnabled";
+
+export function getOsNotificationsEnabled(): boolean {
+  return getAccountSetting<boolean>(OS_NOTIFICATIONS_KEY) !== false;
+}
+
+export function setOsNotificationsEnabled(enabled: boolean): void {
+  setAccountSetting(OS_NOTIFICATIONS_KEY, enabled);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("panga-settings-updated"));
+  }
+}
+
+export function getReminderSoundEnabled(): boolean {
+  return getAccountSetting<boolean>(REMINDER_SOUND_KEY) !== false;
+}
+
+export function setReminderSoundEnabled(enabled: boolean): void {
+  setAccountSetting(REMINDER_SOUND_KEY, enabled);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("panga-settings-updated"));
+  }
+}
+

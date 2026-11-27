@@ -1,6 +1,7 @@
 // Clipboard history = notes in the default "clipboard" category.
 // Local-only by default: clips are NOT part of the cloud sync (people copy passwords).
-import { db } from "./db";
+import { db, notifyLocalDataMutated } from "./db";
+import { emitGlobalItemPrompt } from "./workspaceMove";
 import type { Resource } from "./db";
 import { createResource, deleteResource } from "./resources";
 import { getUserScopedKey } from "../auth/session";
@@ -30,7 +31,7 @@ export async function addClip(text: string): Promise<AddClipResult> {
   if (!clean) return "empty";
   const existing = await listClips();
   if (existing[0]?.body === clean) return "duplicate";
-  await createResource({
+  const created = await createResource({
     category: CLIPBOARD_CATEGORY,
     title: clipTitle(clean),
     body: clean,
@@ -38,17 +39,21 @@ export async function addClip(text: string): Promise<AddClipResult> {
   });
   // Keep the history bounded.
   for (const old of existing.slice(MAX_CLIPS - 1)) await deleteResource(old.id);
+  notifyLocalDataMutated();
+  emitGlobalItemPrompt({ kind: "clip", id: created.id, title: created.title });
   notify();
   return "saved";
 }
 
 export async function removeClip(id: string): Promise<void> {
   await deleteResource(id);
+  notifyLocalDataMutated();
   notify();
 }
 
 export async function clearClips(): Promise<void> {
   for (const c of await listClips()) await deleteResource(c.id);
+  notifyLocalDataMutated();
   notify();
 }
 

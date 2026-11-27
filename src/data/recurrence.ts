@@ -1,286 +1,357 @@
 // src/data/recurrence.ts
-// Pure local-time view classification, sorting, formatting, and fixed-schedule
-// recurrence calculation for Panga reminders.
+// Pure, DOM-free, Dexie-free recurrence engine for reminders.
+import type { ReminderRecurrence } from "./db";
 
-import type { Reminder, ReminderRecurrence } from "./db";
+const DAY_MS = 86_400_000;
+const MAX_ITERATIONS = 10_000;
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MONDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
-export type ReminderView = "today" | "overdue" | "upcoming";
+let loggedCapWarning = false;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-
-export function startOfLocalDay(ts: number): number {
-  const d = new Date(ts);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+interface WallParts {
+  year: number;
+  month: number; // 1..12
+  day: number;   // 1..31
+  hour: number;
+  minute: number;
+  second: number;
+  ms: number;
+  weekday: number; // 0..6 (Sun..Sat)
 }
 
-export function endOfLocalDay(ts: number): number {
-  const d = new Date(ts);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
-}
+const dtfCache = new Map<string, Intl.DateTimeFormat>();
 
-export function localDateInputValue(ts: number): string {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-export function localTimeInputValue(ts: number): string {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-export function combineLocalDateTime(dateStr: string, timeStr?: string | null): number {
-  const [yStr, mStr, dStr] = dateStr.split("-");
-  const year = Number(yStr);
-  const month = Number(mStr);
-  const day = Number(dStr);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return Date.now();
+function getFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = dtfCache.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    dtfCache.set(timeZone, fmt);
   }
-  if (timeStr && /^\d{1,2}:\d{2}/.test(timeStr)) {
-    const [hStr, minStr] = timeStr.split(":");
-    const hh = Number(hStr);
-    const mm = Number(minStr);
-    return new Date(year, month - 1, day, Number.isFinite(hh) ? hh : 9, Number.isFinite(mm) ? mm : 0, 0, 0).getTime();
+  return fmt;
+}
+
+function getWallParts(epochMs: number, timeZone?: string): WallParts {
+  if (!timeZone) {
+    const d = new Date(epochMs);
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      day: d.getDate(),
+      hour: d.getHours(),
+      minute: d.getMinutes(),
+      second: d.getSeconds(),
+      ms: d.getMilliseconds(),
+      weekday: d.getDay(),
+    };
   }
-  // Plain (untimed) reminders use 09:00 local to avoid midnight DST boundary shifts.
-  return new Date(year, month - 1, day, 9, 0, 0, 0).getTime();
+  const parts = getFormatter(timeZone).formatToParts(new Date(epochMs));
+  const map: Record<string, number> = {};
+  for (const p of parts) {
+    if (p.type !== "literal") map[p.type] = Number(p.value);
+  }
+  const year = map.year;
+  const month = map.month;
+  const day = map.day;
+  const hour = map.hour === 24 ? 0 : map.hour;
+  const minute = map.minute;
+  const second = map.second;
+  const ms = ((epochMs % 1000) + 1000) % 1000;
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return { year, month, day, hour, minute, second, ms, weekday };
 }
 
-export function isReminderOpen(r: Pick<Reminder, "status">): boolean {
-  return r.status !== "dismissed";
+function wallToEpochMs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  ms: number,
+  timeZone?: string
+): number {
+  if (!timeZone) {
+    return new Date(year, month - 1, day, hour, minute, second, ms).getTime();
+  }
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second, ms);
+  const p1 = getWallParts(guess, timeZone);
+  const off1 = Date.UTC(p1.year, p1.month - 1, p1.day, p1.hour, p1.minute, p1.second, ms) - guess;
+  const t1 = guess - off1;
+  const p2 = getWallParts(t1, timeZone);
+  const off2 = Date.UTC(p2.year, p2.month - 1, p2.day, p2.hour, p2.minute, p2.second, ms) - t1;
+  return guess - off2;
 }
 
-export function isTimedReminder(r: Pick<Reminder, "timed">): boolean {
-  return r.timed !== false;
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-export function viewOf(reminder: Pick<Reminder, "triggerAt">, nowMs = Date.now()): ReminderView {
-  const dueDay = startOfLocalDay(reminder.triggerAt);
-  const todayDay = startOfLocalDay(nowMs);
-  if (dueDay < todayDay) return "overdue";
-  if (dueDay === todayDay) return "today";
-  return "upcoming";
+function daysInMonth(year: number, month: number): number {
+  switch (month) {
+    case 2:
+      return isLeapYear(year) ? 29 : 28;
+    case 4:
+    case 6:
+    case 9:
+    case 11:
+      return 30;
+    default:
+      return 31;
+  }
 }
 
-export function sortTodayReminders(list: Reminder[]): Reminder[] {
-  return list.slice().sort((a, b) => {
-    const at = isTimedReminder(a) ? 0 : 1;
-    const bt = isTimedReminder(b) ? 0 : 1;
-    if (at !== bt) return at - bt;
-    if (a.triggerAt !== b.triggerAt) return a.triggerAt - b.triggerAt;
-    return a.createdAt - b.createdAt;
-  });
+function epochDayFromYmd(year: number, month: number, day: number): number {
+  return Math.floor(Date.UTC(year, month - 1, day) / DAY_MS);
 }
 
-export function sortOverdueReminders(list: Reminder[]): Reminder[] {
-  return list.slice().sort((a, b) => {
-    const da = startOfLocalDay(a.triggerAt);
-    const db = startOfLocalDay(b.triggerAt);
-    if (da !== db) return da - db;
-    const at = isTimedReminder(a) ? 0 : 1;
-    const bt = isTimedReminder(b) ? 0 : 1;
-    if (at !== bt) return at - bt;
-    return a.triggerAt - b.triggerAt;
-  });
+function ymdFromEpochDay(epochDay: number): { year: number; month: number; day: number } {
+  const d = new Date(epochDay * DAY_MS);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
 }
 
-export function sortUpcomingReminders(list: Reminder[]): Reminder[] {
-  return list.slice().sort((a, b) => {
-    const da = startOfLocalDay(a.triggerAt);
-    const db = startOfLocalDay(b.triggerAt);
-    if (da !== db) return da - db;
-    const at = isTimedReminder(a) ? 0 : 1;
-    const bt = isTimedReminder(b) ? 0 : 1;
-    if (at !== bt) return at - bt;
-    return a.triggerAt - b.triggerAt;
-  });
+/** 0 = Monday-start week containing 1970-01-05 (Unix epoch day 4 was Monday). */
+function mondayWeekIndex(epochDay: number): number {
+  return Math.floor((epochDay - 4) / 7);
 }
 
-function daysBetweenLocalDays(fromTs: number, toTs: number): number {
-  const a = new Date(fromTs);
-  const b = new Date(toTs);
-  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((utcB - utcA) / DAY_MS);
+function sortWeekdaysMondayFirst(days: number[]): number[] {
+  const unique = new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6));
+  return MONDAY_ORDER.filter((d) => unique.has(d));
 }
 
-function mondayWeekStartUtc(ts: number): number {
-  const d = new Date(ts);
-  const utc = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-  const dow = (d.getDay() + 6) % 7; // Mon=0..Sun=6
-  return utc - dow * DAY_MS;
-}
-
-function daysInMonth(year: number, monthIndex: number): number {
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-function buildLocalAt(year: number, monthIndex: number, day: number, template: Date): number {
-  return new Date(
-    year,
-    monthIndex,
-    day,
-    template.getHours(),
-    template.getMinutes(),
-    0,
-    0
-  ).getTime();
+function checkCap(iterations: number): boolean {
+  if (iterations <= MAX_ITERATIONS) return false;
+  if (!loggedCapWarning) {
+    loggedCapWarning = true;
+    console.warn("[reminders] Recurrence calculation exceeded iteration safety cap.");
+  }
+  return true;
 }
 
 /**
- * Computes the next fixed-schedule occurrence after completing `reminder`.
- * Returns `null` if the reminder does not repeat or its series has ended.
- *
- * Fixed schedule rule (D7): the next scheduled date strictly after the ticked
- * reminder's day AND on or after today's local day, preserving the original
- * anchor rhythm (e.g. every 2 days from anchor, weekly Mon/Wed, monthly on day D).
+ * Returns the first scheduled occurrence strictly after `after` (respecting
+ * `exdates`, `until`, `count`, and DST wall-clock preservation), or `null` if
+ * no further occurrence exists.
+ */
+export function nextOccurrence(
+  rec: ReminderRecurrence,
+  firstStart: number,
+  after: number,
+  opts?: { timeZone?: string }
+): number | null {
+  const tz = opts?.timeZone;
+  const interval = Math.floor(rec.interval);
+  if (!Number.isFinite(interval) || interval < 1) return null;
+  if (rec.until !== undefined && after >= rec.until) return null;
+
+  const anchor = Number.isFinite(firstStart) ? firstStart : rec.anchorAt;
+  if (!Number.isFinite(anchor)) return null;
+
+  const sp = getWallParts(anchor, tz);
+  const startDay = epochDayFromYmd(sp.year, sp.month, sp.day);
+  const exSet = rec.exdates?.length ? new Set(rec.exdates) : null;
+  const hasCount = typeof rec.count === "number";
+  const maxCount = hasCount ? Math.floor(rec.count!) : Infinity;
+  if (hasCount && maxCount < 1) return null;
+
+  const afterParts = after > anchor ? getWallParts(after, tz) : sp;
+  const afterDay = epochDayFromYmd(afterParts.year, afterParts.month, afterParts.day);
+
+  const acceptCandidate = (
+    ts: number,
+    generatedCount: number
+  ): { done: boolean; value: number | null; nextCount: number } => {
+    if (ts < anchor) return { done: false, value: null, nextCount: generatedCount };
+    if (rec.until !== undefined && ts > rec.until) {
+      return { done: true, value: null, nextCount: generatedCount };
+    }
+    const nextCount = generatedCount + 1;
+    if (hasCount && nextCount > maxCount) {
+      return { done: true, value: null, nextCount: generatedCount };
+    }
+    if (exSet?.has(ts)) {
+      if (hasCount && nextCount >= maxCount) {
+        return { done: true, value: null, nextCount };
+      }
+      return { done: false, value: null, nextCount };
+    }
+    if (ts > after) {
+      return { done: true, value: ts, nextCount };
+    }
+    if (hasCount && nextCount >= maxCount) {
+      return { done: true, value: null, nextCount };
+    }
+    return { done: false, value: null, nextCount };
+  };
+
+  let iterations = 0;
+  let generatedCount = 0;
+
+  switch (rec.freq) {
+    case "daily": {
+      const startStep = hasCount
+        ? 0
+        : Math.max(0, Math.floor((afterDay - startDay) / interval) - 1);
+      for (let step = startStep; ; step++) {
+        if (checkCap(++iterations)) return null;
+        const { year, month, day } = ymdFromEpochDay(startDay + step * interval);
+        const ts = wallToEpochMs(year, month, day, sp.hour, sp.minute, sp.second, sp.ms, tz);
+        const res = acceptCandidate(ts, generatedCount);
+        generatedCount = res.nextCount;
+        if (res.done) return res.value;
+      }
+    }
+
+    case "weekly": {
+      const rawDays = rec.byWeekday?.length ? rec.byWeekday : [sp.weekday];
+      const days = sortWeekdaysMondayFirst(rawDays);
+      if (days.length === 0) return null;
+      const anchorWeek = mondayWeekIndex(startDay);
+      const afterWeek = mondayWeekIndex(afterDay);
+      const startWeekStep = hasCount
+        ? 0
+        : Math.max(0, Math.floor((afterWeek - anchorWeek) / interval) - 1);
+
+      for (let wStep = startWeekStep; ; wStep++) {
+        const weekMondayDay = (anchorWeek + wStep * interval) * 7 + 4;
+        for (const wd of days) {
+          if (checkCap(++iterations)) return null;
+          const offsetFromMonday = (wd + 6) % 7;
+          const { year, month, day } = ymdFromEpochDay(weekMondayDay + offsetFromMonday);
+          const ts = wallToEpochMs(year, month, day, sp.hour, sp.minute, sp.second, sp.ms, tz);
+          const res = acceptCandidate(ts, generatedCount);
+          generatedCount = res.nextCount;
+          if (res.done) return res.value;
+        }
+      }
+    }
+
+    case "monthly": {
+      const targetDay = Math.floor(rec.byMonthDay ?? sp.day);
+      if (!Number.isFinite(targetDay) || targetDay < 1 || targetDay > 31) return null;
+      const startMonths = sp.year * 12 + (sp.month - 1);
+      const afterMonths = afterParts.year * 12 + (afterParts.month - 1);
+      const startStep = hasCount
+        ? 0
+        : Math.max(0, Math.floor((afterMonths - startMonths) / interval) - 1);
+
+      for (let mStep = startStep; ; mStep++) {
+        if (checkCap(++iterations)) return null;
+        const total = startMonths + mStep * interval;
+        const year = Math.floor(total / 12);
+        const month = (total % 12) + 1;
+        if (targetDay > daysInMonth(year, month)) {
+          // Wait to catch `until` bound so impossible patterns don't spin unnecessarily past `until`
+          if (rec.until !== undefined) {
+            const monthStart = wallToEpochMs(year, month, 1, 0, 0, 0, 0, tz);
+            if (monthStart > rec.until) return null;
+          }
+          continue;
+        }
+        const ts = wallToEpochMs(year, month, targetDay, sp.hour, sp.minute, sp.second, sp.ms, tz);
+        const res = acceptCandidate(ts, generatedCount);
+        generatedCount = res.nextCount;
+        if (res.done) return res.value;
+      }
+    }
+
+    case "yearly": {
+      const startStep = hasCount
+        ? 0
+        : Math.max(0, Math.floor((afterParts.year - sp.year) / interval) - 1);
+
+      for (let yStep = startStep; ; yStep++) {
+        if (checkCap(++iterations)) return null;
+        const year = sp.year + yStep * interval;
+        if (sp.month === 2 && sp.day === 29 && !isLeapYear(year)) {
+          if (rec.until !== undefined) {
+            const yearStart = wallToEpochMs(year, 1, 1, 0, 0, 0, 0, tz);
+            if (yearStart > rec.until) return null;
+          }
+          continue;
+        }
+        const ts = wallToEpochMs(year, sp.month, sp.day, sp.hour, sp.minute, sp.second, sp.ms, tz);
+        const res = acceptCandidate(ts, generatedCount);
+        generatedCount = res.nextCount;
+        if (res.done) return res.value;
+      }
+    }
+  }
+}
+
+/**
+ * Decision D7: first scheduled occurrence strictly after `completedAt` AND on or
+ * after local midnight of `now`; returns `null` if the series has ended.
  */
 export function nextAfterComplete(
-  reminder: Reminder,
-  nowMs = Date.now()
-): { nextTriggerAt: number; remaining?: number } | null {
-  const rec = reminder.recurrence;
-  if (!rec) return null;
+  rec: ReminderRecurrence,
+  completedAt: number,
+  now: number,
+  opts?: { timeZone?: string }
+): number | null {
+  const tz = opts?.timeZone;
+  const np = getWallParts(now, tz);
+  const todayMidnight = wallToEpochMs(np.year, np.month, np.day, 0, 0, 0, 0, tz);
+  const after = Math.max(completedAt, todayMidnight - 1);
+  return nextOccurrence(rec, rec.anchorAt || completedAt, after, opts);
+}
 
-  let nextRemaining: number | undefined;
-  if (rec.end?.type === "count") {
-    if (rec.end.remaining <= 1) return null;
-    nextRemaining = rec.end.remaining - 1;
-  }
-
+/**
+ * Human-readable repeat summary, e.g. "Repeats every 2 days" or
+ * "Repeats weekly on Mon, Wed".
+ */
+export function describeRecurrence(rec: ReminderRecurrence): string {
   const interval = Math.max(1, Math.floor(rec.interval || 1));
-  const currentTemplate = new Date(reminder.triggerAt);
-  const currentDay = startOfLocalDay(reminder.triggerAt);
-  const todayDay = startOfLocalDay(nowMs);
-  const minDay = Math.max(currentDay + DAY_MS, todayDay);
-  const anchor = new Date(Number.isFinite(rec.anchorAt) ? rec.anchorAt : reminder.triggerAt);
-
-  let candidate: number | null = null;
-
-  if (rec.unit === "day") {
-    const diffFromAnchor = Math.max(0, daysBetweenLocalDays(anchor.getTime(), minDay));
-    const steps = Math.ceil(diffFromAnchor / interval);
-    let targetDayOffset = steps * interval;
-    let d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + targetDayOffset);
-    // Guard against minDay > currentDay rounding
-    while (startOfLocalDay(d.getTime()) < minDay) {
-      targetDayOffset += interval;
-      d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + targetDayOffset);
+  switch (rec.freq) {
+    case "daily":
+      return interval === 1 ? "Repeats every day" : `Repeats every ${interval} days`;
+    case "weekly": {
+      const days = rec.byWeekday?.length ? sortWeekdaysMondayFirst(rec.byWeekday) : [];
+      const dayText = days.length ? ` on ${days.map((d) => WEEKDAY_LABELS[d]).join(", ")}` : "";
+      return interval === 1
+        ? `Repeats weekly${dayText}`
+        : `Repeats every ${interval} weeks${dayText}`;
     }
-    candidate = buildLocalAt(d.getFullYear(), d.getMonth(), d.getDate(), currentTemplate);
-  } else if (rec.unit === "week") {
-    const weekdays = (rec.weekdays && rec.weekdays.length > 0
-      ? [...new Set(rec.weekdays.filter((w) => Number.isInteger(w) && w >= 0 && w <= 6))]
-      : [anchor.getDay()]
-    ).sort((a, b) => a - b);
-
-    const anchorWeek = mondayWeekStartUtc(anchor.getTime());
-    const minDate = new Date(minDay);
-    for (let offset = 0; offset < interval * 7 * 12 + 366; offset++) {
-      const probe = new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate() + offset);
-      const probeWeek = mondayWeekStartUtc(probe.getTime());
-      const weekDiff = Math.round((probeWeek - anchorWeek) / (7 * DAY_MS));
-      if (weekDiff >= 0 && weekDiff % interval === 0 && weekdays.includes(probe.getDay())) {
-        candidate = buildLocalAt(probe.getFullYear(), probe.getMonth(), probe.getDate(), currentTemplate);
-        break;
-      }
-    }
-  } else if (rec.unit === "month") {
-    const anchorDay = anchor.getDate();
-    const minDate = new Date(minDay);
-    const monthsDiff =
-      (minDate.getFullYear() - anchor.getFullYear()) * 12 + (minDate.getMonth() - anchor.getMonth());
-    let stepMonths = Math.max(0, Math.floor(monthsDiff / interval) * interval);
-    for (let i = 0; i < 600; i++) {
-      const totalMonths = anchor.getFullYear() * 12 + anchor.getMonth() + stepMonths;
-      const targetYear = Math.floor(totalMonths / 12);
-      const targetMonth = ((totalMonths % 12) + 12) % 12;
-      const targetDay = Math.min(anchorDay, daysInMonth(targetYear, targetMonth));
-      const ts = buildLocalAt(targetYear, targetMonth, targetDay, currentTemplate);
-      if (startOfLocalDay(ts) >= minDay) {
-        candidate = ts;
-        break;
-      }
-      stepMonths += interval;
-    }
-  } else if (rec.unit === "year") {
-    const anchorMonth = anchor.getMonth();
-    const anchorDay = anchor.getDate();
-    const minDate = new Date(minDay);
-    const yearsDiff = minDate.getFullYear() - anchor.getFullYear();
-    let stepYears = Math.max(0, Math.floor(yearsDiff / interval) * interval);
-    for (let i = 0; i < 200; i++) {
-      const targetYear = anchor.getFullYear() + stepYears;
-      const targetDay = Math.min(anchorDay, daysInMonth(targetYear, anchorMonth));
-      const ts = buildLocalAt(targetYear, anchorMonth, targetDay, currentTemplate);
-      if (startOfLocalDay(ts) >= minDay) {
-        candidate = ts;
-        break;
-      }
-      stepYears += interval;
-    }
+    case "monthly":
+      return interval === 1 ? "Repeats monthly" : `Repeats every ${interval} months`;
+    case "yearly":
+      return interval === 1 ? "Repeats yearly" : `Repeats every ${interval} years`;
   }
-
-  if (candidate === null) return null;
-
-  if (rec.end?.type === "until") {
-    if (candidate > endOfLocalDay(rec.end.untilAt)) {
-      return null;
-    }
-  }
-
-  return nextRemaining !== undefined
-    ? { nextTriggerAt: candidate, remaining: nextRemaining }
-    : { nextTriggerAt: candidate };
 }
 
-export function formatRecurrence(rec?: ReminderRecurrence): string {
-  if (!rec) return "";
-  const interval = Math.max(1, Math.floor(rec.interval || 1));
-  if (rec.unit === "day") {
-    return interval === 1 ? "Repeats every day" : `Repeats every ${interval} days`;
+/**
+ * Returns up to `cap` occurrences (default 500) within `[from, to]` inclusive.
+ */
+export function occurrencesBetween(
+  rec: ReminderRecurrence,
+  firstStart: number,
+  from: number,
+  to: number,
+  cap = 500,
+  opts?: { timeZone?: string }
+): number[] {
+  if (to < from || cap <= 0) return [];
+  const results: number[] = [];
+  let cursor = from - 1;
+  while (results.length < cap) {
+    const next = nextOccurrence(rec, firstStart, cursor, opts);
+    if (next === null || next > to) break;
+    results.push(next);
+    cursor = next;
   }
-  if (rec.unit === "week") {
-    const days = rec.weekdays && rec.weekdays.length > 0
-      ? [...new Set(rec.weekdays)]
-          .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-          .map((d) => WEEKDAY_NAMES[d])
-          .filter(Boolean)
-      : [];
-    const base = interval === 1 ? "Repeats weekly" : `Repeats every ${interval} weeks`;
-    return days.length > 0 ? `${base} on ${days.join(", ")}` : base;
-  }
-  if (rec.unit === "month") {
-    return interval === 1 ? "Repeats monthly" : `Repeats every ${interval} months`;
-  }
-  return interval === 1 ? "Repeats yearly" : `Repeats every ${interval} years`;
-}
-
-export function formatDayHeading(ts: number, nowMs = Date.now()): string {
-  const d = new Date(ts);
-  const sameYear = d.getFullYear() === new Date(nowMs).getFullYear();
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  }).format(d);
-}
-
-export function formatOverdueMeta(triggerAt: number, nowMs = Date.now()): string {
-  const days = Math.max(1, daysBetweenLocalDays(triggerAt, nowMs));
-  const datePart = formatDayHeading(triggerAt, nowMs);
-  return `Due ${datePart}, ${days} ${days === 1 ? "day" : "days"} ago`;
-}
-
-export function formatLocalTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-export function formatPreviewDateTime(ts: number, allDay?: boolean): string {
-  const datePart = formatDayHeading(ts);
-  return allDay ? `${datePart} · All day` : `${datePart} · ${formatLocalTime(ts)}`;
+  return results;
 }

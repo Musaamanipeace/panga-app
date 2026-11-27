@@ -41,6 +41,7 @@ export interface SnapshotSummary {
   reminders: number;
   clips: number;
   thoughts: number;
+  media?: number;
 }
 
 export type DriveSyncStatus =
@@ -133,6 +134,7 @@ export function summarizeSnapshot(snap: Snapshot): SnapshotSummary {
   let reminders = 0;
   let clips = 0;
   let thoughts = 0;
+  let media = 0;
 
   const scanTimestamps = (rows: any[]) => {
     for (const row of rows) {
@@ -155,6 +157,7 @@ export function summarizeSnapshot(snap: Snapshot): SnapshotSummary {
     }
     clips += Array.isArray(data.clips) ? data.clips.length : 0;
     thoughts += Array.isArray(data.thoughts) ? data.thoughts.length : 0;
+    media += Array.isArray(data.mediaItems) ? data.mediaItems.length : 0;
 
     for (const rows of Object.values(data)) {
       if (Array.isArray(rows)) scanTimestamps(rows);
@@ -182,6 +185,7 @@ export function summarizeSnapshot(snap: Snapshot): SnapshotSummary {
     reminders,
     clips,
     thoughts,
+    media,
   };
 }
 
@@ -193,6 +197,7 @@ function hasMeaningfulContent(summary: SnapshotSummary): boolean {
     summary.reminders > 0 ||
     summary.clips > 0 ||
     summary.thoughts > 0 ||
+    (summary.media ?? 0) > 0 ||
     summary.workspaces > 1
   );
 }
@@ -214,7 +219,13 @@ export function computeSnapshotDigest(snap: Snapshot): string {
           activeId: snap.workspaces.activeId,
           items: [...snap.workspaces.items]
             .sort((a, b) => a.id.localeCompare(b.id))
-            .map((w) => ({ id: w.id, name: w.name, data: sortTablesForDigest(w.data || {}) })),
+            .map((w) => ({
+              id: w.id,
+              name: w.name,
+              parentWorkspaceId: w.parentWorkspaceId ?? null,
+              templateId: w.templateId ?? null,
+              data: sortTablesForDigest(w.data || {}),
+            })),
         }
       : null,
   };
@@ -385,11 +396,18 @@ export function mergeSnapshots(localSnap: Snapshot, remoteSnap: Snapshot): Snaps
   const remoteExported = Date.parse(remoteSnap.metadata?.exportedAt || "") || 0;
   const remoteNewer = remoteExported > localExported;
 
-  const toWorkspaceMap = (snap: Snapshot): Map<string, { id: string; name: string; data: Record<string, any[]> }> => {
-    const map = new Map<string, { id: string; name: string; data: Record<string, any[]> }>();
+  type WsEntry = SnapshotWorkspaces["items"][number];
+  const toWorkspaceMap = (snap: Snapshot): Map<string, WsEntry> => {
+    const map = new Map<string, WsEntry>();
     if (snap.workspaces?.items && snap.workspaces.items.length > 0) {
       for (const item of snap.workspaces.items) {
-        map.set(item.id, { id: item.id, name: item.name || DEFAULT_WORKSPACE_NAME, data: item.data || {} });
+        map.set(item.id, {
+          id: item.id,
+          name: item.name || DEFAULT_WORKSPACE_NAME,
+          ...(item.parentWorkspaceId !== undefined ? { parentWorkspaceId: item.parentWorkspaceId } : {}),
+          ...(item.templateId ? { templateId: item.templateId } : {}),
+          data: item.data || {},
+        });
       }
     } else {
       map.set(DEFAULT_WORKSPACE_ID, {
@@ -410,9 +428,13 @@ export function mergeSnapshots(localSnap: Snapshot, remoteSnap: Snapshot): Snaps
     const a = localWs.get(id);
     const b = remoteWs.get(id);
     if (a && b) {
+      const parentWorkspaceId = a.parentWorkspaceId ?? b.parentWorkspaceId;
+      const templateId = a.templateId ?? b.templateId;
       mergedItems.push({
         id,
         name: a.name || b.name || DEFAULT_WORKSPACE_NAME,
+        ...(parentWorkspaceId !== undefined ? { parentWorkspaceId } : {}),
+        ...(templateId ? { templateId } : {}),
         data: mergeTableMaps(a.data, b.data, remoteNewer),
       });
     } else if (a) {

@@ -97,17 +97,23 @@ export function Drawer({
           <h2>{title}</h2>
           <button
             type="button"
-            className="btn-icon"
+            className="modal-close-x clickable"
             onClick={onClose}
             aria-label="Close"
             data-tip={closeTip}
             data-tip-edge="left"
           >
-            Close
+            ×
           </button>
         </header>
         <div className="drawer-body">{children}</div>
-        {footer && <footer className="drawer-footer">{footer}</footer>}
+        <footer className="drawer-footer">
+          {footer ?? (
+            <button type="button" className="btn-secondary btn-small clickable" onClick={onClose}>
+              Close
+            </button>
+          )}
+        </footer>
       </div>
     </div>
   );
@@ -618,7 +624,17 @@ export function ConfirmDialogHost() {
         className="confirm-dialog"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ margin: "0 0 12px 0", color: req.danger ? "#f87171" : "inherit" }}>{req.title}</h3>
+        <div className="panel-head-row" style={{ marginBottom: 8 }}>
+          <h3 style={{ margin: 0, color: req.danger ? "#f87171" : "inherit" }}>{req.title}</h3>
+          <button
+            type="button"
+            className="modal-close-x clickable"
+            aria-label="Close dialog"
+            onClick={() => close(false)}
+          >
+            ×
+          </button>
+        </div>
         <p style={{ margin: "0 0 20px 0", fontSize: 14, lineHeight: 1.5 }}>{req.message}</p>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" className="btn-secondary btn-small clickable" onClick={() => close(false)}>

@@ -8,6 +8,7 @@ import {
   setJsonAccountUsername,
 } from "../sync/snapshot";
 import { useGoogleDriveSync } from "../sync/useGoogleDriveSync";
+import { getDriveAutoSyncEnabled, setDriveAutoSyncEnabled } from "../data/accountSettings";
 import GoogleSignInButton from "./GoogleSignInButton";
 import DriveSyncReviewModal from "./DriveSyncReviewModal";
 
@@ -25,11 +26,15 @@ export default function AccountPanel() {
   const [backupStatus, setBackupStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [autoSync, setAutoSync] = useState<boolean>(() => getDriveAutoSyncEnabled());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const drive = useGoogleDriveSync();
 
   useEffect(() => {
     void getJsonAccountUsername().then(setUsername);
+    const onSettings = () => setAutoSync(getDriveAutoSyncEnabled());
+    window.addEventListener("panga-settings-updated", onSettings);
+    return () => window.removeEventListener("panga-settings-updated", onSettings);
   }, []);
 
   async function handleSaveUsername(e: React.FormEvent) {
@@ -159,6 +164,18 @@ export default function AccountPanel() {
                     ? `Last synced ${new Date(drive.baseline.lastSyncedAt).toLocaleString()}`
                     : "Ready to inspect Google Drive backup."}
             </div>
+            <label className="rem-checkbox-label" style={{ fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={autoSync}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setAutoSync(next);
+                  setDriveAutoSyncEnabled(next);
+                }}
+              />
+              <span>Auto-sync quietly after edits (prompt only on conflicts)</span>
+            </label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
               {drive.auth.needsAuth ? (
                 <GoogleSignInButton
